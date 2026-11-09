@@ -6,6 +6,7 @@
 //
 // Kernels :
 //   Clear           - sets every channel of every texel to zero.
+//   Resample4/1     - copies a field into one of a different resolution (4-channel / 1-channel).
 //   InitTestPattern - writes a recognisable test image used to check the
 //                     cube-sphere infrastructure (Phase 3). Phase 4 replaces it
 //                     with real terrain.
@@ -31,6 +32,8 @@
 
 #pragma kernel Clear
 #pragma kernel InitTestPattern
+#pragma kernel Resample4
+#pragma kernel Resample1
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 #include "Assets/Shaders/Include/Noise.hlsl"
@@ -38,6 +41,16 @@
 RWTexture2DArray<float4> _Target;
 int _Resolution;
 float _Seed;
+
+// Resample kernels: copy a field of one resolution into a field of another.
+Texture2DArray<float4> _Source4;
+RWTexture2DArray<float4> _Target4;
+Texture2DArray<float> _Source1;
+RWTexture2DArray<float> _Target1;
+int _SourceResolution;
+
+CS_DEFINE_SAMPLER(CS_SampleField4, Texture2DArray<float4>, float4)
+CS_DEFINE_SAMPLER(CS_SampleField1, Texture2DArray<float>, float)
 
 [numthreads(8, 8, 1)]
 void Clear(uint3 id : SV_DispatchThreadID)
@@ -48,6 +61,34 @@ void Clear(uint3 id : SV_DispatchThreadID)
     }
 
     _Target[id] = float4(0.0, 0.0, 0.0, 0.0);
+}
+
+// Resample4 / Resample1: for each texel of the NEW field, look up the OLD field at that texel's
+// direction with the seam-correct bilinear sampler. Used when the quality preset changes the field
+// resolution, so painted and simulated state carries over instead of being thrown away.
+// (Going to a coarser grid averages nothing: it samples, so very fine detail is lost, which is expected.)
+[numthreads(8, 8, 1)]
+void Resample4(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+    _Target4[id] = CS_SampleField4(_Source4, direction, _SourceResolution);
+}
+
+[numthreads(8, 8, 1)]
+void Resample1(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+    _Target1[id] = CS_SampleField1(_Source1, direction, _SourceResolution);
 }
 
 [numthreads(8, 8, 1)]

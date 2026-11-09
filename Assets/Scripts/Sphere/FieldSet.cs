@@ -25,7 +25,8 @@
 //
 // Lifetime: textures are created in Start (after SimRoot has chosen a preset),
 //           rebuilt if the preset's resolution changes, re-initialised when
-//           the seed changes, and released in OnDisable so entering and
+//           the seed changes (a preset change keeps the contents, resampled
+//           to the new resolution), and released in OnDisable so entering and
 //           leaving Play mode never leaks GPU memory.
 // =============================================================================
 
@@ -205,7 +206,10 @@ namespace Terrarium.Sphere
 
         private void Build()
         {
-            ReleaseAll();
+            // Keep the old fields until the new ones exist, so their contents can be carried over
+            // to the new resolution instead of being lost (a preset change must not wipe the world).
+            Field[] previous = fields;
+            fields = Array.Empty<Field>();
 
             Resolution = simRoot.ActivePreset.fieldResolution;
             fields = new[]
@@ -217,31 +221,87 @@ namespace Terrarium.Sphere
                 new Field(FieldId.Brush, Resolution, RenderTextureFormat.ARGBFloat, pingPong: false),
             };
 
-            Initialise(simRoot.ActiveSeed);
+            ClearAll();
+            if (previous.Length == fields.Length)
+            {
+                CarryOver(previous);
+            }
+            else
+            {
+                WriteTestPattern(simRoot.ActiveSeed);
+            }
+
+            foreach (Field field in previous)
+            {
+                field.Release();
+            }
+
             Rebuilt?.Invoke();
         }
 
-        /// <summary>Clears every field, then writes the test pattern into Terrain.</summary>
+        /// <summary>Starts a new world: clears every field, then writes the test pattern into Terrain.</summary>
         private void Initialise(int seed)
         {
-            int clearKernel = fieldInit.FindKernel("Clear");
-            int patternKernel = fieldInit.FindKernel("InitTestPattern");
-            int groups = (Resolution + ThreadGroupSize - 1) / ThreadGroupSize;
+            ClearAll();
+            WriteTestPattern(seed);
+        }
 
+        private void ClearAll()
+        {
+            int kernel = fieldInit.FindKernel("Clear");
             fieldInit.SetInt("_Resolution", Resolution);
-            fieldInit.SetFloat("_Seed", seed);
 
             foreach (Field field in fields)
             {
                 foreach (RenderTexture texture in field.Buffers)
                 {
-                    fieldInit.SetTexture(clearKernel, "_Target", texture);
-                    fieldInit.Dispatch(clearKernel, groups, groups, CubeSphere.FaceCount);
+                    fieldInit.SetTexture(kernel, "_Target", texture);
+                    Dispatch(kernel);
                 }
             }
+        }
 
-            fieldInit.SetTexture(patternKernel, "_Target", Get(FieldId.Terrain).Current);
-            fieldInit.Dispatch(patternKernel, groups, groups, CubeSphere.FaceCount);
+        private void WriteTestPattern(int seed)
+        {
+            int kernel = fieldInit.FindKernel("InitTestPattern");
+            fieldInit.SetInt("_Resolution", Resolution);
+            fieldInit.SetFloat("_Seed", seed);
+            fieldInit.SetTexture(kernel, "_Target", Get(FieldId.Terrain).Current);
+            Dispatch(kernel);
+        }
+
+        /// <summary>Copies each old field into the new, differently sized one by looking it up direction by direction.</summary>
+        private void CarryOver(Field[] previous)
+        {
+            int kernel4 = fieldInit.FindKernel("Resample4");
+            int kernel1 = fieldInit.FindKernel("Resample1");
+            fieldInit.SetInt("_Resolution", Resolution);
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                RenderTexture source = previous[i].Current;
+                RenderTexture target = fields[i].Current;
+                fieldInit.SetInt("_SourceResolution", source.width);
+
+                if (target.format == RenderTextureFormat.RFloat)
+                {
+                    fieldInit.SetTexture(kernel1, "_Source1", source);
+                    fieldInit.SetTexture(kernel1, "_Target1", target);
+                    Dispatch(kernel1);
+                }
+                else
+                {
+                    fieldInit.SetTexture(kernel4, "_Source4", source);
+                    fieldInit.SetTexture(kernel4, "_Target4", target);
+                    Dispatch(kernel4);
+                }
+            }
+        }
+
+        private void Dispatch(int kernel)
+        {
+            int groups = (Resolution + ThreadGroupSize - 1) / ThreadGroupSize;
+            fieldInit.Dispatch(kernel, groups, groups, CubeSphere.FaceCount);
         }
 
         private void ReleaseAll()
