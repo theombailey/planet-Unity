@@ -144,6 +144,77 @@ namespace Terrarium
         [Tooltip("Sim seconds of the spin-up that are re-run on the full-size grid after the copy, to smooth out the coarse grid's rough coastlines.")]
         [Range(0f, 100f)] public float climateSettleSeconds = 20f;
 
+        [Header("Physarum: fungal / root network (see Physarum.compute, Nutrients.compute)")]
+        [Tooltip("Agents scattered on land when a world starts. The population then rises or falls with the nutrients; the pool size comes from the quality preset.")]
+        [Range(1000, 500_000)] public int physarumStartAgents = 30_000;
+
+        [Tooltip("Angle between the forward sensor and each side sensor, in degrees.")]
+        [Range(5f, 90f)] public float physarumSensorAngleDegrees = 35f;
+
+        [Tooltip("How far ahead the sensors look, in radians of arc on the planet (0.01 rad = 1% of the planet radius).")]
+        [Range(0.005f, 0.1f)] public float physarumSensorDistance = 0.03f;
+
+        [Tooltip("How fast an agent can turn toward a stronger signal, in radians per sim second.")]
+        [Range(1f, 80f)] public float physarumTurnSpeed = 20f;
+
+        [Tooltip("Agent speed along the ground, in radians of arc per sim second.")]
+        [Range(0.02f, 1.5f)] public float physarumSpeed = 0.25f;
+
+        [Tooltip("Trail laid down by one agent per step.")]
+        [Range(0.01f, 5f)] public float physarumDepositAmount = 0.5f;
+
+        [Tooltip("How much of each step the trail is blurred toward its 3x3 neighbourhood mean, 0..1. More = thicker, smoother tubes.")]
+        [Range(0f, 1f)] public float physarumTrailDiffusion = 0.3f;
+
+        [Tooltip("Fraction of the trail that fades per sim second.")]
+        [Range(0f, 5f)] public float physarumTrailDecay = 0.9f;
+
+        [Tooltip("Highest trail value a texel can hold (stops runaway build-up under a crowd).")]
+        [Range(1f, 50f)] public float physarumTrailMax = 10f;
+
+        [Tooltip("How strongly agents are drawn to nutrients, compared with trail (trail counts 1).")]
+        [Range(0f, 20f)] public float physarumNutrientWeight = 3f;
+
+        [Tooltip("Most nutrients one agent can eat per sim second.")]
+        [Range(0.0005f, 0.1f)] public float physarumEatRate = 0.005f;
+
+        [Tooltip("Energy gained per unit of nutrient eaten.")]
+        [Range(1f, 500f)] public float physarumEnergyPerNutrient = 40f;
+
+        [Tooltip("Energy an agent burns per sim second just to stay alive.")]
+        [Range(0f, 2f)] public float physarumUpkeep = 0.1f;
+
+        [Tooltip("Energy a new agent starts with, and that scattered start agents are given.")]
+        [Range(0.1f, 5f)] public float physarumStartEnergy = 1f;
+
+        [Tooltip("An agent with more energy than this splits in two.")]
+        [Range(0.5f, 10f)] public float physarumReproduceEnergy = 2f;
+
+        [Tooltip("Body mass invested when an agent splits. It returns to the soil as organic matter when an agent dies, so mass is conserved.")]
+        [Range(0.05f, 2f)] public float physarumBirthCost = 0.5f;
+
+        [Tooltip("Energy lost per sim second by an agent that ends up in the ocean.")]
+        [Range(0f, 20f)] public float physarumOceanPenalty = 2f;
+
+        [Tooltip("Ground colder than this, in deg C, starts to drain agent energy.")]
+        [Range(-40f, 10f)] public float physarumColdLimit = -10f;
+
+        [Tooltip("Energy lost per sim second in ground 10 deg C below the cold limit (scales up with the cold).")]
+        [Range(0f, 5f)] public float physarumColdPenalty = 0.4f;
+
+        [Header("Nutrient transport (see Nutrients.compute)")]
+        [Tooltip("Plain spreading of nutrients through the soil, in radians squared per sim second.")]
+        [Range(0f, 0.001f)] public float nutrientDiffusion = 0.00002f;
+
+        [Tooltip("Extra spreading per unit of trail, in radians squared per sim second. This is how the network moves nutrients from rich spots to poor ones.")]
+        [Range(0f, 0.01f)] public float nutrientNetworkDiffusion = 0.0002f;
+
+        [Tooltip("Trail above this adds no further transport speed.")]
+        [Range(0.5f, 10f)] public float nutrientTrailSaturation = 2f;
+
+        [Tooltip("How fast organic matter turns into nutrients in warm, moist soil, per sim second.")]
+        [Range(0f, 0.2f)] public float decompositionRate = 0.02f;
+
         [Header("Planet surface and debug brush (see PlanetMeshBuilder, DebugBrush)")]
         [Tooltip("Quads along one edge of each of the 6 cube faces of the planet mesh. 128 gives ~99k vertices.")]
         [Range(16, 256)] public int planetMeshSubdivisions = 128;

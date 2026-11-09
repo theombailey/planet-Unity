@@ -142,6 +142,14 @@ namespace Terrarium.Sphere
             debugMaterial.SetFloat(ShowGridId, ShowGrid ? 1f : 0f);
         }
 
+        /// <summary>Sets the values mapped to the two ends of the colour ramp.</summary>
+        public void SetRange(float min, float max)
+        {
+            RangeMin = min;
+            RangeMax = max;
+            ApplyMaterial();
+        }
+
         /// <summary>Immediate-mode controls, called from the F1 debug panel.</summary>
         public void OnDebugGui()
         {

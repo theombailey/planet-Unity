@@ -51,6 +51,29 @@ MonoBehaviour:
   climateSpinUpSeconds: 600
   spinUpResolution: 64
   climateSettleSeconds: 20
+  physarumStartAgents: 30000
+  physarumSensorAngleDegrees: 35
+  physarumSensorDistance: 0.03
+  physarumTurnSpeed: 20
+  physarumSpeed: 0.25
+  physarumDepositAmount: 0.5
+  physarumTrailDiffusion: 0.3
+  physarumTrailDecay: 0.9
+  physarumTrailMax: 10
+  physarumNutrientWeight: 3
+  physarumEatRate: 0.005
+  physarumEnergyPerNutrient: 40
+  physarumUpkeep: 0.1
+  physarumStartEnergy: 1
+  physarumReproduceEnergy: 2
+  physarumBirthCost: 0.5
+  physarumOceanPenalty: 2
+  physarumColdLimit: -10
+  physarumColdPenalty: 0.4
+  nutrientDiffusion: 0.00002
+  nutrientNetworkDiffusion: 0.0002
+  nutrientTrailSaturation: 2
+  decompositionRate: 0.02
   planetMeshSubdivisions: 128
   debugBrushRadius: 0.18
   debugBrushStrength: 1.5

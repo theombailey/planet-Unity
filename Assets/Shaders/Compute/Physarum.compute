@@ -1,0 +1,410 @@
+// =============================================================================
+// Physarum.compute
+// -----------------------------------------------------------------------------
+// Purpose : The slime mould (physarum) agents that build the planet's fungal /
+//           root network, and the trail they leave. After Jeff Jones' agent
+//           model of Physarum polycephalum.
+//
+// Kernels :
+//   InitAgents       - scatters the starting population on land.
+//   CopyAgents       - carries agents into a re-sized pool (quality preset change).
+//   ClearCounters    - zeroes the population counters before a step.
+//   AgentStep        - one step of every agent: sense, steer, move, deposit, eat,
+//                      pay upkeep, die or split.
+//   TrailDiffuse     - adds this step's deposits to the trail, blurs it, fades it.
+//   ClearDeposit     - zeroes the deposit buffer.
+//
+// Idea (the three rules that grow a network):
+//   1. SENSE  Each agent samples a "signal" at three points ahead of it: straight on, and
+//             left and right of that, at a fixed distance.
+//   2. STEER  It turns toward the strongest signal.
+//   3. LEAVE  It moves forward and adds a little trail where it lands.
+//   The trail is part of the signal, so agents follow trails that other agents (and they
+//   themselves) laid. A trail that is followed gets stronger, so it is followed more: positive
+//   feedback. Meanwhile the trail blurs and fades, so unused paths vanish. The result is a
+//   network of tubes that finds food and links it, with nobody drawing it.
+//   Here the signal also includes NUTRIENTS, so agents head for rich ground, and the OCEAN is
+//   strongly repulsive. Agents eat nutrients to live, so the population is not scripted: it
+//   grows where food is plentiful and dies back where it is not.
+//
+// Geometry on the sphere (pos is a unit vector, heading a unit vector at right angles to it):
+//   rotate heading about pos by angle a:   h' = h cos a + (pos x h) sin a
+//   look ahead by arc s at angle a:        p  = normalize( pos cos s + h' sin s )
+//   move by arc s:                         pos'     = normalize( pos cos s + h sin s )
+//                                          heading' = -pos sin s + h cos s      (parallel transport)
+//   then re-orthogonalise: heading' -= pos' (pos' . heading'), normalise.
+//   Agents live in the planet's own frame, the same frame as the fields, so the spin of the
+//   planet does not matter here.
+//
+// Energy (per step of dt seconds; all rates per sim second):
+//   eat      e = min( nutrients here, eatRate * dt )          taken from the soil
+//   energy  += e * energyPerNutrient - upkeep * dt
+//   energy  -= oceanPenalty * dt                  if the agent is over ocean
+//   energy  -= coldPenalty * dt * saturate((coldLimit - T) / 10)   in ground colder than coldLimit
+//   energy <= 0              -> dies; birthCost of body mass returns to the soil as organic matter
+//   energy >  reproduceEnergy -> splits: both halves keep (energy - birthCost) / 2
+//   Population is never set by script: it settles where eating balances upkeep.
+//
+// Concurrency (many agents act in the same moment; what is racy and why that is acceptable):
+//   - Trail deposits, nutrient eaten and organic returned are added with InterlockedAdd into
+//     per-texel integer buffers (fixed point), so no deposit is ever lost. They are applied after
+//     the step (TrailDiffuse here, ApplyEatReturn in Nutrients.compute).
+//   - Each agent reads the nutrient level before the others' eating is applied. If several agents
+//     share one texel they can together overdraw it slightly; the soil is then clamped at zero.
+//     The overdraw is at most (agents per texel) x eatRate x dt, tiny next to the nutrient levels.
+//   - A new agent takes a dead slot picked at random, claimed with InterlockedCompareExchange
+//     (0 dead -> 2 newborn). If that slot is taken the split simply waits for a later step. A
+//     newborn (state 2) is switched to alive (1) at the start of the next step, so it is never
+//     processed while its parent is still writing it.
+//
+// Agent buffers (one element per pool slot):
+//   _PosEnergy  float4   xyz position (unit vector, planet frame), w energy
+//   _Heading    float4   xyz heading (unit, tangent), w unused
+//   _Alive      uint     0 dead, 1 alive, 2 newborn
+//
+// Parameters: see the cbuffer-style variables below; they come from SimConfig "Physarum".
+// =============================================================================
+
+#pragma kernel InitAgents
+#pragma kernel CopyAgents
+#pragma kernel ClearCounters
+#pragma kernel AgentStep
+#pragma kernel TrailDiffuse
+#pragma kernel ClearDeposit
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+#include "Assets/Shaders/Include/Noise.hlsl"
+
+#define DEPOSIT_SCALE 4096.0
+#define NUTRIENT_SCALE 1048576.0
+
+RWStructuredBuffer<float4> _PosEnergy;
+RWStructuredBuffer<float4> _Heading;
+RWStructuredBuffer<uint> _Alive;
+RWStructuredBuffer<float4> _OldPosEnergy;       // CopyAgents source
+RWStructuredBuffer<float4> _OldHeading;
+RWStructuredBuffer<uint> _OldAlive;
+
+RWStructuredBuffer<uint> _Deposit;              // per texel, fixed point (DEPOSIT_SCALE)
+RWStructuredBuffer<uint> _Eaten;                // per texel, fixed point (NUTRIENT_SCALE)
+RWStructuredBuffer<uint> _Returned;             // per texel, fixed point (NUTRIENT_SCALE)
+RWStructuredBuffer<uint> _Counters;             // [0] alive, [1] births, [2] deaths
+
+Texture2DArray<float> _TrailRead;
+RWTexture2DArray<float> _TrailWrite;
+Texture2DArray<float4> _Soil;                   // R nutrients
+Texture2DArray<float4> _Terrain;                // R height
+Texture2DArray<float4> _Climate;                // R temperature
+
+uint _PoolSize;
+uint _OldPoolSize;
+uint _StartAgents;
+uint _Frame;
+int _Resolution;
+uint _ClearCount;
+float _DeltaTime;
+float _Seed;
+
+float _SensorAngle;
+float _SensorDistance;
+float _TurnSpeed;
+float _Speed;
+float _DepositAmount;
+float _TrailDiffusion;
+float _TrailDecay;
+float _TrailMax;
+float _NutrientWeight;
+float _EatRate;
+float _EnergyPerNutrient;
+float _Upkeep;
+float _StartEnergy;
+float _ReproduceEnergy;
+float _BirthCost;
+float _OceanPenalty;
+float _ColdLimit;
+float _ColdPenalty;
+
+static const float OCEAN_AVOIDANCE = 50.0;      // signal penalty for ocean: agents never choose to go there
+
+// ---- small helpers ----------------------------------------------------------------
+
+float Random01(inout uint state)
+{
+    state = HashUint(state);
+    return (state >> 8) * (1.0 / 16777216.0);
+}
+
+float3 RotateAbout(float3 position, float3 heading, float angle)
+{
+    float s, c;
+    sincos(angle, s, c);
+    return heading * c + cross(position, heading) * s;
+}
+
+// Point `distance` radians away from `position` in the direction `heading`.
+float3 Ahead(float3 position, float3 heading, float distance)
+{
+    float s, c;
+    sincos(distance, s, c);
+    return normalize(position * c + heading * s);
+}
+
+uint TexelIndex(int3 texel)
+{
+    return (uint)((texel.z * _Resolution + texel.y) * _Resolution + texel.x);
+}
+
+// The strength of the signal at a point: trail + nutrients, minus a huge penalty over ocean.
+float Signal(float3 location)
+{
+    int3 texel = CS_DirToTexel(location, _Resolution);
+    float signal = _TrailRead[uint3(texel)] + _NutrientWeight * _Soil[uint3(texel)].r;
+    if (_Terrain[uint3(texel)].r < 0.0)
+    {
+        signal -= OCEAN_AVOIDANCE;
+    }
+
+    return signal;
+}
+
+// Random unit vector on the sphere.
+float3 RandomDirection(inout uint state)
+{
+    float z = Random01(state) * 2.0 - 1.0;
+    float phi = Random01(state) * 6.28318530718;
+    float r = sqrt(saturate(1.0 - z * z));
+    return float3(r * cos(phi), z, r * sin(phi));
+}
+
+// Random unit vector at right angles to `position`.
+float3 RandomHeading(float3 position, inout uint state)
+{
+    float3 reference = abs(position.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 t1 = normalize(cross(position, reference));
+    float3 t2 = cross(position, t1);
+    float angle = Random01(state) * 6.28318530718;
+    return t1 * cos(angle) + t2 * sin(angle);
+}
+
+// ---- kernels ----------------------------------------------------------------------
+
+[numthreads(64, 1, 1)]
+void InitAgents(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize)
+    {
+        return;
+    }
+
+    _Alive[index] = 0u;
+    _PosEnergy[index] = float4(0, 1, 0, 0);
+    _Heading[index] = float4(1, 0, 0, 0);
+
+    if (index >= _StartAgents)
+    {
+        return;
+    }
+
+    // Try a few random spots until one is dry land (about 40% of the planet is).
+    uint state = HashUint(index * 2654435761u + asuint(_Seed) + 12345u);
+    for (int attempt = 0; attempt < 12; attempt++)
+    {
+        float3 direction = RandomDirection(state);
+        int3 texel = CS_DirToTexel(direction, _Resolution);
+        if (_Terrain[uint3(texel)].r > 0.0)
+        {
+            _PosEnergy[index] = float4(direction, _StartEnergy);
+            _Heading[index] = float4(RandomHeading(direction, state), 0.0);
+            _Alive[index] = 1u;
+            return;
+        }
+    }
+}
+
+[numthreads(64, 1, 1)]
+void CopyAgents(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize)
+    {
+        return;
+    }
+
+    bool exists = index < _OldPoolSize;
+    _Alive[index] = exists ? _OldAlive[index] : 0u;
+    _PosEnergy[index] = exists ? _OldPosEnergy[index] : float4(0, 1, 0, 0);
+    _Heading[index] = exists ? _OldHeading[index] : float4(1, 0, 0, 0);
+}
+
+[numthreads(1, 1, 1)]
+void ClearCounters(uint3 id : SV_DispatchThreadID)
+{
+    _Counters[0] = 0u;
+    _Counters[1] = 0u;
+    _Counters[2] = 0u;
+}
+
+[numthreads(64, 1, 1)]
+void AgentStep(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize)
+    {
+        return;
+    }
+
+    uint life = _Alive[index];
+    if (life == 0u)
+    {
+        return;
+    }
+
+    if (life == 2u)
+    {
+        _Alive[index] = 1u;   // a newborn joins in from the next step
+        return;
+    }
+
+    uint rng = HashUint(index ^ (_Frame * 747796405u + 2891336453u));
+
+    float4 body = _PosEnergy[index];
+    float3 position = body.xyz;
+    float3 heading = _Heading[index].xyz;
+    float energy = body.w;
+
+    // 1. SENSE: three points ahead, at -angle, 0, +angle from the heading.
+    float centre = Signal(Ahead(position, heading, _SensorDistance));
+    float left = Signal(Ahead(position, RotateAbout(position, heading, _SensorAngle), _SensorDistance));
+    float right = Signal(Ahead(position, RotateAbout(position, heading, -_SensorAngle), _SensorDistance));
+
+    // 2. STEER (Jones' rule).
+    float turn = 0.0;
+    if (centre > left && centre > right)
+    {
+        turn = 0.0;                                             // straight ahead is best
+    }
+    else if (centre < left && centre < right)
+    {
+        turn = (Random01(rng) < 0.5 ? -1.0 : 1.0) * _TurnSpeed * _DeltaTime;   // both sides better: pick one
+    }
+    else if (left > right)
+    {
+        turn = _TurnSpeed * _DeltaTime;
+    }
+    else if (right > left)
+    {
+        turn = -_TurnSpeed * _DeltaTime;
+    }
+
+    heading = RotateAbout(position, heading, turn);
+
+    // 3. MOVE along the sphere and carry the heading with us.
+    float arc = _Speed * _DeltaTime;
+    float s, c;
+    sincos(arc, s, c);
+    float3 newPosition = normalize(position * c + heading * s);
+    float3 newHeading = -position * s + heading * c;
+    newHeading = normalize(newHeading - newPosition * dot(newPosition, newHeading));
+
+    if (any(isnan(newPosition)) || any(isnan(newHeading)))
+    {
+        _Alive[index] = 0u;                                     // a corrupt agent is removed
+        return;
+    }
+
+    int3 texel = CS_DirToTexel(newPosition, _Resolution);
+    uint3 texelIndex3 = uint3(texel);
+    uint texelIndex = TexelIndex(texel);
+
+    // 4. LEAVE trail.
+    InterlockedAdd(_Deposit[texelIndex], (uint)(_DepositAmount * DEPOSIT_SCALE));
+
+    // 5. EAT and pay the costs of living.
+    float nutrients = _Soil[texelIndex3].r;
+    float eaten = min(nutrients, _EatRate * _DeltaTime);
+    if (eaten > 0.0)
+    {
+        InterlockedAdd(_Eaten[texelIndex], (uint)(eaten * NUTRIENT_SCALE));
+    }
+
+    energy += eaten * _EnergyPerNutrient - _Upkeep * _DeltaTime;
+
+    if (_Terrain[texelIndex3].r < 0.0)
+    {
+        energy -= _OceanPenalty * _DeltaTime;
+    }
+
+    float temperature = _Climate[texelIndex3].r;
+    energy -= _ColdPenalty * _DeltaTime * saturate((_ColdLimit - temperature) / 10.0);
+
+    // 6. LIFE CYCLE.
+    if (energy <= 0.0)
+    {
+        _Alive[index] = 0u;
+        InterlockedAdd(_Returned[texelIndex], (uint)(_BirthCost * NUTRIENT_SCALE));
+        InterlockedAdd(_Counters[2], 1u);
+        return;
+    }
+
+    if (energy > _ReproduceEnergy)
+    {
+        uint slot = HashUint(index * 2654435761u + _Frame) % _PoolSize;
+        uint previous;
+        InterlockedCompareExchange(_Alive[slot], 0u, 2u, previous);
+
+        if (previous == 0u)
+        {
+            float share = (energy - _BirthCost) * 0.5;
+            float3 childHeading = RotateAbout(newPosition, newHeading, (Random01(rng) - 0.5) * 2.0);
+            _PosEnergy[slot] = float4(newPosition, share);
+            _Heading[slot] = float4(childHeading, 0.0);
+            energy = share;
+            InterlockedAdd(_Counters[1], 1u);
+        }
+    }
+
+    _PosEnergy[index] = float4(newPosition, energy);
+    _Heading[index] = float4(newHeading, 0.0);
+    InterlockedAdd(_Counters[0], 1u);
+}
+
+// Adds this step's deposits to the trail, blurs it over the 3x3 neighbourhood (seam-aware), and fades it.
+[numthreads(8, 8, 1)]
+void TrailDiffuse(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    int3 texel = int3(id);
+    float centre = _TrailRead[id] + _Deposit[TexelIndex(texel)] * (1.0 / DEPOSIT_SCALE);
+    float sum = centre;
+
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            if (dx == 0 && dy == 0)
+            {
+                continue;
+            }
+
+            int3 neighbour = CS_NeighbourTexel(texel, int2(dx, dy), _Resolution);
+            sum += _TrailRead[uint3(neighbour)] + _Deposit[TexelIndex(neighbour)] * (1.0 / DEPOSIT_SCALE);
+        }
+    }
+
+    float blurred = lerp(centre, sum / 9.0, _TrailDiffusion);
+    _TrailWrite[id] = clamp(blurred * (1.0 - _TrailDecay * _DeltaTime), 0.0, _TrailMax);
+}
+
+[numthreads(64, 1, 1)]
+void ClearDeposit(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < _ClearCount)
+    {
+        _Deposit[id.x] = 0u;
+    }
+}

@@ -10,7 +10,9 @@
 // Idea    : Six square faces (+X -X +Y -Y +Z -Z) projected onto a sphere, with
 //           an "equiangular" warp so texels are similar in size everywhere.
 //           No poles to pinch; seams are handled by "extend the grid past the
-//           edge, turn it into a direction, find the texel that contains it".
+//           edge, turn it into a direction, find the texel that contains it"
+//           (with the position along a crossed edge kept exact, so the pairing
+//           across a seam is mutual: see CubeSphere.cs).
 //
 // Equations (s, t in [-1,1] on a face; n = outward normal, r = right, u = up):
 //     a = dot(d, r) / dot(d, n)            s = atan(a) * 4/pi
@@ -104,14 +106,35 @@ float3 CS_TexelCentreDir(int3 texel, int n)
 
 // Brings a texel address back onto the sphere: unchanged if inside its face, otherwise the
 // texel containing the extended-grid point on the neighbouring face.
+// A step across exactly ONE edge keeps its position along the edge and goes only a hair past it,
+// which makes the pairing across the seam mutual (see CubeSphere.cs). Past a corner, the plain
+// extended-grid lookup is used.
+static const float CS_EDGE_OVERSHOOT = 1e-4;
+
 int3 CS_ResolveTexel(int3 texel, int n)
 {
-    if (all(texel.xy >= 0) && all(texel.xy < n))
+    bool2 outside = texel.xy < 0 || texel.xy >= n;
+
+    if (!outside.x && !outside.y)
     {
         return texel;
     }
 
-    return CS_DirToTexel(CS_FaceSTToDir(texel.z, CS_TexelCentreST(texel.xy, n)), n);
+    float2 st = CS_TexelCentreST(texel.xy, n);
+
+    if (outside.x != outside.y)
+    {
+        if (outside.x)
+        {
+            st.x = (texel.x < 0 ? -1.0 : 1.0) * (1.0 + CS_EDGE_OVERSHOOT);
+        }
+        else
+        {
+            st.y = (texel.y < 0 ? -1.0 : 1.0) * (1.0 + CS_EDGE_OVERSHOOT);
+        }
+    }
+
+    return CS_DirToTexel(CS_FaceSTToDir(texel.z, st), n);
 }
 
 // Seam-aware neighbour at offset (dx, dy), each -1, 0 or +1.

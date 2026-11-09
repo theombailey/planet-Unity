@@ -12,9 +12,10 @@
 // Commands: refresh          re-import changed files and recompile scripts
 //           rebuild-scene    run SceneBuilder.RebuildScene
 //           reset-config     overwrite the SimConfig asset with the code defaults
-//           view on|off [field] [channel] [edges on|off] [grid on|off]   field debug view
+//           view on|off [field] [channel] [edges on|off] [grid on|off] [range min max]   field debug view
 //           paint corner|edge radius amount   paint at the cube corner/edge facing the camera
 //           camera yaw pitch distance         jump the desk camera
+//           physarum                          living agent count (Play mode)
 //           status                            play / pause state, frame count and frame time
 //           timescale 0|1|4|16               set the sim speed (Play mode)
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
@@ -112,6 +113,13 @@ namespace Terrarium.EditorTools
 
                 case "paint":
                     WriteResult(PaintAtCubeFeature(parts));
+                    break;
+
+                case "physarum":
+                    var physarumSystem = UnityEngine.Object.FindFirstObjectByType<Terrarium.Physarum.PhysarumSystem>();
+                    WriteResult(physarumSystem == null
+                        ? "error: no PhysarumSystem in the open scene"
+                        : $"ok: physarum alive {physarumSystem.AliveCount} of {physarumSystem.PoolSize}, born {physarumSystem.BornLastStep}, died {physarumSystem.DiedLastStep} (last step)");
                     break;
 
                 case "status":
@@ -227,6 +235,16 @@ namespace Terrarium.EditorTools
                 else if (parts[i] == "grid")
                 {
                     view.ShowGrid = value;
+                }
+            }
+
+            // Optional trailing "range min max" overrides the default colour range.
+            for (int i = 4; i + 2 < parts.Length; i++)
+            {
+                if (parts[i] == "range")
+                {
+                    var culture = System.Globalization.CultureInfo.InvariantCulture;
+                    view.SetRange(float.Parse(parts[i + 1], culture), float.Parse(parts[i + 2], culture));
                 }
             }
 

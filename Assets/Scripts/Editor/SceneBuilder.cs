@@ -20,6 +20,7 @@
 
 using Terrarium.Climate;
 using Terrarium.Interaction;
+using Terrarium.Physarum;
 using Terrarium.Rendering;
 using Terrarium.Sphere;
 using UnityEditor;
@@ -230,9 +231,16 @@ namespace Terrarium.EditorTools
             SetReference(climate, "fieldInit", LoadAsset<ComputeShader>("Assets/Shaders/Compute/FieldInit.compute"));
             SetReference(climate, "climateShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Climate.compute"));
 
+            var physarum = host.AddComponent<PhysarumSystem>();
+            SetReference(physarum, "simRoot", simRoot);
+            SetReference(physarum, "fieldSet", fieldSet);
+            SetReference(physarum, "physarumShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Physarum.compute"));
+            SetReference(physarum, "nutrientShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Nutrients.compute"));
+
             var loop = host.AddComponent<SimLoop>();
             SetReference(loop, "simRoot", simRoot);
             SetReference(loop, "climate", climate);
+            SetReference(loop, "physarum", physarum);
 
             var view = host.AddComponent<FieldDebugView>();
             SetReference(view, "fieldSet", fieldSet);
@@ -249,6 +257,7 @@ namespace Terrarium.EditorTools
             SetReference(brush, "panel", panel);
 
             SetReference(panel, "climate", climate);
+            SetReference(panel, "physarum", physarum);
             SetReference(panel, "fieldView", view);
             SetReference(panel, "debugBrush", brush);
         }

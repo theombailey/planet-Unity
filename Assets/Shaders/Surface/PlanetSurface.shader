@@ -63,6 +63,7 @@ Shader "Terrarium/PlanetSurface"
         _Desert ("Desert", Color) = (0.85, 0.65, 0.38, 1)
         _Rock ("Rock", Color) = (0.50, 0.45, 0.43, 1)
         _Snow ("Snow", Color) = (0.94, 0.96, 0.99, 1)
+        _Mycelium ("Mycelium ink", Color) = (0.17, 0.10, 0.07, 1)
         _NormalStrength ("Relief shading strength", Range(0, 20)) = 1.2
     }
 
@@ -78,10 +79,12 @@ Shader "Terrarium/PlanetSurface"
         Texture2DArray<float4> _TerrainField;
         Texture2DArray<float4> _ClimateField;
         Texture2DArray<float4> _SoilField;
+        Texture2DArray<float> _TrailField;
         float _FieldResolution;
         float _PlanetHeightScale;
 
         CS_DEFINE_SAMPLER(CS_SampleField4, Texture2DArray<float4>, float4)
+        CS_DEFINE_SAMPLER(CS_SampleField1, Texture2DArray<float>, float)
 
         CBUFFER_START(UnityPerMaterial)
             float4 _OceanShallow;
@@ -94,6 +97,7 @@ Shader "Terrarium/PlanetSurface"
             float4 _Desert;
             float4 _Rock;
             float4 _Snow;
+            float4 _Mycelium;
             float _NormalStrength;
         CBUFFER_END
 
@@ -243,6 +247,18 @@ Shader "Terrarium/PlanetSurface"
                 float3 albedo = height < 0.0
                     ? OceanAlbedo(direction, height, climate.r, noiseA)
                     : LandAlbedo(direction, height, terrain.g, climate.r, climate.g, noiseA, noiseB);
+
+                // The fungal / root network: ink threads wherever the physarum trail is strong. Up close
+                // the threshold drops and a fuzz of noise breaks the lines into fine root hairs.
+                if (height >= 0.0 && n > 0)
+                {
+                    float trail = CS_SampleField1(_TrailField, direction, n);
+                    float closeness = 1.0 - smoothstep(1.2, 5.0, distance(_WorldSpaceCameraPos, input.positionWS));
+                    float fuzz = ValueNoise(direction * 220.0) - 0.5;
+                    float threshold = lerp(0.45, 0.12, closeness);
+                    float thread = smoothstep(threshold, threshold + 0.3, trail + fuzz * 0.25 * closeness);
+                    albedo = lerp(albedo, _Mycelium.rgb, thread * 0.8);
+                }
 
                 float3 normalOS = height < 0.0 ? direction : TiltedNormal(direction);
                 float3 normalWS = TransformObjectToWorldNormal(normalOS);

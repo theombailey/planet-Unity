@@ -16,6 +16,7 @@
 
 using Terrarium.Climate;
 using Terrarium.Interaction;
+using Terrarium.Physarum;
 using Terrarium.Rendering;
 using Terrarium.Sphere;
 using UnityEngine;
@@ -43,6 +44,9 @@ namespace Terrarium
 
         [Tooltip("The terrain and climate controls shown on the panel (optional).")]
         [SerializeField] private ClimateController climate;
+
+        [Tooltip("The physarum population readout shown on the panel (optional).")]
+        [SerializeField] private PhysarumSystem physarum;
 
         [Tooltip("Whether the panel is showing when Play starts.")]
         [SerializeField] private bool visible = true;
@@ -152,6 +156,12 @@ namespace Terrarium
             {
                 GUILayout.Label("Terrain and climate");
                 climate.OnDebugGui();
+            }
+
+            if (physarum != null)
+            {
+                GUILayout.Label("Physarum network");
+                physarum.OnDebugGui();
             }
 
             if (fieldView != null)

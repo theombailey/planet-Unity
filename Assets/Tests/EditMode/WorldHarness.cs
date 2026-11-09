@@ -11,7 +11,9 @@
 // =============================================================================
 
 using System;
+using System.Collections.Generic;
 using Terrarium.Climate;
+using Terrarium.Physarum;
 using Terrarium.Sphere;
 using Unity.Collections;
 using UnityEditor;
@@ -25,6 +27,7 @@ namespace Terrarium.Tests
     {
         private readonly TerrainGenerator terrainGenerator;
         private readonly ClimateSimulation simulation;
+        private readonly List<PhysarumSimulation> physarumSimulations = new List<PhysarumSimulation>();
 
         /// <summary>Creates the fields and loads the compute shaders. Tweak <paramref name="configure"/> to change parameters.</summary>
         public WorldHarness(int resolution, Action<SimConfig> configure = null)
@@ -49,9 +52,11 @@ namespace Terrarium.Tests
             Terrain = new Field(FieldId.Terrain, resolution, RenderTextureFormat.ARGBFloat, pingPong: false);
             Climate = new Field(FieldId.Climate, resolution, RenderTextureFormat.ARGBFloat, pingPong: true);
             Soil = new Field(FieldId.Soil, resolution, RenderTextureFormat.ARGBFloat, pingPong: true);
+            Trail = new Field(FieldId.Trail, resolution, RenderTextureFormat.RFloat, pingPong: true);
             Clear(Terrain);
             Clear(Climate);
             Clear(Soil);
+            Clear(Trail);
         }
 
         public SimConfig Config { get; }
@@ -69,6 +74,48 @@ namespace Terrarium.Tests
         public Field Climate { get; }
 
         public Field Soil { get; }
+
+        public Field Trail { get; }
+
+        /// <summary>Creates a physarum simulation on this world's resolution. Released with the harness.</summary>
+        public PhysarumSimulation CreatePhysarum(int poolSize)
+        {
+            var physarumShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Shaders/Compute/Physarum.compute");
+            var nutrientShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Shaders/Compute/Nutrients.compute");
+            if (physarumShader == null || nutrientShader == null)
+            {
+                throw new InvalidOperationException("Physarum.compute or Nutrients.compute not found.");
+            }
+
+            var physarum = new PhysarumSimulation(physarumShader, nutrientShader, Config);
+            physarum.Allocate(poolSize, Resolution);
+            physarumSimulations.Add(physarum);
+            return physarum;
+        }
+
+        /// <summary>Runs physarum steps of <paramref name="stepSeconds"/> each.</summary>
+        public void RunPhysarum(PhysarumSimulation physarum, int steps, float stepSeconds)
+        {
+            for (int i = 0; i < steps; i++)
+            {
+                physarum.Step(Trail, Soil, Terrain.Current, Climate.Current, stepSeconds);
+            }
+        }
+
+        /// <summary>Reads a compute buffer of 32-bit values back to the CPU.</summary>
+        public static T[] ReadBuffer<T>(ComputeBuffer buffer) where T : struct
+        {
+            var result = new T[buffer.count];
+            AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(buffer);
+            request.WaitForCompletion();
+            if (request.hasError)
+            {
+                throw new InvalidOperationException("GPU readback failed.");
+            }
+
+            request.GetData<T>().CopyTo(result);
+            return result;
+        }
 
         /// <summary>Generates terrain and a starting climate, and (optionally) runs the spin-up.</summary>
         public void Generate(int seed, float landFraction, bool spinUp)
@@ -140,9 +187,15 @@ namespace Terrarium.Tests
 
         public void Dispose()
         {
+            foreach (PhysarumSimulation physarum in physarumSimulations)
+            {
+                physarum.Dispose();
+            }
+
             Terrain.Release();
             Climate.Release();
             Soil.Release();
+            Trail.Release();
             UnityEngine.Object.DestroyImmediate(Config);
         }
 

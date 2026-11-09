@@ -42,9 +42,14 @@
 //     the face, extend the face's own grid past its edge (the formula above
 //     works for |s| > 1), turn that point into a direction, and ask which
 //     texel contains the direction. No adjacency tables are needed.
-//     Limitation: across a seam the found texel's centre can be up to about
-//     half a texel from the exact position, so diffusion across a seam is
-//     slightly lopsided (a tiny error confined to the seams).
+//     A step across exactly ONE edge is done a little more carefully: the
+//     position along the edge is kept exactly (the point is pushed only a hair
+//     beyond the edge, not a whole texel). Along a shared edge the two faces'
+//     texel rows line up one-to-one, so this pairing is MUTUAL (if B is A's
+//     neighbour across the edge, A is B's), which diffusion needs in order to
+//     conserve what it moves. Steps past a corner (both coordinates off the
+//     face) use the plain extended-grid lookup, where three faces meet and no
+//     four-neighbour rule can be perfectly mutual.
 //
 // Parameters: n - texels along one face edge (the field resolution).
 // =============================================================================
@@ -126,6 +131,10 @@ namespace Terrarium.Sphere
         public const int FaceCount = 6;
 
         private const float QuarterPi = Mathf.PI * 0.25f;
+
+        // How far past a face edge (in s or t units) a single-edge neighbour lookup reaches. It must be far
+        // smaller than one texel (2/N, down to 0.004 at N = 512) but large enough to be clear of rounding.
+        private const float EdgeOvershoot = 1e-4f;
 
         // Per face: outward normal, "right" (s) axis, "up" (t) axis. Order +X -X +Y -Y +Z -Z.
         // For every face right x up = normal.
@@ -238,9 +247,26 @@ namespace Terrarium.Sphere
         /// </summary>
         public static Texel ResolveTexel(int face, int x, int y, int n)
         {
-            if (x >= 0 && x < n && y >= 0 && y < n)
+            bool outsideX = x < 0 || x >= n;
+            bool outsideY = y < 0 || y >= n;
+
+            if (!outsideX && !outsideY)
             {
                 return new Texel(face, x, y);
+            }
+
+            if (outsideX != outsideY)
+            {
+                // Across exactly one edge: keep the position along the edge, and go only a hair past it.
+                float beyond = EdgeOvershoot;
+                if (outsideX)
+                {
+                    float s = (x < 0 ? -1f : 1f) * (1f + beyond);
+                    return DirToTexel(FaceSTToDir(face, s, TexelCentreST(y, n)), n);
+                }
+
+                float t = (y < 0 ? -1f : 1f) * (1f + beyond);
+                return DirToTexel(FaceSTToDir(face, TexelCentreST(x, n), t), n);
             }
 
             return DirToTexel(FaceSTToDir(face, TexelCentreST(x, n), TexelCentreST(y, n)), n);
