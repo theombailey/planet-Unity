@@ -90,4 +90,27 @@ float Fbm(float3 p, int octaves)
     return sum / total;
 }
 
+// Ridged fractal noise in [0,1]: sharp crests, like mountain ridges.
+// Idea: value noise is a smooth blob with its middle value 0.5 running along winding contour
+// lines. r = 1 - |2n - 1| is 1 exactly on those contours and falls away linearly either side,
+// which turns each contour into a sharp crest. Squaring narrows the crest. Octaves are summed
+// like fBm.
+float RidgedFbm(float3 p, int octaves)
+{
+    float sum = 0.0;
+    float amplitude = 0.5;
+    float total = 0.0;
+
+    for (int i = 0; i < octaves; i++)
+    {
+        float ridge = 1.0 - abs(2.0 * ValueNoise(p) - 1.0);
+        sum += amplitude * ridge * ridge;
+        total += amplitude;
+        amplitude *= 0.5;
+        p = p * 2.0 + 31.7;
+    }
+
+    return sum / total;
+}
+
 #endif

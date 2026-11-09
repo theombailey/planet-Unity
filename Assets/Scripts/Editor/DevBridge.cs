@@ -15,13 +15,16 @@
 //           view on|off [field] [channel] [edges on|off] [grid on|off]   field debug view
 //           paint corner|edge radius amount   paint at the cube corner/edge facing the camera
 //           camera yaw pitch distance         jump the desk camera
-//           preset <index>                    switch quality preset (0 Low, 1 Medium, 2 High)
+//           status                            play / pause state, frame count and frame time
+//           timescale 0|1|4|16               set the sim speed (Play mode)
+//           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
 //           probe <field> <face> <x> <y>      read one field texel back from the GPU
 //           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
 //           ink on|off      enable / disable the fullscreen ink + paper pass
 //           shader-errors    list compile errors / warnings of every shader in Assets/Shaders
 //           capture [w h]    render the main camera to Logs/DevBridge/capture.png
-//           run-tests        run all EditMode tests, write a pass/fail summary
+//           run-tests [name] run all EditMode tests (or those whose name contains [name]),
+//                            write a pass/fail summary
 //           play / stop      enter / leave Play mode
 // Note    : The Logs folder is git-ignored, so none of these files are part of
 //           the project. This class is not used by the game itself.
@@ -111,6 +114,23 @@ namespace Terrarium.EditorTools
                     WriteResult(PaintAtCubeFeature(parts));
                     break;
 
+                case "status":
+                    WriteResult($"playing={EditorApplication.isPlaying} paused={EditorApplication.isPaused} frame={Time.frameCount} " +
+                                $"realtime={Time.realtimeSinceStartup:0.0}s unscaledDelta={Time.unscaledDeltaTime * 1000f:0.0}ms focused={UnityEditorInternal.InternalEditorUtility.isApplicationActive}");
+                    break;
+
+                case "timescale":
+                    var clockOwner = UnityEngine.Object.FindFirstObjectByType<SimRoot>();
+                    if (clockOwner == null || parts.Length < 2 || !EditorApplication.isPlaying)
+                    {
+                        WriteResult("error: usage 'timescale 0|1|4|16' in Play mode");
+                        break;
+                    }
+
+                    clockOwner.Clock.SetTimeScale(int.Parse(parts[1]));
+                    WriteResult($"ok: time scale {clockOwner.Clock.TimeScale}, sim time {clockOwner.Clock.SimTimeSeconds:0.0} s, year {clockOwner.Clock.YearIndex} phase {clockOwner.Clock.YearPhase:0.00}");
+                    break;
+
                 case "preset":
                     var simRoot = UnityEngine.Object.FindFirstObjectByType<SimRoot>();
                     if (simRoot == null || parts.Length < 2 || !EditorApplication.isPlaying)
@@ -155,7 +175,7 @@ namespace Terrarium.EditorTools
                     break;
 
                 case "run-tests":
-                    RunEditModeTests();
+                    RunEditModeTests(parts.Length > 1 ? parts[1] : null);
                     break;
 
                 case "play":
@@ -421,7 +441,7 @@ namespace Terrarium.EditorTools
             return $"ok: captured {width}x{height} from '{camera.name}' (playing: {EditorApplication.isPlaying})";
         }
 
-        private static void RunEditModeTests()
+        private static void RunEditModeTests(string nameFilter)
         {
             if (testRunner == null)
             {
@@ -429,8 +449,15 @@ namespace Terrarium.EditorTools
                 testRunner.RegisterCallbacks(new TestSummaryWriter());
             }
 
+            // With a name, only tests whose full name contains it are run (it is used as a regex).
+            var filter = new Filter { testMode = TestMode.EditMode };
+            if (!string.IsNullOrEmpty(nameFilter))
+            {
+                filter.groupNames = new[] { ".*" + nameFilter + ".*" };
+            }
+
             WriteResult("ok: tests started");
-            testRunner.Execute(new ExecutionSettings(new Filter { testMode = TestMode.EditMode }));
+            testRunner.Execute(new ExecutionSettings(filter));
         }
 
         private static void WriteResult(string text)

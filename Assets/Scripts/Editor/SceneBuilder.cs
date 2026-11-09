@@ -40,6 +40,7 @@ namespace Terrarium.EditorTools
         private const string MeshFolder = "Assets/Meshes/Generated";
         private const string PropsShaderName = "Terrarium/Props";
         private const string DeskShaderName = "Terrarium/Desk";
+        private const string PlanetShaderName = "Terrarium/PlanetSurface";
 
         /// <summary>Describes one placeholder tool prop on the desk.</summary>
         private readonly struct ToolProp
@@ -203,16 +204,8 @@ namespace Terrarium.EditorTools
             planet.transform.localScale = Vector3.one * config.planetRadius;
 
             planet.AddComponent<MeshFilter>();
-            planet.AddComponent<MeshRenderer>().sharedMaterial = GetMaterial("Planet", new Color(0.45f, 0.52f, 0.42f));
+            planet.AddComponent<MeshRenderer>().sharedMaterial = GetOrCreateMaterial("Planet", PlanetShaderName);
             SetReference(planet.AddComponent<PlanetMesh>(), "simRoot", simRoot);
-
-            // Two markers fixed to the surface so spin and tilt are visible while the planet is still
-            // plain: one on the north pole, one on the equator. Removed when real terrain arrives.
-            Material markerMaterial = GetMaterial("PlanetMarker", new Color(0.75f, 0.30f, 0.20f));
-            CreatePrimitive("Marker_NorthPole", PrimitiveType.Cylinder, planet.transform,
-                config.PlanetRestCentre + Vector3.up * config.planetRadius, Quaternion.identity, new Vector3(0.05f, 0.06f, 0.05f), markerMaterial);
-            CreatePrimitive("Marker_Equator", PrimitiveType.Cube, planet.transform,
-                config.PlanetRestCentre + Vector3.back * config.planetRadius, Quaternion.identity, Vector3.one * 0.12f, markerMaterial);
 
             var motion = planet.AddComponent<PlanetMotion>();
             SetReference(motion, "simRoot", simRoot);
@@ -220,7 +213,7 @@ namespace Terrarium.EditorTools
             return planet;
         }
 
-        /// <summary>Adds the field storage, the field debug view and the debug brush to the Simulation object.</summary>
+        /// <summary>Adds the field storage, climate, sim loop, field debug view and debug brush to the Simulation object.</summary>
         private static void BuildFields(SimRoot simRoot, GameObject planet)
         {
             GameObject host = simRoot.gameObject;
@@ -228,6 +221,18 @@ namespace Terrarium.EditorTools
             var fieldSet = host.AddComponent<FieldSet>();
             SetReference(fieldSet, "simRoot", simRoot);
             SetReference(fieldSet, "fieldInit", LoadAsset<ComputeShader>("Assets/Shaders/Compute/FieldInit.compute"));
+
+            // Climate: needs the fields, the lamp (for insolation) and the two compute shaders.
+            var climate = host.AddComponent<ClimateController>();
+            SetReference(climate, "simRoot", simRoot);
+            SetReference(climate, "fieldSet", fieldSet);
+            SetReference(climate, "lamp", GameObject.Find("LampLight").transform);
+            SetReference(climate, "fieldInit", LoadAsset<ComputeShader>("Assets/Shaders/Compute/FieldInit.compute"));
+            SetReference(climate, "climateShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Climate.compute"));
+
+            var loop = host.AddComponent<SimLoop>();
+            SetReference(loop, "simRoot", simRoot);
+            SetReference(loop, "climate", climate);
 
             var view = host.AddComponent<FieldDebugView>();
             SetReference(view, "fieldSet", fieldSet);
@@ -243,6 +248,7 @@ namespace Terrarium.EditorTools
             SetReference(brush, "brushShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Brush.compute"));
             SetReference(brush, "panel", panel);
 
+            SetReference(panel, "climate", climate);
             SetReference(panel, "fieldView", view);
             SetReference(panel, "debugBrush", brush);
         }

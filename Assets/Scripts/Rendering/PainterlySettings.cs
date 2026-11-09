@@ -1,8 +1,9 @@
 // =============================================================================
 // PainterlySettings
 // -----------------------------------------------------------------------------
-// Purpose : Sends the painterly look's numbers from SimConfig to the shaders,
-//           and holds the on/off switches the debug panel flips.
+// Purpose : Sends the painterly look's numbers from SimConfig to the shaders
+//           (plus the planet's terrain relief scale), and holds the on/off
+//           switches the debug panel flips.
 //
 // Idea    : Every painterly shader reads the same handful of GLOBAL shader
 //           values (ink colour, band count, hatch spacing...). Globals are set
@@ -64,6 +65,7 @@ namespace Terrarium.Rendering
         private static readonly int OutlineWobbleId = Shader.PropertyToID("_PainterlyOutlineWobble");
         private static readonly int PaperStrengthId = Shader.PropertyToID("_PainterlyPaperStrength");
         private static readonly int VignetteId = Shader.PropertyToID("_PainterlyVignette");
+        private static readonly int PlanetHeightScaleId = Shader.PropertyToID("_PlanetHeightScale");
         private static readonly int BoilSeedId = Shader.PropertyToID("_PainterlyBoilSeed");
         private static readonly int BandsEnabledId = Shader.PropertyToID("_PainterlyBandsEnabled");
         private static readonly int HatchEnabledId = Shader.PropertyToID("_PainterlyHatchEnabled");
@@ -109,6 +111,7 @@ namespace Terrarium.Rendering
             Shader.SetGlobalFloat(OutlineWobbleId, config.outlineWobble);
             Shader.SetGlobalFloat(PaperStrengthId, config.paperGrainStrength);
             Shader.SetGlobalFloat(VignetteId, config.vignetteStrength);
+            Shader.SetGlobalFloat(PlanetHeightScaleId, config.terrainHeightScale);
 
             bool boiling = BoilEnabled && Application.isPlaying;
             Shader.SetGlobalFloat(BoilSeedId, boiling ? Mathf.Floor(Time.unscaledTime * config.boilRateHz) : 0f);

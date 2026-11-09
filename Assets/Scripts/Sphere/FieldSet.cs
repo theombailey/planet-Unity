@@ -23,11 +23,15 @@
 //   Trail    R     physarum trail strength                               ping-pong
 //   Brush    RGBA  transient tool paint
 //
-// Lifetime: textures are created in Start (after SimRoot has chosen a preset),
-//           rebuilt if the preset's resolution changes, re-initialised when
-//           the seed changes (a preset change keeps the contents, resampled
-//           to the new resolution), and released in OnDisable so entering and
-//           leaving Play mode never leaks GPU memory.
+// Lifetime: textures are created in Start (after SimRoot has chosen a preset).
+//           A preset change rebuilds them at the new resolution and carries
+//           the contents over. A new seed clears them and raises WorldReset,
+//           which the systems answer by generating a fresh world (FieldSet
+//           itself only stores; it does not know how terrain is made). They
+//           are released in OnDisable so Play mode never leaks GPU memory.
+// Shaders : the current textures are published as global shader textures
+//           (_TerrainField, _ClimateField, _SoilField, _TrailField) with
+//           _FieldResolution, so the planet's surface shader can read them.
 // =============================================================================
 
 using System;
@@ -119,7 +123,16 @@ namespace Terrarium.Sphere
                 if (texture != null)
                 {
                     texture.Release();
-                    UnityEngine.Object.Destroy(texture);
+
+                    // Destroy is for Play mode; in the editor (tests) only DestroyImmediate is allowed.
+                    if (Application.isPlaying)
+                    {
+                        UnityEngine.Object.Destroy(texture);
+                    }
+                    else
+                    {
+                        UnityEngine.Object.DestroyImmediate(texture);
+                    }
                 }
             }
         }
@@ -128,12 +141,16 @@ namespace Terrarium.Sphere
     /// <summary>Creates, initialises and owns all simulation fields.</summary>
     public sealed class FieldSet : MonoBehaviour
     {
-        private const int ThreadGroupSize = 8;
+        private static readonly int TerrainFieldId = Shader.PropertyToID("_TerrainField");
+        private static readonly int ClimateFieldId = Shader.PropertyToID("_ClimateField");
+        private static readonly int SoilFieldId = Shader.PropertyToID("_SoilField");
+        private static readonly int TrailFieldId = Shader.PropertyToID("_TrailField");
+        private static readonly int FieldResolutionId = Shader.PropertyToID("_FieldResolution");
 
         [Tooltip("The simulation: gives the quality preset (field resolution) and the seed.")]
         [SerializeField] private SimRoot simRoot;
 
-        [Tooltip("FieldInit.compute: clears and initialises fields.")]
+        [Tooltip("FieldInit.compute: clears fields and carries them over to a new resolution.")]
         [SerializeField] private ComputeShader fieldInit;
 
         private Field[] fields = Array.Empty<Field>();
@@ -141,6 +158,13 @@ namespace Terrarium.Sphere
 
         /// <summary>Raised after the fields have been (re)created, so users re-fetch their textures.</summary>
         public event Action Rebuilt;
+
+        /// <summary>
+        /// Raised when the fields have been cleared for a brand-new world (first start, or a new seed),
+        /// so systems can generate their starting contents. Not raised when a preset change carries the
+        /// existing world over to a new resolution.
+        /// </summary>
+        public event Action WorldReset;
 
         /// <summary>Texels along one face edge, from the active quality preset.</summary>
         public int Resolution { get; private set; }
@@ -201,7 +225,7 @@ namespace Terrarium.Sphere
 
         private void HandleSeedChanged(int seed)
         {
-            Initialise(seed);
+            Initialise();
         }
 
         private void Build()
@@ -222,13 +246,10 @@ namespace Terrarium.Sphere
             };
 
             ClearAll();
-            if (previous.Length == fields.Length)
+            bool carriedOver = previous.Length == fields.Length;
+            if (carriedOver)
             {
                 CarryOver(previous);
-            }
-            else
-            {
-                WriteTestPattern(simRoot.ActiveSeed);
             }
 
             foreach (Field field in previous)
@@ -236,72 +257,62 @@ namespace Terrarium.Sphere
                 field.Release();
             }
 
+            PublishToShaders();
             Rebuilt?.Invoke();
+            if (!carriedOver)
+            {
+                WorldReset?.Invoke();
+            }
         }
 
-        /// <summary>Starts a new world: clears every field, then writes the test pattern into Terrain.</summary>
-        private void Initialise(int seed)
+        /// <summary>Starts a new world: clears every field and asks the systems to fill them in.</summary>
+        private void Initialise()
         {
             ClearAll();
-            WriteTestPattern(seed);
+            WorldReset?.Invoke();
+        }
+
+        private void Update()
+        {
+            PublishToShaders();
+        }
+
+        /// <summary>
+        /// Makes the fields visible to every material as global shader textures. Done each frame
+        /// because a ping-pong field's Current texture changes whenever it swaps.
+        /// </summary>
+        private void PublishToShaders()
+        {
+            if (fields.Length == 0)
+            {
+                return;
+            }
+
+            Shader.SetGlobalTexture(TerrainFieldId, Get(FieldId.Terrain).Current);
+            Shader.SetGlobalTexture(ClimateFieldId, Get(FieldId.Climate).Current);
+            Shader.SetGlobalTexture(SoilFieldId, Get(FieldId.Soil).Current);
+            Shader.SetGlobalTexture(TrailFieldId, Get(FieldId.Trail).Current);
+            Shader.SetGlobalFloat(FieldResolutionId, Resolution);
         }
 
         private void ClearAll()
         {
-            int kernel = fieldInit.FindKernel("Clear");
-            fieldInit.SetInt("_Resolution", Resolution);
-
             foreach (Field field in fields)
             {
                 foreach (RenderTexture texture in field.Buffers)
                 {
-                    fieldInit.SetTexture(kernel, "_Target", texture);
-                    Dispatch(kernel);
+                    FieldOps.Clear(fieldInit, texture);
                 }
             }
-        }
-
-        private void WriteTestPattern(int seed)
-        {
-            int kernel = fieldInit.FindKernel("InitTestPattern");
-            fieldInit.SetInt("_Resolution", Resolution);
-            fieldInit.SetFloat("_Seed", seed);
-            fieldInit.SetTexture(kernel, "_Target", Get(FieldId.Terrain).Current);
-            Dispatch(kernel);
         }
 
         /// <summary>Copies each old field into the new, differently sized one by looking it up direction by direction.</summary>
         private void CarryOver(Field[] previous)
         {
-            int kernel4 = fieldInit.FindKernel("Resample4");
-            int kernel1 = fieldInit.FindKernel("Resample1");
-            fieldInit.SetInt("_Resolution", Resolution);
-
             for (int i = 0; i < fields.Length; i++)
             {
-                RenderTexture source = previous[i].Current;
-                RenderTexture target = fields[i].Current;
-                fieldInit.SetInt("_SourceResolution", source.width);
-
-                if (target.format == RenderTextureFormat.RFloat)
-                {
-                    fieldInit.SetTexture(kernel1, "_Source1", source);
-                    fieldInit.SetTexture(kernel1, "_Target1", target);
-                    Dispatch(kernel1);
-                }
-                else
-                {
-                    fieldInit.SetTexture(kernel4, "_Source4", source);
-                    fieldInit.SetTexture(kernel4, "_Target4", target);
-                    Dispatch(kernel4);
-                }
+                FieldOps.Resample(fieldInit, previous[i].Current, fields[i].Current);
             }
-        }
-
-        private void Dispatch(int kernel)
-        {
-            int groups = (Resolution + ThreadGroupSize - 1) / ThreadGroupSize;
-            fieldInit.Dispatch(kernel, groups, groups, CubeSphere.FaceCount);
         }
 
         private void ReleaseAll()

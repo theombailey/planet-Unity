@@ -30,11 +30,32 @@ MonoBehaviour:
   backgroundColor: {r: 0.045, g: 0.04, b: 0.036, a: 1}
   toolArcRadii: {x: 2.2, y: 1.35}
   levitationRingRadius: 0.8
+  landFraction: 0.38
+  continentFrequency: 1.1
+  terrainOctaves: 5
+  ridgeFrequency: 2.6
+  ridgeAmount: 0.45
+  reliefSpan: 0.6
+  terrainHeightScale: 0.035
+  baseTemperature: 12
+  sunGain: 150
+  altitudeLapse: 25
+  latitudeCooling: 28
+  landResponse: 0.08
+  oceanResponse: 0.02
+  heatDiffusion: 0.0002
+  moistureDiffusion: 0.0002
+  evaporation: 0.0022
+  weatherRate: 0.004
+  nutrientCap: 1
+  climateSpinUpSeconds: 600
+  spinUpResolution: 64
+  climateSettleSeconds: 20
   planetMeshSubdivisions: 128
   debugBrushRadius: 0.18
   debugBrushStrength: 1.5
   inkColor: {r: 0.1, g: 0.07, b: 0.08, a: 1}
-  toneExposure: 0.85
+  toneExposure: 1
   bandCount: 4
   bandSoftness: 0.07
   bandWobble: 0.45
@@ -64,6 +85,6 @@ MonoBehaviour:
   cameraSpringOmega: 9
   dayLengthSeconds: 24
   yearLengthDays: 10
-  axialTiltDegrees: 23
+  axialTiltDegrees: 32
   fixedStepSeconds: 0.016666668
   maxStepsPerFrame: 16

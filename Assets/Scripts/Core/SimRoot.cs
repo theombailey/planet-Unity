@@ -5,10 +5,8 @@
 //           state: which SimConfig is in use, which QualityPreset is active,
 //           the current seed, and the SimClock.
 // Idea    : Other systems are handed a SimRoot and read from it, so there are
-//           no hidden globals. As later phases add systems (climate, physarum,
-//           trees, boids), the per-step tick order from the spec is driven from
-//           here: each frame the clock says how many fixed steps to run, and
-//           each step calls the systems in order.
+//           no hidden globals. SimRoot only HOLDS state; the per-frame work of
+//           advancing the clock and running the systems in order is SimLoop's.
 // Runtime state kept here (not in the SimConfig asset, which is read-only):
 //           ActiveSeed, ActivePresetIndex, Clock.
 // =============================================================================
@@ -71,11 +69,14 @@ namespace Terrarium
             ActivePresetIndex = Mathf.Clamp(startingPresetIndex, 0, presets.Length - 1);
         }
 
-        private void Update()
+        /// <summary>
+        /// Feeds one frame of real time into the clock and returns how many fixed steps to run.
+        /// Called once per frame by SimLoop, which then runs the systems that many times.
+        /// </summary>
+        public int AdvanceClock(float realDeltaSeconds)
         {
-            // Unscaled real time: the sim's speed is set by the SimClock dial only,
-            // never by Unity's own Time.timeScale.
-            StepsLastFrame = Clock.Advance(Time.unscaledDeltaTime);
+            StepsLastFrame = Clock.Advance(realDeltaSeconds);
+            return StepsLastFrame;
         }
 
         /// <summary>Switches to another quality preset and tells listeners to rebuild.</summary>

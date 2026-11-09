@@ -124,6 +124,7 @@ namespace Terrarium.Sphere
         public void SelectChannel(int channel)
         {
             ViewedChannel = Mathf.Clamp(channel, 0, 4);
+            ResetRange();
             ApplyMaterial();
         }
 
@@ -167,7 +168,11 @@ namespace Terrarium.Sphere
                 SelectField((FieldId)pickedField);
             }
 
-            ViewedChannel = GUILayout.Toolbar(ViewedChannel, ChannelNames);
+            int pickedChannel = GUILayout.Toolbar(ViewedChannel, ChannelNames);
+            if (pickedChannel != ViewedChannel)
+            {
+                SelectChannel(pickedChannel);
+            }
 
             GUILayout.Label($"Range  {RangeMin:0.00} to {RangeMax:0.00}");
             RangeMin = GUILayout.HorizontalSlider(RangeMin, -50f, 50f);
@@ -179,11 +184,21 @@ namespace Terrarium.Sphere
             GUILayout.EndHorizontal();
         }
 
+        // Sets the colour ramp to the usual range of what is being viewed. The sliders adjust it.
         private void ResetRange()
         {
-            // Every field starts with a 0..1 ramp; later phases set better per-field ranges. The sliders adjust it.
             RangeMin = 0f;
             RangeMax = 1f;
+
+            if (ViewedChannel == 0 && ViewedField == FieldId.Terrain)
+            {
+                RangeMin = -1f;   // height: sea floor -1, shoreline 0, peaks 1
+            }
+            else if (ViewedChannel == 0 && ViewedField == FieldId.Climate)
+            {
+                RangeMin = -30f;  // temperature in deg C
+                RangeMax = 45f;
+            }
         }
     }
 }

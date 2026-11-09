@@ -2,8 +2,8 @@
 // DebugPanel
 // -----------------------------------------------------------------------------
 // Purpose : The F1 developer panel: frame rate, sim clock, time-scale dial,
-//           quality preset selector, painterly effect toggles, field debug view
-//           and brush controls, and seed controls.
+//           quality preset selector, painterly effect toggles, terrain and
+//           climate controls, field debug view and brush controls, and seed controls.
 // Idea    : Drawn with Unity's built-in immediate-mode GUI (OnGUI), so it needs
 //           no packages and no scene setup. It only calls public methods on
 //           SimRoot / SimClock; it holds no simulation state of its own.
@@ -14,6 +14,7 @@
 //           readout text is still only rebuilt a few times a second.
 // =============================================================================
 
+using Terrarium.Climate;
 using Terrarium.Interaction;
 using Terrarium.Rendering;
 using Terrarium.Sphere;
@@ -39,6 +40,9 @@ namespace Terrarium
 
         [Tooltip("The debug brush controls shown on the panel (optional).")]
         [SerializeField] private DebugBrush debugBrush;
+
+        [Tooltip("The terrain and climate controls shown on the panel (optional).")]
+        [SerializeField] private ClimateController climate;
 
         [Tooltip("Whether the panel is showing when Play starts.")]
         [SerializeField] private bool visible = true;
@@ -142,6 +146,12 @@ namespace Terrarium
                 painterly.PaperEnabled = GUILayout.Toggle(painterly.PaperEnabled, "Paper");
                 painterly.BoilEnabled = GUILayout.Toggle(painterly.BoilEnabled, "Boil");
                 GUILayout.EndHorizontal();
+            }
+
+            if (climate != null)
+            {
+                GUILayout.Label("Terrain and climate");
+                climate.OnDebugGui();
             }
 
             if (fieldView != null)

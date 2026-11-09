@@ -1,61 +1,100 @@
 // =============================================================================
 // FieldInit.compute
 // -----------------------------------------------------------------------------
-// Purpose : Fills a cube-sphere field (a 6-slice texture array) with starting
-//           contents.
+// Purpose : Creates the starting contents of the cube-sphere fields: clearing,
+//           carrying a field over to a new resolution, and generating terrain.
 //
 // Kernels :
-//   Clear           - sets every channel of every texel to zero.
-//   Resample4/1     - copies a field into one of a different resolution (4-channel / 1-channel).
-//   InitTestPattern - writes a recognisable test image used to check the
-//                     cube-sphere infrastructure (Phase 3). Phase 4 replaces it
-//                     with real terrain.
+//   Clear            - sets every channel of every texel to zero.
+//   Resample4/1      - copies a field into one of a different resolution
+//                      (4-channel / 1-channel), used when the quality preset changes.
+//   TerrainRaw       - step 1 of terrain: raw noise height per texel + a histogram.
+//   TerrainSeaLevel  - step 2: finds the sea level from the histogram (one thread).
+//   TerrainFinalise  - step 3: turns raw height into final height around sea level.
 //
-// Idea (test pattern): three channels, each answering a different question
-//   R  smooth 3D noise sampled at the texel's direction. If the face mapping
-//      or the seam handling were wrong, this smooth pattern would show a
-//      visible break along a face edge. It must look seamless.
-//   G  checkerboard: 1 where (x + y) is odd. Shows individual texels when
-//      zoomed in, and the checker keeps its rhythm across a seam.
-//   B  face index / 5. Makes each face a different shade, so the six faces and
-//      their layout can be seen at a glance.
+// Idea (terrain): continents are 3D fractal noise sampled at each texel's
+//   direction on the sphere. Because the noise lives in 3D space and the sphere
+//   just cuts through it, there are no seams and no pole distortion. Mountain
+//   chains are added with ridged noise, only where the ground is already high.
 //
-// Equations: R = Fbm( direction * 2.5 + seed ),   G = (x + y) mod 2,   B = face / 5
+//   The user chooses a LAND FRACTION (say 38% land). Noise does not come with a
+//   known distribution, so instead of guessing a threshold we measure it, on the
+//   GPU, with no readback:
+//     1. TerrainRaw writes each texel's raw value and counts it into one of
+//        1024 histogram bins (InterlockedAdd makes the shared counting safe).
+//     2. TerrainSeaLevel walks the histogram from the highest bin down until it
+//        has passed landFraction of all texels. That bin's value is sea level.
+//     3. TerrainFinalise subtracts sea level and scales, so height 0 is the
+//        shoreline, land runs 0..1 and sea floor 0..-1.
+//
+// Equations:
+//   raw    = Fbm(d * f + offset) + ridgeAmount * RidgedFbm(d * fr + offset) * smoothstep(0.45, 0.65, Fbm)
+//   bin    = floor( raw / HISTOGRAM_RANGE * 1024 )
+//   sea    = raw value of the bin where the top-down running count reaches landFraction * total
+//   height = clamp( (raw - sea) / reliefSpan, -1, 1 )
+//   hardness (G channel) = separate low-frequency noise, 0..1 (how rock-like the ground is)
 //
 // Parameters:
-//   _Resolution - texels along one face edge.
-//   _Seed       - shifts the noise so a new seed gives a new pattern.
+//   _Resolution        texels along one face edge
+//   _SourceResolution  (Resample) resolution of the field being copied from
+//   _SeedOffset        shifts the noise; derived from the world seed on the CPU
+//   _ContinentFrequency (f), _TerrainOctaves, _RidgeFrequency (fr), _RidgeAmount
+//   _LandFraction      0..1, share of the surface above sea level
+//   _ReliefSpan        raw-noise distance that maps to a height of 1
 //
 // Buffers & textures:
-//   _Target - RWTexture2DArray<float4>, 6 slices (slice = face), written.
+//   _Target            RWTexture2DArray<float4>, 6 slices, written (Clear, Terrain*)
+//   _Source4/_Target4, _Source1/_Target1   Resample source (read) and target (written)
+//   _Histogram         RWStructuredBuffer<uint>[1024], must be zeroed before TerrainRaw
+//   _SeaLevel          RWStructuredBuffer<float>[1], written by TerrainSeaLevel,
+//                      read by TerrainFinalise
 // =============================================================================
 
 #pragma kernel Clear
-#pragma kernel InitTestPattern
 #pragma kernel Resample4
 #pragma kernel Resample1
+#pragma kernel TerrainRaw
+#pragma kernel TerrainSeaLevel
+#pragma kernel TerrainFinalise
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 #include "Assets/Shaders/Include/Noise.hlsl"
 
+#define HISTOGRAM_BINS 1024
+#define HISTOGRAM_RANGE 2.0
+
 RWTexture2DArray<float4> _Target;
 int _Resolution;
-float _Seed;
 
-// Resample kernels: copy a field of one resolution into a field of another.
 Texture2DArray<float4> _Source4;
 RWTexture2DArray<float4> _Target4;
 Texture2DArray<float> _Source1;
 RWTexture2DArray<float> _Target1;
 int _SourceResolution;
 
+float3 _SeedOffset;
+float _ContinentFrequency;
+int _TerrainOctaves;
+float _RidgeFrequency;
+float _RidgeAmount;
+float _LandFraction;
+float _ReliefSpan;
+
+RWStructuredBuffer<uint> _Histogram;
+RWStructuredBuffer<float> _SeaLevel;
+
 CS_DEFINE_SAMPLER(CS_SampleField4, Texture2DArray<float4>, float4)
 CS_DEFINE_SAMPLER(CS_SampleField1, Texture2DArray<float>, float)
+
+bool OutsideField(uint3 id)
+{
+    return id.x >= (uint)_Resolution || id.y >= (uint)_Resolution;
+}
 
 [numthreads(8, 8, 1)]
 void Clear(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    if (OutsideField(id))
     {
         return;
     }
@@ -66,11 +105,11 @@ void Clear(uint3 id : SV_DispatchThreadID)
 // Resample4 / Resample1: for each texel of the NEW field, look up the OLD field at that texel's
 // direction with the seam-correct bilinear sampler. Used when the quality preset changes the field
 // resolution, so painted and simulated state carries over instead of being thrown away.
-// (Going to a coarser grid averages nothing: it samples, so very fine detail is lost, which is expected.)
+// (Going to a coarser grid samples rather than averages, so detail finer than a texel is lost.)
 [numthreads(8, 8, 1)]
 void Resample4(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    if (OutsideField(id))
     {
         return;
     }
@@ -82,7 +121,7 @@ void Resample4(uint3 id : SV_DispatchThreadID)
 [numthreads(8, 8, 1)]
 void Resample1(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    if (OutsideField(id))
     {
         return;
     }
@@ -91,19 +130,58 @@ void Resample1(uint3 id : SV_DispatchThreadID)
     _Target1[id] = CS_SampleField1(_Source1, direction, _SourceResolution);
 }
 
+// Step 1: raw noise height into R, rock hardness into G, and count R into the histogram.
 [numthreads(8, 8, 1)]
-void InitTestPattern(uint3 id : SV_DispatchThreadID)
+void TerrainRaw(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    if (OutsideField(id))
     {
         return;
     }
 
     float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
 
-    float smoothNoise = Fbm(direction * 2.5 + _Seed * 0.173, 4);
-    float checker = (float)((id.x + id.y) & 1u);
-    float faceShade = (float)id.z / 5.0;
+    float continents = Fbm(direction * _ContinentFrequency + _SeedOffset, _TerrainOctaves);
+    float ridges = RidgedFbm(direction * _RidgeFrequency + _SeedOffset.zxy, 4);
+    float raw = continents + _RidgeAmount * ridges * smoothstep(0.45, 0.65, continents);
 
-    _Target[id] = float4(smoothNoise, checker, faceShade, 1.0);
+    float hardness = Fbm(direction * (_ContinentFrequency * 2.3) + _SeedOffset.yzx, 3);
+
+    _Target[id] = float4(raw, hardness, 0.0, 0.0);
+
+    uint bin = (uint)clamp(raw / HISTOGRAM_RANGE * HISTOGRAM_BINS, 0.0, HISTOGRAM_BINS - 1.0);
+    InterlockedAdd(_Histogram[bin], 1u);
+}
+
+// Step 2: one thread walks the histogram from the top to find the sea level.
+[numthreads(1, 1, 1)]
+void TerrainSeaLevel(uint3 id : SV_DispatchThreadID)
+{
+    uint total = (uint)(_Resolution * _Resolution * 6);
+    uint wanted = (uint)(saturate(_LandFraction) * total);
+
+    uint count = 0u;
+    int bin = HISTOGRAM_BINS - 1;
+    while (bin > 0 && count < wanted)
+    {
+        count += _Histogram[bin];
+        bin--;
+    }
+
+    // `bin` is now the first bin BELOW the land; its upper edge is the shoreline.
+    _SeaLevel[0] = (bin + 1.0) / HISTOGRAM_BINS * HISTOGRAM_RANGE;
+}
+
+// Step 3: final height. 0 = shoreline, 0..1 land, -1..0 sea floor.
+[numthreads(8, 8, 1)]
+void TerrainFinalise(uint3 id : SV_DispatchThreadID)
+{
+    if (OutsideField(id))
+    {
+        return;
+    }
+
+    float4 value = _Target[id];
+    float height = clamp((value.r - _SeaLevel[0]) / _ReliefSpan, -1.0, 1.0);
+    _Target[id] = float4(height, value.g, 0.0, 0.0);
 }

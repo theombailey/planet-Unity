@@ -83,10 +83,26 @@ namespace Terrarium
         public int YearIndex => (int)Math.Floor(SimTimeSeconds / YearLengthSeconds);
 
         /// <summary>Planet spin about its own axis, in radians: 2*pi * dayPhase.</summary>
-        public float SpinAngleRadians => 2f * Mathf.PI * DayPhase;
+        public float SpinAngleRadians => SpinAngleRadiansAt(SimTimeSeconds);
 
         /// <summary>Lean of the north pole toward the lamp, in radians: epsilon * sin(2*pi * yearPhase).</summary>
-        public float LeanRadians => config.axialTiltDegrees * Mathf.Deg2Rad * Mathf.Sin(2f * Mathf.PI * YearPhase);
+        public float LeanRadians => LeanRadiansAt(SimTimeSeconds);
+
+        /// <summary>
+        /// Spin angle at a given sim time. Lets each fixed step of a multi-step frame use its own
+        /// exact time rather than the time at the end of the frame.
+        /// </summary>
+        public float SpinAngleRadiansAt(double simTimeSeconds)
+        {
+            return 2f * Mathf.PI * Frac(simTimeSeconds / config.dayLengthSeconds);
+        }
+
+        /// <summary>Axis lean toward the lamp at a given sim time.</summary>
+        public float LeanRadiansAt(double simTimeSeconds)
+        {
+            float yearPhase = Frac(simTimeSeconds / YearLengthSeconds);
+            return config.axialTiltDegrees * Mathf.Deg2Rad * Mathf.Sin(2f * Mathf.PI * yearPhase);
+        }
 
         /// <summary>Sets the speed multiplier. Negative values are treated as 0 (paused).</summary>
         public void SetTimeScale(int timeScale)

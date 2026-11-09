@@ -1,0 +1,210 @@
+// =============================================================================
+// Climate.compute
+// -----------------------------------------------------------------------------
+// Purpose : One step of the planet's climate: how much lamp light each texel
+//           gets, its temperature, its moisture, and how fast its rock weathers
+//           into nutrients. Nothing here knows about "seasons" or "day and
+//           night"; they appear by themselves because the planet's rotation
+//           (spin + axis lean, from PlanetOrientation.cs) changes which texels
+//           face the lamp.
+//
+// Kernels :
+//   InitClimate - a plausible starting climate, so the world does not begin at
+//                 a uniform temperature and take minutes to settle.
+//   ClimateStep - advances the climate by one fixed step.
+//
+// Idea & equations (per texel; d = texel direction in the planet's own frame):
+//
+//   INSOLATION (how directly the lamp shines on the ground; a Lambert term)
+//     n = R d                         R = planet rotation: local -> world
+//     p = centre + radius * n         the texel's world position
+//     insolation = max(0, n . normalize(lamp - p))
+//     The lamp's real position is used, the same one the renderer lights with,
+//     so the lit side you see is exactly the side that warms.
+//
+//   TEMPERATURE (relaxes toward a target, with inertia, plus diffusion)
+//     T_target = T_base + k_sun * insolation - k_alt * max(0, height) - k_lat * d.y^2
+//     T += (T_target - T) * response * dt        response: land fast, ocean slow
+//     T += (mean of 4 neighbours - T) * kT       kT = min(D_T * dt / h^2, 0.2)
+//     "response" is thermal inertia: with a small value the ground lags behind
+//     the lamp, so nights stay warm for a while and oceans barely notice the
+//     day at all but do follow the seasons. d.y^2 is sin^2(latitude): a little
+//     extra cooling toward the poles (thin air, low sun) to keep ice caps.
+//
+//   MOISTURE
+//     ocean:  M = 1 (always saturated)
+//     land:   M += (mean of 4 neighbours - M) * kM          spreads inland from the sea
+//             M -= M * evaporation * saturate(T / 30) * dt  dries faster when hot
+//     frozen land (T < 0): neither term is applied, so moisture is held as ice
+//     and released, unchanged, when the texel thaws.
+//     Balance of the two gives wet coasts fading to dry interiors over a
+//     distance of about sqrt(D_M / evaporation) radians.
+//
+//   WEATHERING (the planet's base energy input to life: rock -> nutrients)
+//     nutrients += weatherRate * M * saturate(T / 30) * (1 - nutrients / cap) * dt
+//     Warm wet rock weathers fastest; the (1 - n/cap) factor makes it level off.
+//
+//   h is the angle one texel spans, (pi/2) / N. Dividing the diffusion constant
+//   by h^2 makes diffusion cover the same distance on the sphere at any field
+//   resolution. The explicit scheme is only stable while k <= 0.25, so
+//   ClimateSimulation.cs splits a step into enough equal sub-steps to keep
+//   k <= 0.2; the min(.., 0.2) below is only a safety net against a stray huge dt.
+//
+// Parameters (all from SimConfig "Climate"): _BaseTemperature (T_base, deg C),
+//   _SunGain (k_sun), _AltitudeLapse (k_alt), _LatitudeCooling (k_lat),
+//   _LandResponse, _OceanResponse (1/s), _HeatDiffusion (D_T, rad^2/s),
+//   _MoistureDiffusion (D_M, rad^2/s), _Evaporation (1/s), _WeatherRate (1/s),
+//   _NutrientCap. Plus _DeltaTime (sim seconds), _Resolution, _PlanetRotation,
+//   _PlanetCentre, _PlanetRadius, _LampPosition.
+//
+// Buffers & textures (6-slice arrays, slice = cube face):
+//   _Terrain       read   R height (0 = shoreline), G hardness
+//   _ClimateRead   read   R temperature, G moisture, B insolation
+//   _ClimateWrite  write  same layout (ping-pong: neighbours are read, so the
+//                         result must go to a different texture)
+//   _Soil          read+write in place, R nutrients (each thread touches only
+//                         its own texel, so in place is safe)
+// =============================================================================
+
+#pragma kernel InitClimate
+#pragma kernel ClimateStep
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+
+Texture2DArray<float4> _Terrain;
+Texture2DArray<float4> _ClimateRead;
+RWTexture2DArray<float4> _ClimateWrite;
+RWTexture2DArray<float4> _Soil;
+
+int _Resolution;
+float _DeltaTime;
+float4x4 _PlanetRotation;
+float3 _PlanetCentre;
+float _PlanetRadius;
+float3 _LampPosition;
+
+float _BaseTemperature;
+float _SunGain;
+float _AltitudeLapse;
+float _LatitudeCooling;
+float _LandResponse;
+float _OceanResponse;
+float _HeatDiffusion;
+float _MoistureDiffusion;
+float _Evaporation;
+float _WeatherRate;
+float _NutrientCap;
+
+static const float MIN_TEMPERATURE = -80.0;
+static const float MAX_TEMPERATURE = 90.0;
+static const float WARM_REFERENCE = 30.0;   // temperature at which "warmth" reaches 1
+
+bool OutsideField(uint3 id)
+{
+    return id.x >= (uint)_Resolution || id.y >= (uint)_Resolution;
+}
+
+// The temperature a texel settles at under a given insolation.
+float TargetTemperature(float insolation, float height, float3 direction)
+{
+    return _BaseTemperature
+         + _SunGain * insolation
+         - _AltitudeLapse * max(0.0, height)
+         - _LatitudeCooling * direction.y * direction.y;
+}
+
+[numthreads(8, 8, 1)]
+void InitClimate(uint3 id : SV_DispatchThreadID)
+{
+    if (OutsideField(id))
+    {
+        return;
+    }
+
+    float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+    float height = _Terrain[id].r;
+
+    // Rough day-averaged insolation: highest at the equator, falling toward the poles.
+    float averageInsolation = 0.28 * sqrt(saturate(1.0 - direction.y * direction.y));
+    float temperature = TargetTemperature(averageInsolation, height, direction);
+
+    // Wet near sea level, drier on high ground; the simulation refines this.
+    float moisture = height < 0.0 ? 1.0 : saturate(0.7 - height * 1.5);
+
+    _ClimateWrite[id] = float4(temperature, moisture, 0.0, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void ClimateStep(uint3 id : SV_DispatchThreadID)
+{
+    if (OutsideField(id))
+    {
+        return;
+    }
+
+    int3 texel = int3(id);
+    float3 direction = CS_TexelCentreDir(texel, _Resolution);
+    float height = _Terrain[id].r;
+    bool ocean = height < 0.0;
+
+    float4 here = _ClimateRead[id];
+    float temperature = here.r;
+    float moisture = here.g;
+
+    // Mean of the four axis neighbours, seam-aware.
+    float4 neighbours = (_ClimateRead[uint3(CS_NeighbourTexel(texel, int2(1, 0), _Resolution))]
+                       + _ClimateRead[uint3(CS_NeighbourTexel(texel, int2(-1, 0), _Resolution))]
+                       + _ClimateRead[uint3(CS_NeighbourTexel(texel, int2(0, 1), _Resolution))]
+                       + _ClimateRead[uint3(CS_NeighbourTexel(texel, int2(0, -1), _Resolution))]) * 0.25;
+
+    // ---- insolation -----------------------------------------------------------
+    float3 normalWS = mul((float3x3)_PlanetRotation, direction);
+    float3 positionWS = _PlanetCentre + normalWS * _PlanetRadius;
+    float insolation = saturate(dot(normalWS, normalize(_LampPosition - positionWS)));
+
+    // ---- temperature ----------------------------------------------------------
+    float texelAngle = 1.57079633 / _Resolution;
+    float inverseAngleSquared = 1.0 / (texelAngle * texelAngle);
+
+    float target = TargetTemperature(insolation, height, direction);
+    float response = ocean ? _OceanResponse : _LandResponse;
+    float heatSpread = min(_HeatDiffusion * _DeltaTime * inverseAngleSquared, 0.2);
+
+    temperature += (target - temperature) * saturate(response * _DeltaTime);
+    temperature += (neighbours.r - temperature) * heatSpread;
+
+    // A NaN would spread to every neighbour through diffusion; replace it before it can.
+    if (!(temperature == temperature))
+    {
+        temperature = _BaseTemperature;
+    }
+    temperature = clamp(temperature, MIN_TEMPERATURE, MAX_TEMPERATURE);
+
+    // ---- moisture -------------------------------------------------------------
+    float warmth = saturate(temperature / WARM_REFERENCE);
+
+    if (ocean)
+    {
+        moisture = 1.0;
+    }
+    else if (temperature >= 0.0)
+    {
+        float moistureSpread = min(_MoistureDiffusion * _DeltaTime * inverseAngleSquared, 0.2);
+        moisture += (neighbours.g - moisture) * moistureSpread;
+        moisture -= moisture * _Evaporation * warmth * _DeltaTime;
+    }
+    // else: frozen land keeps its moisture as ice.
+
+    moisture = saturate(moisture == moisture ? moisture : 0.0);
+
+    _ClimateWrite[id] = float4(temperature, moisture, insolation, 0.0);
+
+    // ---- weathering -----------------------------------------------------------
+    if (!ocean)
+    {
+        float4 soil = _Soil[id];
+        float room = saturate(1.0 - soil.r / _NutrientCap);
+        soil.r = clamp(soil.r + _WeatherRate * moisture * warmth * room * _DeltaTime, 0.0, _NutrientCap);
+        _Soil[id] = soil;
+    }
+}

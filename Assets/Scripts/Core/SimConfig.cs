@@ -79,6 +79,71 @@ namespace Terrarium
         [Tooltip("Radius of the decorative levitation ring drawn on the desk under the planet, in world units.")]
         [Range(0.1f, 2f)] public float levitationRingRadius = 0.8f;
 
+        [Header("Terrain (see FieldInit.compute)")]
+        [Tooltip("Share of the planet's surface that is land (above sea level), 0..1. Adjustable on the F1 panel.")]
+        [Range(0.1f, 0.8f)] public float landFraction = 0.38f;
+
+        [Tooltip("Size of the continents: noise blobs per planet radius. Higher = more, smaller landmasses.")]
+        [Range(0.3f, 4f)] public float continentFrequency = 1.1f;
+
+        [Tooltip("Layers of fractal noise in the continents. More = finer coastline detail.")]
+        [Range(1, 8)] public int terrainOctaves = 5;
+
+        [Tooltip("Size of mountain-range features: noise blobs per planet radius.")]
+        [Range(0.5f, 8f)] public float ridgeFrequency = 2.6f;
+
+        [Tooltip("How much ridged noise is added to the high ground to make mountain chains (0 = none).")]
+        [Range(0f, 1.5f)] public float ridgeAmount = 0.45f;
+
+        [Tooltip("Raw-noise distance above sea level that counts as height 1 (the highest peaks). Smaller = steeper, more extreme relief.")]
+        [Range(0.05f, 1f)] public float reliefSpan = 0.6f;
+
+        [Tooltip("How far the highest mountain stands above sea level, as a fraction of the planet radius (visual only).")]
+        [Range(0f, 0.1f)] public float terrainHeightScale = 0.035f;
+
+        [Header("Climate (see Climate.compute)")]
+        [Tooltip("Temperature of ground that gets no lamp light, before altitude and latitude cooling, in deg C.")]
+        [Range(-60f, 30f)] public float baseTemperature = 12f;
+
+        [Tooltip("Extra temperature at full lamp light (lamp straight overhead), in deg C.")]
+        [Range(0f, 200f)] public float sunGain = 150f;
+
+        [Tooltip("Cooling per unit of terrain height (1 = highest peak), in deg C.")]
+        [Range(0f, 80f)] public float altitudeLapse = 25f;
+
+        [Tooltip("Extra cooling at the poles, in deg C. Keeps the polar ice caps even in polar summer.")]
+        [Range(0f, 60f)] public float latitudeCooling = 28f;
+
+        [Tooltip("How fast land follows its target temperature, per sim second. Small = more thermal inertia (nights stay warm). Time constant = 1 / this.")]
+        [Range(0.005f, 1f)] public float landResponse = 0.08f;
+
+        [Tooltip("How fast ocean follows its target temperature, per sim second. Much smaller than land: water holds heat.")]
+        [Range(0.002f, 0.5f)] public float oceanResponse = 0.02f;
+
+        [Tooltip("How fast heat spreads sideways, in radians squared per sim second. ")]
+        [Range(0f, 0.0005f)] public float heatDiffusion = 0.0002f;
+
+        [Tooltip("How fast moisture spreads inland, in radians squared per sim second.")]
+        [Range(0f, 0.0005f)] public float moistureDiffusion = 0.0002f;
+
+        [Tooltip("How fast land dries at 30 deg C or warmer, per sim second. Together with the diffusion this sets how far rain-bearing air reaches inland.")]
+        [Range(0.0001f, 0.05f)] public float evaporation = 0.0022f;
+
+        [Tooltip("Rate at which warm, wet rock weathers into nutrients, per sim second. This is the planet's base energy input to life.")]
+        [Range(0f, 0.05f)] public float weatherRate = 0.004f;
+
+        [Tooltip("The most nutrients a texel's soil can hold from weathering alone.")]
+        [Range(0.1f, 5f)] public float nutrientCap = 1f;
+
+        [Tooltip("Sim seconds of climate run before the world is shown, so it does not begin at a uniform temperature. Run in 0.1 s steps.")]
+        [Range(0f, 1000f)] public float climateSpinUpSeconds = 600f;
+
+        [Tooltip("Texels per face edge of the coarse grid the long spin-up runs on. The result is then copied up to the full grid. Smaller = faster start, rougher coastlines in the starting climate.")]
+        [Range(32, 256)] public int spinUpResolution = 64;
+
+        [Tooltip("Sim seconds of the spin-up that are re-run on the full-size grid after the copy, to smooth out the coarse grid's rough coastlines.")]
+        [Range(0f, 100f)] public float climateSettleSeconds = 20f;
+
         [Header("Planet surface and debug brush (see PlanetMeshBuilder, DebugBrush)")]
         [Tooltip("Quads along one edge of each of the 6 cube faces of the planet mesh. 128 gives ~99k vertices.")]
         [Range(16, 256)] public int planetMeshSubdivisions = 128;
@@ -94,7 +159,7 @@ namespace Terrarium
         public Color inkColor = new Color(0.10f, 0.07f, 0.08f);
 
         [Tooltip("Scales raw lamp light into the 0..1 tone range before banding. Higher = more of the scene reaches the brightest band.")]
-        [Range(0.05f, 3f)] public float toneExposure = 0.85f;
+        [Range(0.05f, 3f)] public float toneExposure = 1.0f;
 
         [Tooltip("Number of flat tone steps the lighting is snapped to.")]
         [Range(2, 8)] public int bandCount = 4;
@@ -185,8 +250,8 @@ namespace Terrarium
         [Tooltip("Length of one year (one full summer-winter cycle), in planet days.")]
         [Range(2f, 60f)] public float yearLengthDays = 10f;
 
-        [Tooltip("Axial tilt epsilon, in degrees. Larger tilt = stronger seasons. Earth is about 23.")]
-        [Range(0f, 45f)] public float axialTiltDegrees = 23f;
+        [Tooltip("Axial tilt epsilon, in degrees: the latitude the lamp is overhead at midsummer. Larger tilt = stronger seasons. Earth is about 23, but the lamp is only ~2 planet radii away so it lights a cap of just ~62 degrees; the tilt must exceed ~28 for the pole to see it, giving polar day and night.")]
+        [Range(0f, 45f)] public float axialTiltDegrees = 32f;
 
         [Tooltip("Size of one simulation step, in sim seconds. Every system advances by exactly this much per step.")]
         [Range(1f / 240f, 1f / 15f)] public float fixedStepSeconds = 1f / 60f;
