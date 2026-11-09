@@ -1,37 +1,37 @@
 // =============================================================================
 // ProjectSetup (editor only)
 // -----------------------------------------------------------------------------
-// Purpose : Creates the project's data assets and its scene from code, so the
-//           whole project can be rebuilt from the scripts alone and nothing
-//           depends on hand-clicked editor setup.
-// Idea    : - SimConfig and the Low / Medium / High QualityPreset assets are
-//             created in Assets/Settings/Terrarium if they are missing.
-//             Existing assets are never overwritten, so tuning is kept.
-//           - The scene Assets/Scenes/Terrarium.unity is built from code and
-//             set as the first scene in Build Settings.
-//           Both run automatically once when the editor loads and something is
-//           missing, and can be run by hand from the Terrarium menu.
-// Presets : Medium uses the spec's defaults and is meant to be safe on an
-//           integrated or mid-range GPU. Low and High are first guesses to be
-//           tuned once the capability report from the demo machine is known.
+// Purpose : Creates the project's data assets from code, so the whole project
+//           can be rebuilt from the scripts alone and nothing depends on
+//           hand-clicked editor setup.
+// Idea    : SimConfig and the Low / Medium / High QualityPreset assets are
+//           created in Assets/Settings/Terrarium if they are missing. Existing
+//           assets are never overwritten, so tuning is kept.
+//           This runs automatically when the editor loads (and builds the scene
+//           too if it is missing), and by hand from the Terrarium menu.
+// Presets : Medium uses the spec's defaults. The development machine is an
+//           RTX 2060 (6 GB), which Medium should run comfortably; Low and High
+//           are first guesses to be tuned once the heavy systems exist and
+//           there are real frame times to measure.
 // =============================================================================
 
 using System.IO;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace Terrarium.EditorTools
 {
-    /// <summary>Builds the default assets and the Terrarium scene from code.</summary>
+    /// <summary>Creates the default SimConfig and QualityPreset assets.</summary>
     public static class ProjectSetup
     {
-        private const string SettingsFolder = "Assets/Settings/Terrarium";
-        private const string ConfigPath = SettingsFolder + "/SimConfig.asset";
-        private const string ScenePath = "Assets/Scenes/Terrarium.unity";
+        /// <summary>Folder holding the generated settings assets.</summary>
+        public const string SettingsFolder = "Assets/Settings/Terrarium";
 
-        private static readonly string[] PresetPaths =
+        /// <summary>Asset path of the SimConfig.</summary>
+        public const string ConfigPath = SettingsFolder + "/SimConfig.asset";
+
+        /// <summary>Asset paths of the quality presets, ordered light to heavy.</summary>
+        public static readonly string[] PresetPaths =
         {
             SettingsFolder + "/Quality_Low.asset",
             SettingsFolder + "/Quality_Medium.asset",
@@ -50,9 +50,9 @@ namespace Terrarium.EditorTools
                 }
 
                 CreateDefaultAssets();
-                if (!File.Exists(ScenePath))
+                if (!File.Exists(SceneBuilder.ScenePath))
                 {
-                    RebuildScene();
+                    SceneBuilder.RebuildScene();
                 }
             };
         }
@@ -61,10 +61,7 @@ namespace Terrarium.EditorTools
         [MenuItem("Terrarium/Create Default Assets")]
         public static void CreateDefaultAssets()
         {
-            if (!AssetDatabase.IsValidFolder(SettingsFolder))
-            {
-                AssetDatabase.CreateFolder(Path.GetDirectoryName(SettingsFolder).Replace('\\', '/'), Path.GetFileName(SettingsFolder));
-            }
+            SceneBuilder.EnsureFolder(SettingsFolder);
 
             if (AssetDatabase.LoadAssetAtPath<SimConfig>(ConfigPath) == null)
             {
@@ -78,83 +75,29 @@ namespace Terrarium.EditorTools
             AssetDatabase.SaveAssets();
         }
 
-        /// <summary>Builds the Terrarium scene from scratch and makes it the first scene in Build Settings.</summary>
-        [MenuItem("Terrarium/Rebuild Scene")]
-        public static void RebuildScene()
+        /// <summary>
+        /// Overwrites the SimConfig asset with the default values written in SimConfig.cs.
+        /// Unity remembers an asset's values once it has seen them, so editing a default in code
+        /// does not change an existing asset; this is the explicit way to say "use the code's values".
+        /// Any tuning done in the Inspector is lost, so it only ever runs on request.
+        /// </summary>
+        [MenuItem("Terrarium/Reset SimConfig To Code Defaults")]
+        public static void ResetConfigToCodeDefaults()
         {
             CreateDefaultAssets();
+            SimConfig asset = AssetDatabase.LoadAssetAtPath<SimConfig>(ConfigPath);
+            SimConfig fresh = ScriptableObject.CreateInstance<SimConfig>();
 
-            // Build in a separate (additive) scene so whatever the user has open is left untouched.
-            // Unity cannot add a scene next to an unsaved "Untitled" one, so in that case
-            // offer to save it and build in its place instead.
-            Scene previousActive = SceneManager.GetActiveScene();
-            bool previousWasDirty = previousActive.isDirty;
-            bool buildAdditively = !string.IsNullOrEmpty(previousActive.path);
-            if (!buildAdditively && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
-            {
-                return;
-            }
+            // JsonUtility copies only SimConfig's own fields, leaving Unity's bookkeeping for the
+            // asset (its name and identity) untouched.
+            JsonUtility.FromJsonOverwrite(JsonUtility.ToJson(fresh), asset);
+            Object.DestroyImmediate(fresh);
 
-            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, buildAdditively ? NewSceneMode.Additive : NewSceneMode.Single);
-            SceneManager.SetActiveScene(scene);
+            EditorUtility.SetDirty(asset);
+            AssetDatabase.SaveAssets();
 
-            BuildCamera();
-            BuildSimulationRoot();
-
-            EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, enabled: true) };
-
-            if (buildAdditively)
-            {
-                SceneManager.SetActiveScene(previousActive);
-                EditorSceneManager.CloseScene(scene, removeScene: true);
-
-                // Switch to the new scene only if that cannot lose any of the user's unsaved work.
-                if (!previousWasDirty)
-                {
-                    EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-                }
-            }
-
-            Debug.Log($"Terrarium: built {ScenePath}.");
-        }
-
-        private static void BuildCamera()
-        {
-            var cameraObject = new GameObject("Main Camera") { tag = "MainCamera" };
-            var camera = cameraObject.AddComponent<Camera>();
-            cameraObject.AddComponent<AudioListener>();
-
-            SimConfig config = AssetDatabase.LoadAssetAtPath<SimConfig>(ConfigPath);
-            camera.nearClipPlane = config.cameraNearClip;
-            camera.farClipPlane = 100f;
-            camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.03f, 0.025f, 0.02f);
-            cameraObject.transform.position = new Vector3(0f, 2f, -5f);
-            cameraObject.transform.LookAt(new Vector3(0f, 1.4f, 0f));
-        }
-
-        private static void BuildSimulationRoot()
-        {
-            var rootObject = new GameObject("Simulation");
-            var simRoot = rootObject.AddComponent<SimRoot>();
-            var debugPanel = rootObject.AddComponent<DebugPanel>();
-
-            // The fields are private + [SerializeField], so they are set through SerializedObject,
-            // the same route the Inspector uses.
-            var serializedRoot = new SerializedObject(simRoot);
-            serializedRoot.FindProperty("config").objectReferenceValue = AssetDatabase.LoadAssetAtPath<SimConfig>(ConfigPath);
-            SerializedProperty presets = serializedRoot.FindProperty("presets");
-            presets.arraySize = PresetPaths.Length;
-            for (int i = 0; i < PresetPaths.Length; i++)
-            {
-                presets.GetArrayElementAtIndex(i).objectReferenceValue = AssetDatabase.LoadAssetAtPath<QualityPreset>(PresetPaths[i]);
-            }
-            serializedRoot.ApplyModifiedPropertiesWithoutUndo();
-
-            var serializedPanel = new SerializedObject(debugPanel);
-            serializedPanel.FindProperty("simRoot").objectReferenceValue = simRoot;
-            serializedPanel.ApplyModifiedPropertiesWithoutUndo();
+            // Reload the asset from the file just written, so memory and disk are guaranteed to match.
+            AssetDatabase.ImportAsset(ConfigPath, ImportAssetOptions.ForceUpdate);
         }
 
         private static void CreatePresetIfMissing(string path, string label, int fieldResolution, int physarumAgents, int boidCount, int maxTrees, int maxSegmentsPerTree, int meshRingSides)

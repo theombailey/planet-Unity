@@ -21,6 +21,27 @@ MonoBehaviour:
   treeHeightMax: 0.06
   boidLength: 0.004
   cameraNearClip: 0.001
+  deskSize: {x: 6.4, y: 0.12, z: 3.8}
+  lampLightPosition: {x: -1.75, y: 2.55, z: -0.45}
+  lampColor: {r: 1, g: 0.82, b: 0.58, a: 1}
+  lampIntensity: 9
+  lampRange: 12
+  ambientColor: {r: 0.2, g: 0.25, b: 0.36, a: 1}
+  backgroundColor: {r: 0.045, g: 0.04, b: 0.036, a: 1}
+  toolArcRadii: {x: 2.2, y: 1.35}
+  levitationRingRadius: 0.8
+  cameraFieldOfView: 40
+  deskFocusDrop: 0.45
+  deskYawLimitDegrees: 55
+  deskPitchMinDegrees: 6
+  deskPitchMaxDegrees: 50
+  deskPitchDefaultDegrees: 20
+  deskDistanceMin: 1.8
+  deskDistanceMax: 8.5
+  deskDistanceDefault: 6.4
+  orbitDegreesPerPixel: 0.2
+  zoomFractionPerNotch: 0.12
+  cameraSpringOmega: 9
   dayLengthSeconds: 24
   yearLengthDays: 10
   axialTiltDegrees: 23
