@@ -95,34 +95,40 @@ namespace Terrarium.Tests
             var clock = new SimClock(config);
             clock.SetTimeScale(16);
 
-            // 1 day = 10 s, 1 year = 4 days = 40 s. Advance 52.5 s = 5250 steps:
-            // 5.25 days and 1.3125 years. (Deliberately not on a day boundary, where
-            // float rounding could land on either side.)
+            // 1 day = 10 s, 1 year = 4 days = 40 s. Advance 52 s = 5200 steps:
+            // 5.2 days and 1.3 years. (Deliberately not on a day boundary, where
+            // float rounding could land on either side.) Each call takes 16 steps
+            // at 16x, and 5200 = 325 x 16, so the loop stops exactly on target.
+            const int targetSteps = 5200;
             int total = 0;
-            while (total < 5250)
+            while (total < targetSteps)
             {
                 total += clock.Advance(0.01f);
             }
 
+            Assert.AreEqual(targetSteps, total);
             Assert.AreEqual(5, clock.DayIndex);
             Assert.AreEqual(1, clock.YearIndex);
-            Assert.AreEqual(0.25f, clock.DayPhase, 0.01f);
-            Assert.AreEqual(0.3125f, clock.YearPhase, 0.01f);
+            Assert.AreEqual(0.2f, clock.DayPhase, 0.001f);
+            Assert.AreEqual(0.3f, clock.YearPhase, 0.001f);
         }
 
         [Test]
         public void SimClock_Lean_PeaksAtTiltAngleInMidsummer()
         {
             var clock = new SimClock(config);
-            clock.SetTimeScale(16);
+            clock.SetTimeScale(4);
 
             // Quarter of a year = 10 s = 1000 steps: yearPhase 0.25, sin = 1, lean = +tilt.
+            // Each call takes 4 steps at 4x, and 1000 = 250 x 4, so the loop stops exactly on target.
+            const int targetSteps = 1000;
             int total = 0;
-            while (total < 1000)
+            while (total < targetSteps)
             {
                 total += clock.Advance(0.01f);
             }
 
+            Assert.AreEqual(targetSteps, total);
             Assert.AreEqual(20f, clock.LeanRadians * Mathf.Rad2Deg, 0.2f);
         }
 

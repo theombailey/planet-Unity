@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2e245715c7d7a2541b15535f6c1a0cd2, type: 3}
+  m_Name: Quality_Medium
+  m_EditorClassIdentifier: 
+  label: Medium
+  fieldResolution: 256
+  physarumAgents: 400000
+  boidCount: 15000
+  maxTrees: 300
+  maxSegmentsPerTree: 1200
+  meshRingSides: 6
