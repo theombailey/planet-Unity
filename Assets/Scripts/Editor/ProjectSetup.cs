@@ -9,6 +9,8 @@
 //           assets are never overwritten, so tuning is kept.
 //           This runs automatically when the editor loads (and builds the scene
 //           too if it is missing), and by hand from the Terrarium menu.
+// Renderer: Also adds our fullscreen ink + paper pass (InkPaperFeature) to the
+//           project's URP renderer asset, once.
 // Presets : Medium uses the spec's defaults. The development machine is an
 //           RTX 2060 (6 GB), which Medium should run comfortably; Low and High
 //           are first guesses to be tuned once the heavy systems exist and
@@ -16,8 +18,10 @@
 // =============================================================================
 
 using System.IO;
+using Terrarium.Rendering;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace Terrarium.EditorTools
 {
@@ -29,6 +33,9 @@ namespace Terrarium.EditorTools
 
         /// <summary>Asset path of the SimConfig.</summary>
         public const string ConfigPath = SettingsFolder + "/SimConfig.asset";
+
+        /// <summary>The URP renderer used by the PC quality level; our ink pass is added to it.</summary>
+        public const string RendererPath = "Assets/Settings/PC_Renderer.asset";
 
         /// <summary>Asset paths of the quality presets, ordered light to heavy.</summary>
         public static readonly string[] PresetPaths =
@@ -72,7 +79,41 @@ namespace Terrarium.EditorTools
             CreatePresetIfMissing(PresetPaths[1], "Medium", fieldResolution: 256, physarumAgents: 400_000, boidCount: 15_000, maxTrees: 300, maxSegmentsPerTree: 1_200, meshRingSides: 6);
             CreatePresetIfMissing(PresetPaths[2], "High", fieldResolution: 512, physarumAgents: 1_000_000, boidCount: 40_000, maxTrees: 500, maxSegmentsPerTree: 2_500, meshRingSides: 8);
 
+            EnsureInkPaperFeature();
             AssetDatabase.SaveAssets();
+        }
+
+        /// <summary>
+        /// Adds our fullscreen ink + paper pass to the project's PC renderer if it is not there yet.
+        /// A renderer feature is stored as a sub-object inside the renderer asset, which is why it is
+        /// both added to the asset file and appended to the renderer's feature list.
+        /// </summary>
+        private static void EnsureInkPaperFeature()
+        {
+            var renderer = AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(RendererPath);
+            Shader shader = Shader.Find(InkPaperFeature.ShaderName);
+            if (renderer == null || shader == null)
+            {
+                Debug.LogWarning($"Terrarium: could not add the ink pass (renderer found: {renderer != null}, shader found: {shader != null}).");
+                return;
+            }
+
+            foreach (ScriptableRendererFeature existing in renderer.rendererFeatures)
+            {
+                if (existing is InkPaperFeature)
+                {
+                    return;
+                }
+            }
+
+            var feature = ScriptableObject.CreateInstance<InkPaperFeature>();
+            feature.name = "InkPaper";
+            feature.SetShader(shader);
+
+            AssetDatabase.AddObjectToAsset(feature, renderer);
+            renderer.rendererFeatures.Add(feature);
+            renderer.SetDirty();
+            EditorUtility.SetDirty(renderer);
         }
 
         /// <summary>

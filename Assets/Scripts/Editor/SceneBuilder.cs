@@ -13,10 +13,10 @@
 //           origin. The camera looks from -z toward +z. The lamp stands to the
 //           left (-x) and a little toward the camera, so the planet shows a
 //           lit side, a shadowed side and the terminator between them.
-// Phase 1 : Everything is a "greybox": Unity's built-in primitive shapes with
-//           plain coloured materials. Phase 2 replaces the materials with the
-//           hand-written painterly shaders; later phases replace the planet
-//           sphere with the cube-sphere mesh.
+// Shapes  : Everything is still a "greybox" built from Unity's primitive
+//           shapes; later phases replace the planet sphere with the cube-sphere
+//           mesh. Materials use our own painterly shaders (Terrarium/Props and
+//           Terrarium/Desk); the materials themselves are generated here too.
 // =============================================================================
 
 using Terrarium.Climate;
@@ -38,7 +38,8 @@ namespace Terrarium.EditorTools
 
         private const string MaterialFolder = "Assets/Materials/Greybox";
         private const string MeshFolder = "Assets/Meshes/Generated";
-        private const string LitShaderName = "Universal Render Pipeline/Lit";
+        private const string PropsShaderName = "Terrarium/Props";
+        private const string DeskShaderName = "Terrarium/Desk";
 
         /// <summary>Describes one placeholder tool prop on the desk.</summary>
         private readonly struct ToolProp
@@ -129,7 +130,7 @@ namespace Terrarium.EditorTools
             // A cube primitive is 1 unit tall and centred, so lowering it by half its thickness puts its top at y = 0.
             GameObject desk = CreatePrimitive("Desk", PrimitiveType.Cube, null,
                 new Vector3(0f, -config.deskSize.y * 0.5f, 0f), Quaternion.identity, config.deskSize,
-                GetMaterial("Desk", new Color(0.36f, 0.22f, 0.12f)));
+                GetDeskMaterial());
             desk.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
 
             // Decorative ring on the desk directly under the planet.
@@ -137,7 +138,7 @@ namespace Terrarium.EditorTools
             var ring = new GameObject("LevitationRing");
             ring.AddComponent<MeshFilter>().sharedMesh = ringMesh;
             var ringRenderer = ring.AddComponent<MeshRenderer>();
-            ringRenderer.sharedMaterial = GetMaterial("LevitationRing", new Color(0.10f, 0.06f, 0.04f));
+            ringRenderer.sharedMaterial = GetMaterial("LevitationRing", new Color(0.10f, 0.06f, 0.04f), outlineScale: 0f);
             ringRenderer.shadowCastingMode = ShadowCastingMode.Off;
             ring.transform.position = new Vector3(0f, 0.002f, 0f);
             ring.transform.localScale = Vector3.one * config.levitationRingRadius;
@@ -165,6 +166,12 @@ namespace Terrarium.EditorTools
 
             // The shade surrounds the bulb, so it must not cast a shadow or it would block the light.
             shade.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+
+            // A small glowing sphere so the lamp visibly contains a light. It ignores lighting
+            // (glow = 1) and casts no shadow, since the real light sits inside it.
+            GameObject bulbModel = CreatePrimitive("Bulb", PrimitiveType.Sphere, lamp, bulb, Quaternion.identity, Vector3.one * 0.16f,
+                GetMaterial("LampBulb", new Color(1.0f, 0.93f, 0.72f), glow: 1f));
+            bulbModel.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
 
             var lightObject = new GameObject("LampLight");
             lightObject.transform.SetParent(lamp);
@@ -279,7 +286,11 @@ namespace Terrarium.EditorTools
             }
             serializedRoot.ApplyModifiedPropertiesWithoutUndo();
 
+            var painterly = rootObject.AddComponent<PainterlySettings>();
+            SetReference(painterly, "simRoot", simRoot);
+
             SetReference(debugPanel, "simRoot", simRoot);
+            SetReference(debugPanel, "painterly", painterly);
             return simRoot;
         }
 
@@ -342,21 +353,49 @@ namespace Terrarium.EditorTools
                 material);
         }
 
-        private static Material GetMaterial(string name, Color color)
+        /// <summary>Creates or updates a Terrarium/Props material asset.</summary>
+        /// <param name="glow">0 = lit normally, 1 = flat unlit colour.</param>
+        /// <param name="outlineScale">Multiplier on the hull outline width (0 = no outline).</param>
+        private static Material GetMaterial(string name, Color color, float glow = 0f, float outlineScale = 1f)
+        {
+            Material material = GetOrCreateMaterial(name, PropsShaderName);
+            material.SetColor("_BaseColor", color);
+            material.SetFloat("_Glow", glow);
+            material.SetFloat("_OutlineScale", outlineScale);
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        /// <summary>Creates or updates the desk's wood material. Its look is set by the shader's defaults.</summary>
+        private static Material GetDeskMaterial()
+        {
+            Material material = GetOrCreateMaterial("Desk", DeskShaderName);
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        private static Material GetOrCreateMaterial(string name, string shaderName)
         {
             EnsureFolder(MaterialFolder);
             string path = $"{MaterialFolder}/{name}.mat";
 
+            Shader shader = Shader.Find(shaderName);
+            if (shader == null)
+            {
+                throw new System.InvalidOperationException($"Shader '{shaderName}' was not found. Check the Console for shader compile errors.");
+            }
+
             var material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material == null)
             {
-                material = new Material(Shader.Find(LitShaderName));
+                material = new Material(shader);
                 AssetDatabase.CreateAsset(material, path);
             }
+            else if (material.shader != shader)
+            {
+                material.shader = shader;
+            }
 
-            material.SetColor("_BaseColor", color);
-            material.SetFloat("_Smoothness", 0.15f);
-            EditorUtility.SetDirty(material);
             return material;
         }
 

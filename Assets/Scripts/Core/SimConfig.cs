@@ -79,6 +79,58 @@ namespace Terrarium
         [Tooltip("Radius of the decorative levitation ring drawn on the desk under the planet, in world units.")]
         [Range(0.1f, 2f)] public float levitationRingRadius = 0.8f;
 
+        [Header("Rendering: painterly look (see Painterly.hlsl, InkPaper.shader)")]
+        [Tooltip("Colour of ink outlines and hatch strokes.")]
+        public Color inkColor = new Color(0.10f, 0.07f, 0.08f);
+
+        [Tooltip("Scales raw lamp light into the 0..1 tone range before banding. Higher = more of the scene reaches the brightest band.")]
+        [Range(0.05f, 3f)] public float toneExposure = 0.85f;
+
+        [Tooltip("Number of flat tone steps the lighting is snapped to.")]
+        [Range(2, 8)] public int bandCount = 4;
+
+        [Tooltip("Softness of the edge between two tone bands, as a fraction of one band (0 = hard edge).")]
+        [Range(0.005f, 0.5f)] public float bandSoftness = 0.07f;
+
+        [Tooltip("How far noise pushes a band edge back and forth, in bands. This is what makes the edges look brushed.")]
+        [Range(0f, 1.5f)] public float bandWobble = 0.45f;
+
+        [Tooltip("Size of the band-edge wobble: noise blobs per world unit.")]
+        [Range(0.2f, 20f)] public float bandWobbleFrequency = 3.5f;
+
+        [Tooltip("Gap between hatch lines, in pixels at 720p.")]
+        [Range(3f, 30f)] public float hatchSpacingPixels = 8f;
+
+        [Tooltip("Direction of the first set of hatch lines, in degrees from horizontal.")]
+        [Range(-90f, 90f)] public float hatchAngleDegrees = 35f;
+
+        [Tooltip("How dark a hatch stroke is (0 = invisible, 1 = solid ink).")]
+        [Range(0f, 1f)] public float hatchStrength = 0.6f;
+
+        [Tooltip("Width of the inverted-hull outline on props, in pixels at 720p.")]
+        [Range(0f, 8f)] public float hullOutlinePixels = 1.8f;
+
+        [Tooltip("Width of the fullscreen edge-detection outline, in pixels at 720p.")]
+        [Range(0.5f, 6f)] public float edgeOutlinePixels = 1.2f;
+
+        [Tooltip("Depth jump (relative to distance) that starts an ink line. Lower = more lines.")]
+        [Range(0.001f, 0.5f)] public float edgeDepthThreshold = 0.03f;
+
+        [Tooltip("Change in surface direction that starts an ink line. Lower = more lines.")]
+        [Range(0.05f, 2f)] public float edgeNormalThreshold = 0.6f;
+
+        [Tooltip("How much outline width varies along the line (0 = constant, 1 = strongly uneven).")]
+        [Range(0f, 1f)] public float outlineWobble = 0.6f;
+
+        [Tooltip("Strength of the paper fibre grain (0 = none).")]
+        [Range(0f, 0.6f)] public float paperGrainStrength = 0.16f;
+
+        [Tooltip("How much the screen corners are darkened (0 = none).")]
+        [Range(0f, 1f)] public float vignetteStrength = 0.5f;
+
+        [Tooltip("How many times a second the line noise re-rolls ('boil'), in Hz. Hand-drawn animation is typically 8 to 12.")]
+        [Range(1f, 24f)] public float boilRateHz = 9f;
+
         [Header("Camera: desk view (see CameraRig)")]
         [Tooltip("Vertical field of view, in degrees.")]
         [Range(20f, 80f)] public float cameraFieldOfView = 40f;

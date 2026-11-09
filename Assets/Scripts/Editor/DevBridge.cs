@@ -12,6 +12,9 @@
 // Commands: refresh          re-import changed files and recompile scripts
 //           rebuild-scene    run SceneBuilder.RebuildScene
 //           reset-config     overwrite the SimConfig asset with the code defaults
+//           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
+//           ink on|off      enable / disable the fullscreen ink + paper pass
+//           shader-errors    list compile errors / warnings of every shader in Assets/Shaders
 //           capture [w h]    render the main camera to Logs/DevBridge/capture.png
 //           run-tests        run all EditMode tests, write a pass/fail summary
 //           play / stop      enter / leave Play mode
@@ -95,6 +98,18 @@ namespace Terrarium.EditorTools
                     WriteResult("ok: scene rebuilt");
                     break;
 
+                case "fx":
+                    WriteResult(SetPainterlyToggles(parts));
+                    break;
+
+                case "ink":
+                    WriteResult(SetInkPass(parts.Length > 1 && parts[1] == "on"));
+                    break;
+
+                case "shader-errors":
+                    WriteResult(ShaderMessages());
+                    break;
+
                 case "reset-config":
                     ProjectSetup.ResetConfigToCodeDefaults();
                     WriteResult("ok: SimConfig reset to code defaults");
@@ -124,6 +139,74 @@ namespace Terrarium.EditorTools
                     WriteResult($"error: unknown command '{command}'");
                     break;
             }
+        }
+
+        /// <summary>
+        /// Sets the painterly effect switches on the scene's PainterlySettings, e.g. "fx bands off hatch off".
+        /// Names: bands, hatch, outlines, paper, boil. Works in Play mode (the same switches the F1 panel flips).
+        /// </summary>
+        private static string SetPainterlyToggles(string[] parts)
+        {
+            var settings = UnityEngine.Object.FindFirstObjectByType<Terrarium.Rendering.PainterlySettings>();
+            if (settings == null)
+            {
+                return "error: no PainterlySettings in the open scene";
+            }
+
+            for (int i = 1; i + 1 < parts.Length; i += 2)
+            {
+                bool value = parts[i + 1] == "on";
+                switch (parts[i])
+                {
+                    case "bands": settings.BandsEnabled = value; break;
+                    case "hatch": settings.HatchingEnabled = value; break;
+                    case "outlines": settings.OutlinesEnabled = value; break;
+                    case "paper": settings.PaperEnabled = value; break;
+                    case "boil": settings.BoilEnabled = value; break;
+                    default: return $"error: unknown effect '{parts[i]}'";
+                }
+            }
+
+            settings.Apply();
+            return "ok: painterly toggles set. Shader globals now: " +
+                   $"bands={Shader.GetGlobalFloat("_PainterlyBandsEnabled")} hatch={Shader.GetGlobalFloat("_PainterlyHatchEnabled")} " +
+                   $"outlines={Shader.GetGlobalFloat("_PainterlyOutlinesEnabled")} paper={Shader.GetGlobalFloat("_PainterlyPaperEnabled")} " +
+                   $"boilSeed={Shader.GetGlobalFloat("_PainterlyBoilSeed")}";
+        }
+
+        /// <summary>Turns the fullscreen ink + paper renderer feature on or off, to tell it apart from the surface shaders.</summary>
+        private static string SetInkPass(bool active)
+        {
+            var renderer = AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.Universal.ScriptableRendererData>(ProjectSetup.RendererPath);
+            foreach (UnityEngine.Rendering.Universal.ScriptableRendererFeature feature in renderer.rendererFeatures)
+            {
+                if (feature is Terrarium.Rendering.InkPaperFeature)
+                {
+                    feature.SetActive(active);
+                    EditorUtility.SetDirty(renderer);
+                    return $"ok: ink pass active = {active}";
+                }
+            }
+
+            return "error: ink pass feature not found in the renderer";
+        }
+
+        /// <summary>Lists compile errors and warnings for every shader under Assets/Shaders.</summary>
+        private static string ShaderMessages()
+        {
+            var report = new StringBuilder();
+            foreach (string guid in AssetDatabase.FindAssets("t:Shader", new[] { "Assets/Shaders" }))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var shader = AssetDatabase.LoadAssetAtPath<Shader>(path);
+                report.AppendLine($"{path}: supported={shader.isSupported}, errors={ShaderUtil.ShaderHasError(shader)}");
+                foreach (ShaderMessage message in ShaderUtil.GetShaderMessages(shader))
+                {
+                    report.AppendLine($"  {message.severity} {message.file}:{message.line}  {message.message}  [{message.platform}]");
+                }
+            }
+
+            return report.ToString();
         }
 
         private static string Capture(int width, int height)

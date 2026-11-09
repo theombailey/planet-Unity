@@ -2,7 +2,7 @@
 // DebugPanel
 // -----------------------------------------------------------------------------
 // Purpose : The F1 developer panel: frame rate, sim clock, time-scale dial,
-//           quality preset selector and seed controls.
+//           quality preset selector, painterly effect toggles and seed controls.
 // Idea    : Drawn with Unity's built-in immediate-mode GUI (OnGUI), so it needs
 //           no packages and no scene setup. It only calls public methods on
 //           SimRoot / SimClock; it holds no simulation state of its own.
@@ -14,6 +14,7 @@
 // =============================================================================
 
 using Terrarium.Interaction;
+using Terrarium.Rendering;
 using UnityEngine;
 
 namespace Terrarium
@@ -27,6 +28,9 @@ namespace Terrarium
 
         [Tooltip("The simulation this panel displays and controls.")]
         [SerializeField] private SimRoot simRoot;
+
+        [Tooltip("The painterly effect switches shown on the panel (optional).")]
+        [SerializeField] private PainterlySettings painterly;
 
         [Tooltip("Whether the panel is showing when Play starts.")]
         [SerializeField] private bool visible = true;
@@ -114,6 +118,20 @@ namespace Terrarium
             if (pickedPreset != simRoot.ActivePresetIndex)
             {
                 simRoot.SelectPreset(pickedPreset);
+            }
+
+            if (painterly != null)
+            {
+                GUILayout.Label("Painterly effects");
+                GUILayout.BeginHorizontal();
+                painterly.BandsEnabled = GUILayout.Toggle(painterly.BandsEnabled, "Bands");
+                painterly.HatchingEnabled = GUILayout.Toggle(painterly.HatchingEnabled, "Hatching");
+                painterly.OutlinesEnabled = GUILayout.Toggle(painterly.OutlinesEnabled, "Outlines");
+                GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal();
+                painterly.PaperEnabled = GUILayout.Toggle(painterly.PaperEnabled, "Paper");
+                painterly.BoilEnabled = GUILayout.Toggle(painterly.BoilEnabled, "Boil");
+                GUILayout.EndHorizontal();
             }
 
             GUILayout.Label("World seed  (R = randomise)");
