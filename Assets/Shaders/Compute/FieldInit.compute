@@ -1,0 +1,68 @@
+// =============================================================================
+// FieldInit.compute
+// -----------------------------------------------------------------------------
+// Purpose : Fills a cube-sphere field (a 6-slice texture array) with starting
+//           contents.
+//
+// Kernels :
+//   Clear           - sets every channel of every texel to zero.
+//   InitTestPattern - writes a recognisable test image used to check the
+//                     cube-sphere infrastructure (Phase 3). Phase 4 replaces it
+//                     with real terrain.
+//
+// Idea (test pattern): three channels, each answering a different question
+//   R  smooth 3D noise sampled at the texel's direction. If the face mapping
+//      or the seam handling were wrong, this smooth pattern would show a
+//      visible break along a face edge. It must look seamless.
+//   G  checkerboard: 1 where (x + y) is odd. Shows individual texels when
+//      zoomed in, and the checker keeps its rhythm across a seam.
+//   B  face index / 5. Makes each face a different shade, so the six faces and
+//      their layout can be seen at a glance.
+//
+// Equations: R = Fbm( direction * 2.5 + seed ),   G = (x + y) mod 2,   B = face / 5
+//
+// Parameters:
+//   _Resolution - texels along one face edge.
+//   _Seed       - shifts the noise so a new seed gives a new pattern.
+//
+// Buffers & textures:
+//   _Target - RWTexture2DArray<float4>, 6 slices (slice = face), written.
+// =============================================================================
+
+#pragma kernel Clear
+#pragma kernel InitTestPattern
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+#include "Assets/Shaders/Include/Noise.hlsl"
+
+RWTexture2DArray<float4> _Target;
+int _Resolution;
+float _Seed;
+
+[numthreads(8, 8, 1)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    _Target[id] = float4(0.0, 0.0, 0.0, 0.0);
+}
+
+[numthreads(8, 8, 1)]
+void InitTestPattern(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+
+    float smoothNoise = Fbm(direction * 2.5 + _Seed * 0.173, 4);
+    float checker = (float)((id.x + id.y) & 1u);
+    float faceShade = (float)id.z / 5.0;
+
+    _Target[id] = float4(smoothNoise, checker, faceShade, 1.0);
+}

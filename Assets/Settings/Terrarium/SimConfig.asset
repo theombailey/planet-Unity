@@ -30,6 +30,9 @@ MonoBehaviour:
   backgroundColor: {r: 0.045, g: 0.04, b: 0.036, a: 1}
   toolArcRadii: {x: 2.2, y: 1.35}
   levitationRingRadius: 0.8
+  planetMeshSubdivisions: 128
+  debugBrushRadius: 0.18
+  debugBrushStrength: 1.5
   inkColor: {r: 0.1, g: 0.07, b: 0.08, a: 1}
   toneExposure: 0.85
   bandCount: 4

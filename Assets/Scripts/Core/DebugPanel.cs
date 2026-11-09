@@ -2,7 +2,8 @@
 // DebugPanel
 // -----------------------------------------------------------------------------
 // Purpose : The F1 developer panel: frame rate, sim clock, time-scale dial,
-//           quality preset selector, painterly effect toggles and seed controls.
+//           quality preset selector, painterly effect toggles, field debug view
+//           and brush controls, and seed controls.
 // Idea    : Drawn with Unity's built-in immediate-mode GUI (OnGUI), so it needs
 //           no packages and no scene setup. It only calls public methods on
 //           SimRoot / SimClock; it holds no simulation state of its own.
@@ -15,6 +16,7 @@
 
 using Terrarium.Interaction;
 using Terrarium.Rendering;
+using Terrarium.Sphere;
 using UnityEngine;
 
 namespace Terrarium
@@ -32,9 +34,16 @@ namespace Terrarium
         [Tooltip("The painterly effect switches shown on the panel (optional).")]
         [SerializeField] private PainterlySettings painterly;
 
+        [Tooltip("The field debug view controls shown on the panel (optional).")]
+        [SerializeField] private FieldDebugView fieldView;
+
+        [Tooltip("The debug brush controls shown on the panel (optional).")]
+        [SerializeField] private DebugBrush debugBrush;
+
         [Tooltip("Whether the panel is showing when Play starts.")]
         [SerializeField] private bool visible = true;
 
+        private Vector2 scrollPosition;
         private int timeScaleBeforePause = 1;
         private float smoothedFrameSeconds = 1f / 60f;
         private float readoutTimer;
@@ -98,7 +107,8 @@ namespace Terrarium
                 return;
             }
 
-            GUILayout.BeginArea(new Rect(PanelMargin, PanelMargin, PanelWidth, Screen.height - 2f * PanelMargin));
+            GUILayout.BeginArea(PanelRect());
+            scrollPosition = GUILayout.BeginScrollView(scrollPosition);
             GUILayout.BeginVertical(GUI.skin.box);
 
             GUILayout.Label("TERRARIUM DEBUG  (F1 to hide)");
@@ -134,6 +144,16 @@ namespace Terrarium
                 GUILayout.EndHorizontal();
             }
 
+            if (fieldView != null)
+            {
+                fieldView.OnDebugGui();
+            }
+
+            if (debugBrush != null)
+            {
+                debugBrush.OnDebugGui();
+            }
+
             GUILayout.Label("World seed  (R = randomise)");
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Randomise seed"))
@@ -147,7 +167,26 @@ namespace Terrarium
             GUILayout.EndHorizontal();
 
             GUILayout.EndVertical();
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
+        }
+
+        /// <summary>True when a screen position (pixels, origin bottom-left) is over the visible panel.</summary>
+        public bool IsPointerOver(Vector2 screenPosition)
+        {
+            if (!visible)
+            {
+                return false;
+            }
+
+            // OnGUI rectangles have their origin at the top-left, screen positions at the bottom-left.
+            var guiPoint = new Vector2(screenPosition.x, Screen.height - screenPosition.y);
+            return PanelRect().Contains(guiPoint);
+        }
+
+        private static Rect PanelRect()
+        {
+            return new Rect(PanelMargin, PanelMargin, PanelWidth, Screen.height - 2f * PanelMargin);
         }
 
         private void TogglePause()

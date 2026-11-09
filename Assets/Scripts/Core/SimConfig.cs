@@ -79,6 +79,16 @@ namespace Terrarium
         [Tooltip("Radius of the decorative levitation ring drawn on the desk under the planet, in world units.")]
         [Range(0.1f, 2f)] public float levitationRingRadius = 0.8f;
 
+        [Header("Planet surface and debug brush (see PlanetMeshBuilder, DebugBrush)")]
+        [Tooltip("Quads along one edge of each of the 6 cube faces of the planet mesh. 128 gives ~99k vertices.")]
+        [Range(16, 256)] public int planetMeshSubdivisions = 128;
+
+        [Tooltip("Radius of the debug brush on the planet, in world units. Adjustable on the F1 panel.")]
+        [Range(0.02f, 1f)] public float debugBrushRadius = 0.18f;
+
+        [Tooltip("How fast the debug brush adds to a field, in field units per second at the brush centre.")]
+        [Range(0.05f, 10f)] public float debugBrushStrength = 1.5f;
+
         [Header("Rendering: painterly look (see Painterly.hlsl, InkPaper.shader)")]
         [Tooltip("Colour of ink outlines and hatch strokes.")]
         public Color inkColor = new Color(0.10f, 0.07f, 0.08f);

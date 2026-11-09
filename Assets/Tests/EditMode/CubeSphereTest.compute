@@ -1,0 +1,77 @@
+// =============================================================================
+// CubeSphereTest.compute  (test helper, not used by the game)
+// -----------------------------------------------------------------------------
+// Purpose : Runs the HLSL cube-sphere functions on fixed inputs so a C# test can
+//           compare the GPU answers with CubeSphere.cs. If the two ever
+//           disagree, fields written by the GPU would be read at the wrong
+//           place by the CPU (or the reverse).
+//
+// Kernels :
+//   DirToFace  - input direction -> (face, s, t) and the containing texel
+//   FaceToDir  - input (face, s, t) -> unit direction
+//   Neighbours - input texel + offset -> seam-resolved neighbour texel
+//
+// Parameters: _Resolution - texels per face edge. _Count - number of inputs.
+// Buffers   : inputs are read, outputs written; one element per thread.
+// =============================================================================
+
+#pragma kernel DirToFace
+#pragma kernel FaceToDir
+#pragma kernel Neighbours
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+
+int _Resolution;
+int _Count;
+
+StructuredBuffer<float4> _DirInputs;        // xyz = direction
+RWStructuredBuffer<float4> _FaceSTOutputs;  // x = face, y = s, z = t
+RWStructuredBuffer<int4> _TexelOutputs;     // x, y, face
+
+StructuredBuffer<float4> _FaceSTInputs;     // x = face, y = s, z = t
+RWStructuredBuffer<float4> _DirOutputs;     // xyz = direction
+
+StructuredBuffer<int4> _NeighbourInputs;    // x, y, face, packed offset (see below)
+RWStructuredBuffer<int4> _NeighbourOutputs; // x, y, face
+
+[numthreads(64, 1, 1)]
+void DirToFace(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= _Count)
+    {
+        return;
+    }
+
+    float3 direction = _DirInputs[id.x].xyz;
+    int face;
+    float2 st;
+    CS_DirToFaceST(direction, face, st);
+    _FaceSTOutputs[id.x] = float4(face, st, 0);
+    _TexelOutputs[id.x] = int4(CS_DirToTexel(direction, _Resolution), 0);
+}
+
+[numthreads(64, 1, 1)]
+void FaceToDir(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= _Count)
+    {
+        return;
+    }
+
+    float4 input = _FaceSTInputs[id.x];
+    _DirOutputs[id.x] = float4(CS_FaceSTToDir((int)input.x, input.yz), 0);
+}
+
+[numthreads(64, 1, 1)]
+void Neighbours(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= _Count)
+    {
+        return;
+    }
+
+    // The offset is packed as (dx + 1) + 3 * (dy + 1), 0..8, to fit the 4th component.
+    int4 input = _NeighbourInputs[id.x];
+    int2 offset = int2(input.w % 3 - 1, input.w / 3 - 1);
+    _NeighbourOutputs[id.x] = int4(CS_NeighbourTexel(input.xyz, offset, _Resolution), 0);
+}

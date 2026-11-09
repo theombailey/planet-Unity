@@ -27,6 +27,18 @@ namespace Terrarium.Interaction
         /// <summary>True on the frame R goes down (re-seed the world).</summary>
         public static bool ReseedPressed => Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
 
+        /// <summary>True on the frame F2 goes down (toggle the field debug view).</summary>
+        public static bool FieldViewTogglePressed => Keyboard.current != null && Keyboard.current.f2Key.wasPressedThisFrame;
+
+        /// <summary>True while either Shift key is held.</summary>
+        public static bool ShiftHeld => Keyboard.current != null && Keyboard.current.shiftKey.isPressed;
+
+        /// <summary>True while the left mouse button is held.</summary>
+        public static bool PaintHeld => Mouse.current != null && Mouse.current.leftButton.isPressed;
+
+        /// <summary>Mouse position in screen pixels (origin bottom-left).</summary>
+        public static Vector2 PointerPosition => Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
+
         /// <summary>True while the right mouse button is held (orbit in desk view).</summary>
         public static bool OrbitHeld => Mouse.current != null && Mouse.current.rightButton.isPressed;
 

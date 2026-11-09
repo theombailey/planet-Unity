@@ -1,0 +1,70 @@
+// =============================================================================
+// Brush.compute
+// -----------------------------------------------------------------------------
+// Purpose : Paints a soft round blob onto a cube-sphere field. Every tool
+//           (watering can, compost, heat, meteor...) works by adding to fields
+//           with this kernel, so tools never touch creatures directly.
+//
+// Idea    : The brush is a point on the sphere (a direction) with an angular
+//           radius. Each texel asks "how far is my centre direction from the
+//           brush centre?" and adds an amount that fades smoothly to zero at
+//           the brush radius. Distance is measured as an ANGLE between two
+//           directions, so:
+//             - it is the same on every face and in every orientation,
+//             - it needs no knowledge of face edges: a blob centred on a seam
+//               or on one of the 8 cube corners simply lights up texels on
+//               each face it reaches. That is what makes it seam-safe.
+//
+// Equations (c = brush direction, d = texel centre direction, R = radius):
+//     angle  = acos( clamp(dot(d, c), -1, 1) )
+//     weight = 1 - smoothstep(0, R, angle)        1 at the centre, 0 at R
+//     value  = value + amount * weight            (per channel)
+//     Channels whose amount is 0 are left untouched; the others are then
+//     clamped to [_ClampRange.x, _ClampRange.y].
+//
+// Parameters:
+//   _BrushDirection     - unit vector, brush centre in the PLANET's local space
+//   _BrushAngularRadius - R, radians (world radius / planet radius)
+//   _BrushAmount        - per-channel amount added at the centre
+//   _ClampRange         - allowed (min, max) of a painted channel
+//   _Resolution         - texels along one face edge
+//
+// Buffers & textures:
+//   _Target - RWTexture2DArray<float4>, 6 slices, read and written in place.
+//             In-place is safe: each thread touches only its own texel.
+// =============================================================================
+
+#pragma kernel BrushAdd
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+
+RWTexture2DArray<float4> _Target;
+int _Resolution;
+float3 _BrushDirection;
+float _BrushAngularRadius;
+float4 _BrushAmount;
+float2 _ClampRange;
+
+[numthreads(8, 8, 1)]
+void BrushAdd(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+    float angle = acos(clamp(dot(direction, _BrushDirection), -1.0, 1.0));
+    float weight = 1.0 - smoothstep(0.0, _BrushAngularRadius, angle);
+
+    if (weight <= 0.0)
+    {
+        return;
+    }
+
+    float4 before = _Target[id];
+    float4 painted = clamp(before + _BrushAmount * weight, _ClampRange.x, _ClampRange.y);
+    bool4 touched = _BrushAmount != 0.0;
+
+    _Target[id] = touched ? painted : before;
+}

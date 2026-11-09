@@ -55,6 +55,21 @@ namespace Terrarium.Interaction
             position = focus - rotation * Vector3.forward * distance;
         }
 
+        /// <summary>
+        /// Jumps the desk-view camera straight to a pose with no easing (clamped to the allowed ranges).
+        /// Used by the editor's DevBridge to take close-up captures.
+        /// </summary>
+        public void SnapTo(float yawDegrees, float pitchDegrees, float distanceUnits)
+        {
+            SimConfig config = simRoot.Config;
+            yawTarget = Mathf.Clamp(yawDegrees, -config.deskYawLimitDegrees, config.deskYawLimitDegrees);
+            pitchTarget = Mathf.Clamp(pitchDegrees, config.deskPitchMinDegrees, config.deskPitchMaxDegrees);
+            distanceTarget = Mathf.Clamp(distanceUnits, config.deskDistanceMin, config.deskDistanceMax);
+            yaw = new SpringFloat(yawTarget);
+            pitch = new SpringFloat(pitchTarget);
+            distance = new SpringFloat(distanceTarget);
+        }
+
         private void Start()
         {
             if (simRoot == null || simRoot.Config == null)

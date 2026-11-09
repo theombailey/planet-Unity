@@ -13,15 +13,15 @@
 //           origin. The camera looks from -z toward +z. The lamp stands to the
 //           left (-x) and a little toward the camera, so the planet shows a
 //           lit side, a shadowed side and the terminator between them.
-// Shapes  : Everything is still a "greybox" built from Unity's primitive
-//           shapes; later phases replace the planet sphere with the cube-sphere
-//           mesh. Materials use our own painterly shaders (Terrarium/Props and
+// Shapes  : The desk, lamp and tools are still a "greybox" built from Unity's
+//           primitive shapes. The planet uses the generated cube-sphere mesh. Materials use our own painterly shaders (Terrarium/Props and
 //           Terrarium/Desk); the materials themselves are generated here too.
 // =============================================================================
 
 using Terrarium.Climate;
 using Terrarium.Interaction;
 using Terrarium.Rendering;
+using Terrarium.Sphere;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -100,7 +100,8 @@ namespace Terrarium.EditorTools
             BuildDesk(config);
             Transform lampLight = BuildLamp(config);
             SimRoot simRoot = BuildSimulationRoot(config);
-            BuildPlanet(config, simRoot, lampLight);
+            GameObject planet = BuildPlanet(config, simRoot, lampLight);
+            BuildFields(simRoot, planet);
             BuildTools(config);
             BuildCamera(config, simRoot);
 
@@ -193,15 +194,20 @@ namespace Terrarium.EditorTools
 
         // ------------------------------------------------------------------ planet
 
-        private static void BuildPlanet(SimConfig config, SimRoot simRoot, Transform lampLight)
+        /// <summary>Builds the planet and returns it. The mesh is generated at runtime by PlanetMesh.</summary>
+        private static GameObject BuildPlanet(SimConfig config, SimRoot simRoot, Transform lampLight)
         {
-            // A sphere primitive has diameter 1, so scale by 2 * radius.
-            GameObject planet = CreatePrimitive("Planet", PrimitiveType.Sphere, null,
-                config.PlanetRestCentre, Quaternion.identity, Vector3.one * (2f * config.planetRadius),
-                GetMaterial("Planet", new Color(0.45f, 0.52f, 0.42f)));
+            // The cube-sphere mesh has unit radius, so scaling by the planet radius sizes it.
+            var planet = new GameObject("Planet");
+            planet.transform.SetPositionAndRotation(config.PlanetRestCentre, Quaternion.identity);
+            planet.transform.localScale = Vector3.one * config.planetRadius;
 
-            // Two markers fixed to the surface so the placeholder's spin and tilt are visible:
-            // one on the north pole, one on the equator. Removed when real terrain arrives.
+            planet.AddComponent<MeshFilter>();
+            planet.AddComponent<MeshRenderer>().sharedMaterial = GetMaterial("Planet", new Color(0.45f, 0.52f, 0.42f));
+            SetReference(planet.AddComponent<PlanetMesh>(), "simRoot", simRoot);
+
+            // Two markers fixed to the surface so spin and tilt are visible while the planet is still
+            // plain: one on the north pole, one on the equator. Removed when real terrain arrives.
             Material markerMaterial = GetMaterial("PlanetMarker", new Color(0.75f, 0.30f, 0.20f));
             CreatePrimitive("Marker_NorthPole", PrimitiveType.Cylinder, planet.transform,
                 config.PlanetRestCentre + Vector3.up * config.planetRadius, Quaternion.identity, new Vector3(0.05f, 0.06f, 0.05f), markerMaterial);
@@ -211,6 +217,45 @@ namespace Terrarium.EditorTools
             var motion = planet.AddComponent<PlanetMotion>();
             SetReference(motion, "simRoot", simRoot);
             SetReference(motion, "lamp", lampLight);
+            return planet;
+        }
+
+        /// <summary>Adds the field storage, the field debug view and the debug brush to the Simulation object.</summary>
+        private static void BuildFields(SimRoot simRoot, GameObject planet)
+        {
+            GameObject host = simRoot.gameObject;
+
+            var fieldSet = host.AddComponent<FieldSet>();
+            SetReference(fieldSet, "simRoot", simRoot);
+            SetReference(fieldSet, "fieldInit", LoadAsset<ComputeShader>("Assets/Shaders/Compute/FieldInit.compute"));
+
+            var view = host.AddComponent<FieldDebugView>();
+            SetReference(view, "fieldSet", fieldSet);
+            SetReference(view, "planetRenderer", planet.GetComponent<MeshRenderer>());
+            SetReference(view, "debugShader", Shader.Find("Terrarium/FieldDebug"));
+
+            var panel = host.GetComponent<DebugPanel>();
+            var brush = host.AddComponent<DebugBrush>();
+            SetReference(brush, "fieldSet", fieldSet);
+            SetReference(brush, "view", view);
+            SetReference(brush, "planet", planet.transform);
+            SetReference(brush, "simRoot", simRoot);
+            SetReference(brush, "brushShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Brush.compute"));
+            SetReference(brush, "panel", panel);
+
+            SetReference(panel, "fieldView", view);
+            SetReference(panel, "debugBrush", brush);
+        }
+
+        private static T LoadAsset<T>(string path) where T : Object
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset == null)
+            {
+                throw new System.InvalidOperationException($"Asset not found: {path}");
+            }
+
+            return asset;
         }
 
         // ------------------------------------------------------------------- tools

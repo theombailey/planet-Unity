@@ -12,6 +12,11 @@
 // Commands: refresh          re-import changed files and recompile scripts
 //           rebuild-scene    run SceneBuilder.RebuildScene
 //           reset-config     overwrite the SimConfig asset with the code defaults
+//           view on|off [field] [channel] [edges on|off] [grid on|off]   field debug view
+//           paint corner|edge radius amount   paint at the cube corner/edge facing the camera
+//           camera yaw pitch distance         jump the desk camera
+//           preset <index>                    switch quality preset (0 Low, 1 Medium, 2 High)
+//           probe <field> <face> <x> <y>      read one field texel back from the GPU
 //           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
 //           ink on|off      enable / disable the fullscreen ink + paper pass
 //           shader-errors    list compile errors / warnings of every shader in Assets/Shaders
@@ -98,6 +103,34 @@ namespace Terrarium.EditorTools
                     WriteResult("ok: scene rebuilt");
                     break;
 
+                case "view":
+                    WriteResult(SetFieldView(parts));
+                    break;
+
+                case "paint":
+                    WriteResult(PaintAtCubeFeature(parts));
+                    break;
+
+                case "preset":
+                    var simRoot = UnityEngine.Object.FindFirstObjectByType<SimRoot>();
+                    if (simRoot == null || parts.Length < 2 || !EditorApplication.isPlaying)
+                    {
+                        WriteResult("error: usage 'preset index' in Play mode");
+                        break;
+                    }
+
+                    simRoot.SelectPreset(int.Parse(parts[1]));
+                    WriteResult($"ok: preset {simRoot.ActivePreset.label}, field resolution {simRoot.ActivePreset.fieldResolution}");
+                    break;
+
+                case "probe":
+                    WriteResult(ProbeField(parts));
+                    break;
+
+                case "camera":
+                    WriteResult(MoveCamera(parts));
+                    break;
+
                 case "fx":
                     WriteResult(SetPainterlyToggles(parts));
                     break;
@@ -139,6 +172,145 @@ namespace Terrarium.EditorTools
                     WriteResult($"error: unknown command '{command}'");
                     break;
             }
+        }
+
+        /// <summary>
+        /// "view on|off [field] [channel] [edges on|off] [grid on|off]": controls the field debug view (Play mode).
+        /// field = terrain|climate|soil|trail|brush, channel = 0..4.
+        /// </summary>
+        private static string SetFieldView(string[] parts)
+        {
+            var view = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldDebugView>();
+            if (view == null || !EditorApplication.isPlaying)
+            {
+                return "error: needs Play mode and a FieldDebugView";
+            }
+
+            view.SetShowing(parts.Length > 1 && parts[1] == "on");
+            if (parts.Length > 2 && System.Enum.TryParse(parts[2], true, out Terrarium.Sphere.FieldId field))
+            {
+                view.SelectField(field);
+            }
+
+            if (parts.Length > 3)
+            {
+                view.SelectChannel(int.Parse(parts[3]));
+            }
+
+            for (int i = 4; i + 1 < parts.Length; i += 2)
+            {
+                bool value = parts[i + 1] == "on";
+                if (parts[i] == "edges")
+                {
+                    view.ShowBoundaries = value;
+                }
+                else if (parts[i] == "grid")
+                {
+                    view.ShowGrid = value;
+                }
+            }
+
+            return $"ok: view showing={view.Showing} field={view.ViewedField} channel={view.ViewedChannel}";
+        }
+
+        /// <summary>
+        /// "paint corner|edge radiusWorld amount": paints the viewed field at the cube corner (or edge midpoint)
+        /// that currently faces the camera most directly, so the blob straddles a seam you can see.
+        /// </summary>
+        private static string PaintAtCubeFeature(string[] parts)
+        {
+            var brush = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.DebugBrush>();
+            var motion = UnityEngine.Object.FindFirstObjectByType<Terrarium.Climate.PlanetMotion>();
+            Camera camera = Camera.main;
+            if (brush == null || motion == null || camera == null || !EditorApplication.isPlaying || parts.Length < 4)
+            {
+                return "error: usage 'paint corner|edge radius amount' in Play mode";
+            }
+
+            bool corner = parts[1] == "corner";
+            float radius = float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);
+            float amount = float.Parse(parts[3], System.Globalization.CultureInfo.InvariantCulture);
+
+            // Candidate points in the planet's local frame: the 8 cube corners or the 12 edge midpoints.
+            Vector3 towardCamera = (camera.transform.position - motion.transform.position).normalized;
+            Quaternion inverse = Quaternion.Inverse(motion.transform.rotation);
+            Vector3 localToCamera = inverse * towardCamera;
+
+            Vector3 best = Vector3.up;
+            float bestDot = -2f;
+            for (int x = -1; x <= 1; x++)
+            {
+                for (int y = -1; y <= 1; y++)
+                {
+                    for (int z = -1; z <= 1; z++)
+                    {
+                        int nonZero = (x != 0 ? 1 : 0) + (y != 0 ? 1 : 0) + (z != 0 ? 1 : 0);
+                        if (nonZero != (corner ? 3 : 2))
+                        {
+                            continue;
+                        }
+
+                        Vector3 candidate = new Vector3(x, y, z).normalized;
+                        float facing = Vector3.Dot(candidate, localToCamera);
+                        if (facing > bestDot)
+                        {
+                            bestDot = facing;
+                            best = candidate;
+                        }
+                    }
+                }
+            }
+
+            brush.PaintAtLocalDirection(best, radius, amount);
+            return $"ok: painted {(corner ? "corner" : "edge")} at local {best}, facing dot {bestDot:0.00}";
+        }
+
+        /// <summary>"probe field face x y": reads one texel of a field back from the GPU (Play mode).</summary>
+        private static string ProbeField(string[] parts)
+        {
+            var fieldSet = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldSet>();
+            if (fieldSet == null || parts.Length < 5 || !EditorApplication.isPlaying
+                || !System.Enum.TryParse(parts[1], true, out Terrarium.Sphere.FieldId id))
+            {
+                return "error: usage 'probe field face x y' in Play mode";
+            }
+
+            RenderTexture texture = fieldSet.Get(id).Current;
+            var request = UnityEngine.Rendering.AsyncGPUReadback.Request(texture, 0);
+            request.WaitForCompletion();
+            if (request.hasError)
+            {
+                return "error: readback failed";
+            }
+
+            int face = int.Parse(parts[2]);
+            int x = int.Parse(parts[3]);
+            int y = int.Parse(parts[4]);
+            Unity.Collections.NativeArray<float> slice = request.GetData<float>(face);
+            int channels = texture.format == RenderTextureFormat.RFloat ? 1 : 4;
+            int index = (y * texture.width + x) * channels;
+
+            var text = new StringBuilder($"ok: {id} face {face} ({x},{y}) =");
+            for (int c = 0; c < channels; c++)
+            {
+                text.Append($" {slice[index + c]:0.0000}");
+            }
+
+            return text.ToString();
+        }
+
+        /// <summary>"camera yaw pitch distance": jumps the desk camera to a pose (Play mode).</summary>
+        private static string MoveCamera(string[] parts)
+        {
+            var rig = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.CameraRig>();
+            if (rig == null || parts.Length < 4 || !EditorApplication.isPlaying)
+            {
+                return "error: usage 'camera yaw pitch distance' in Play mode";
+            }
+
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            rig.SnapTo(float.Parse(parts[1], culture), float.Parse(parts[2], culture), float.Parse(parts[3], culture));
+            return "ok: camera moved";
         }
 
         /// <summary>
