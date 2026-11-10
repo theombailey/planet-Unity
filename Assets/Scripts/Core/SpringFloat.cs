@@ -27,6 +27,34 @@ using UnityEngine;
 
 namespace Terrarium
 {
+    /// <summary>A critically damped spring on a 3D point, integrated exactly (three independent SpringFloats).</summary>
+    public struct SpringVector3
+    {
+        /// <summary>Current smoothed value.</summary>
+        public Vector3 Value;
+
+        /// <summary>Current rate of change of <see cref="Value"/>, per second.</summary>
+        public Vector3 Velocity;
+
+        /// <summary>Creates a spring at rest at the given point.</summary>
+        public SpringVector3(Vector3 value)
+        {
+            Value = value;
+            Velocity = Vector3.zero;
+        }
+
+        /// <summary>Advances the spring by <paramref name="deltaSeconds"/> toward <paramref name="target"/>.</summary>
+        public void Step(Vector3 target, float omega, float deltaSeconds)
+        {
+            float decay = Mathf.Exp(-omega * deltaSeconds);
+            Vector3 offset = Value - target;
+            Vector3 blend = (Velocity + omega * offset) * deltaSeconds;
+
+            Velocity = (Velocity - omega * blend) * decay;
+            Value = target + (offset + blend) * decay;
+        }
+    }
+
     /// <summary>A critically damped spring on one float, integrated exactly.</summary>
     public struct SpringFloat
     {

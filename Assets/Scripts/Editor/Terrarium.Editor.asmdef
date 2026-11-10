@@ -3,6 +3,7 @@
     "rootNamespace": "Terrarium.EditorTools",
     "references": [
         "Terrarium",
+        "Unity.InputSystem",
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.Universal.Runtime",
         "UnityEditor.TestRunner",

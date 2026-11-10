@@ -13,6 +13,8 @@
 //                      pay upkeep, die or split.
 //   TrailDiffuse     - adds this step's deposits to the trail, blurs it, fades it.
 //   ClearDeposit     - zeroes the deposit buffer.
+//   SpawnAgents      - the spore dish: starts agents inside a small circle.
+//   KillAgents       - an impact: removes every agent inside a circle.
 //
 // Idea (the three rules that grow a network):
 //   1. SENSE  Each agent samples a "signal" at three points ahead of it: straight on, and
@@ -71,6 +73,8 @@
 #pragma kernel AgentStep
 #pragma kernel TrailDiffuse
 #pragma kernel ClearDeposit
+#pragma kernel SpawnAgents
+#pragma kernel KillAgents
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 #include "Assets/Shaders/Include/Noise.hlsl"
@@ -123,6 +127,10 @@ float _BirthCost;
 float _OceanPenalty;
 float _ColdLimit;
 float _ColdPenalty;
+
+float3 _EventDirection;      // SpawnAgents / KillAgents: centre of the circle (unit vector, planet frame)
+float _EventRadius;          // ... and its radius in radians
+uint _SpawnCount;
 
 static const float OCEAN_AVOIDANCE = 50.0;      // signal penalty for ocean: agents never choose to go there
 
@@ -407,4 +415,56 @@ void ClearDeposit(uint3 id : SV_DispatchThreadID)
     {
         _Deposit[id.x] = 0u;
     }
+}
+
+// Spore dish: each thread starts one agent at a random point inside the circle, in a random dead slot
+// claimed with the same compare-exchange used for births. If the slot is taken the spore is simply lost.
+[numthreads(64, 1, 1)]
+void SpawnAgents(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _SpawnCount)
+    {
+        return;
+    }
+
+    uint rng = HashUint(id.x * 2654435761u + _Frame * 747796405u + 977u);
+    uint slot = HashUint(rng) % _PoolSize;
+
+    uint previous;
+    InterlockedCompareExchange(_Alive[slot], 0u, 2u, previous);
+    if (previous != 0u)
+    {
+        return;
+    }
+
+    // A uniform random point in the circle: the distance is radius * sqrt(u), the direction is random.
+    float3 outward = RandomHeading(_EventDirection, rng);
+    float distance = _EventRadius * sqrt(Random01(rng));
+    float3 position = Ahead(_EventDirection, outward, distance);
+
+    _PosEnergy[slot] = float4(position, _StartEnergy);
+    _Heading[slot] = float4(RandomHeading(position, rng), 0.0);
+    InterlockedAdd(_Counters[1], 1u);
+}
+
+// An impact: every living agent within the circle dies, and its body mass joins the soil as organic matter.
+[numthreads(64, 1, 1)]
+void KillAgents(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize || _Alive[index] == 0u)
+    {
+        return;
+    }
+
+    float3 position = _PosEnergy[index].xyz;
+    float angle = acos(clamp(dot(position, _EventDirection), -1.0, 1.0));
+    if (angle > _EventRadius)
+    {
+        return;
+    }
+
+    _Alive[index] = 0u;
+    InterlockedAdd(_Returned[TexelIndex(CS_DirToTexel(position, _Resolution))], (uint)(_BirthCost * NUTRIENT_SCALE));
+    InterlockedAdd(_Counters[2], 1u);
 }

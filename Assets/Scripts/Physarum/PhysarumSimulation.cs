@@ -50,6 +50,8 @@ namespace Terrarium.Physarum
         private readonly int clearDepositKernel;
         private readonly int applyKernel;
         private readonly int transportKernel;
+        private readonly int spawnKernel;
+        private readonly int killKernel;
 
         private ComputeBuffer posEnergy;
         private ComputeBuffer heading;
@@ -75,6 +77,8 @@ namespace Terrarium.Physarum
             clearDepositKernel = physarum.FindKernel("ClearDeposit");
             applyKernel = nutrients.FindKernel("ApplyEatReturn");
             transportKernel = nutrients.FindKernel("NutrientTransport");
+            spawnKernel = physarum.FindKernel("SpawnAgents");
+            killKernel = physarum.FindKernel("KillAgents");
         }
 
         /// <summary>Number of agent slots (the most agents that can be alive).</summary>
@@ -171,6 +175,49 @@ namespace Terrarium.Physarum
             physarum.SetBuffer(initKernel, AliveId, alive);
             physarum.SetTexture(initKernel, TerrainId, terrain);
             physarum.Dispatch(initKernel, Groups(PoolSize, AgentGroupSize), 1, 1);
+        }
+
+        /// <summary>
+        /// The spore dish: starts up to <paramref name="count"/> new agents at random points inside a circle.
+        /// Spores that find no free slot are lost.
+        /// </summary>
+        /// <param name="localDirection">Centre of the circle, a unit vector in the planet's local space.</param>
+        /// <param name="angularRadius">Radius of the circle in radians.</param>
+        /// <param name="count">How many agents to try to start.</param>
+        public void SpawnAgents(Vector3 localDirection, float angularRadius, int count)
+        {
+            frame++;
+            physarum.SetInt(PoolSizeId, PoolSize);
+            physarum.SetInt(FrameId, (int)frame);
+            physarum.SetInt(ResolutionId, Resolution);
+            physarum.SetInt(SpawnCountId, count);
+            physarum.SetVector(EventDirectionId, localDirection.normalized);
+            physarum.SetFloat(EventRadiusId, angularRadius);
+            physarum.SetFloat(StartEnergyId, config.physarumStartEnergy);
+
+            physarum.SetBuffer(spawnKernel, PosEnergyId, posEnergy);
+            physarum.SetBuffer(spawnKernel, HeadingId, heading);
+            physarum.SetBuffer(spawnKernel, AliveId, alive);
+            physarum.SetBuffer(spawnKernel, CountersId, counters);
+            physarum.Dispatch(spawnKernel, Groups(count, AgentGroupSize), 1, 1);
+        }
+
+        /// <summary>An impact: kills every agent inside a circle; their body mass returns to the soil.</summary>
+        /// <param name="localDirection">Centre of the circle, a unit vector in the planet's local space.</param>
+        /// <param name="angularRadius">Radius of the circle in radians.</param>
+        public void KillAgents(Vector3 localDirection, float angularRadius)
+        {
+            physarum.SetInt(PoolSizeId, PoolSize);
+            physarum.SetInt(ResolutionId, Resolution);
+            physarum.SetVector(EventDirectionId, localDirection.normalized);
+            physarum.SetFloat(EventRadiusId, angularRadius);
+            physarum.SetFloat(BirthCostId, config.physarumBirthCost);
+
+            physarum.SetBuffer(killKernel, PosEnergyId, posEnergy);
+            physarum.SetBuffer(killKernel, AliveId, alive);
+            physarum.SetBuffer(killKernel, ReturnedId, returned);
+            physarum.SetBuffer(killKernel, CountersId, counters);
+            physarum.Dispatch(killKernel, Groups(PoolSize, AgentGroupSize), 1, 1);
         }
 
         /// <summary>Runs one simulation step of <paramref name="deltaSeconds"/> sim seconds.</summary>
@@ -369,6 +416,9 @@ namespace Terrarium.Physarum
         private static readonly int BirthCostId = Shader.PropertyToID("_BirthCost");
         private static readonly int OceanPenaltyId = Shader.PropertyToID("_OceanPenalty");
         private static readonly int ColdLimitId = Shader.PropertyToID("_ColdLimit");
+        private static readonly int SpawnCountId = Shader.PropertyToID("_SpawnCount");
+        private static readonly int EventDirectionId = Shader.PropertyToID("_EventDirection");
+        private static readonly int EventRadiusId = Shader.PropertyToID("_EventRadius");
         private static readonly int ColdPenaltyId = Shader.PropertyToID("_ColdPenalty");
         private static readonly int DiffusionBaseId = Shader.PropertyToID("_DiffusionBase");
         private static readonly int DiffusionNetworkId = Shader.PropertyToID("_DiffusionNetwork");

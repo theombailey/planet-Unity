@@ -42,6 +42,38 @@ namespace Terrarium.Interaction
         /// <summary>True while the right mouse button is held (orbit in desk view).</summary>
         public static bool OrbitHeld => Mouse.current != null && Mouse.current.rightButton.isPressed;
 
+        /// <summary>True on the frame the left mouse button goes down.</summary>
+        public static bool PrimaryPressed => Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+
+        /// <summary>True on the frame the left mouse button is released.</summary>
+        public static bool PrimaryReleased => Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame;
+
+        /// <summary>True on the frame the right mouse button goes down.</summary>
+        public static bool SecondaryPressed => Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame;
+
+        /// <summary>True on the frame the right mouse button is released.</summary>
+        public static bool SecondaryReleased => Mouse.current != null && Mouse.current.rightButton.wasReleasedThisFrame;
+
+        /// <summary>True on the frame Escape goes down (put a held tool back).</summary>
+        public static bool CancelPressed => Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+
+        /// <summary>WASD as a vector: x = D minus A (right), y = W minus S (forward), each -1, 0 or +1.</summary>
+        public static Vector2 MoveAxis
+        {
+            get
+            {
+                Keyboard keyboard = Keyboard.current;
+                if (keyboard == null)
+                {
+                    return Vector2.zero;
+                }
+
+                float x = (keyboard.dKey.isPressed ? 1f : 0f) - (keyboard.aKey.isPressed ? 1f : 0f);
+                float y = (keyboard.wKey.isPressed ? 1f : 0f) - (keyboard.sKey.isPressed ? 1f : 0f);
+                return new Vector2(x, y);
+            }
+        }
+
         /// <summary>Mouse movement since last frame, in pixels (x right, y up).</summary>
         public static Vector2 PointerDelta => Mouse.current != null ? Mouse.current.delta.ReadValue() : Vector2.zero;
 

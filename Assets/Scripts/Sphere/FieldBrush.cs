@@ -24,12 +24,40 @@ namespace Terrarium.Sphere
 
         private readonly ComputeShader shader;
         private readonly int kernel;
+        private readonly int craterKernel;
 
         /// <summary>Creates a brush that uses the given Brush.compute.</summary>
         public FieldBrush(ComputeShader brushShader)
         {
             shader = brushShader;
             kernel = shader.FindKernel("BrushAdd");
+            craterKernel = shader.FindKernel("Crater");
+        }
+
+        /// <summary>
+        /// A meteor impact: digs a bowl into the terrain, raises a rim and scatters organic matter around it.
+        /// </summary>
+        /// <param name="terrain">Terrain field texture (height in R), changed in place.</param>
+        /// <param name="soil">Soil field texture (organic matter in G), changed in place.</param>
+        /// <param name="localDirection">Impact point as a unit vector in the planet's local space.</param>
+        /// <param name="angularRadius">Crater radius in radians.</param>
+        /// <param name="depth">How far the centre is dug down, in height units (the height range is -1..1).</param>
+        /// <param name="rimHeight">How far the rim is raised.</param>
+        /// <param name="organicAmount">Organic matter thrown onto the ring just outside the crater.</param>
+        public void ApplyCrater(RenderTexture terrain, RenderTexture soil, Vector3 localDirection, float angularRadius, float depth, float rimHeight, float organicAmount)
+        {
+            int resolution = terrain.width;
+            int groups = (resolution + ThreadGroupSize - 1) / ThreadGroupSize;
+
+            shader.SetInt("_Resolution", resolution);
+            shader.SetTexture(craterKernel, "_CraterTerrain", terrain);
+            shader.SetTexture(craterKernel, "_CraterSoil", soil);
+            shader.SetVector("_BrushDirection", localDirection.normalized);
+            shader.SetFloat("_BrushAngularRadius", Mathf.Max(angularRadius, MinAngularRadius));
+            shader.SetFloat("_CraterDepth", depth);
+            shader.SetFloat("_CraterRim", rimHeight);
+            shader.SetFloat("_CraterOrganic", organicAmount);
+            shader.Dispatch(craterKernel, groups, groups, CubeSphere.FaceCount);
         }
 
         /// <summary>Converts a radius in world units into the angle the brush uses.</summary>

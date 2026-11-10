@@ -43,37 +43,41 @@ namespace Terrarium.EditorTools
         private const string DeskShaderName = "Terrarium/Desk";
         private const string PlanetShaderName = "Terrarium/PlanetSurface";
 
-        /// <summary>Describes one placeholder tool prop on the desk.</summary>
-        private readonly struct ToolProp
+        /// <summary>Describes one placeholder prop on the desk: a tool or a dial.</summary>
+        private readonly struct PropSpec
         {
             public readonly string Name;
             public readonly PrimitiveType Shape;
             public readonly Vector3 Scale;
             public readonly Color Color;
+            public readonly ToolKind? Tool;
+            public readonly DialKind? Dial;
 
-            public ToolProp(string name, PrimitiveType shape, Vector3 scale, Color color)
+            public PropSpec(string name, PrimitiveType shape, Vector3 scale, Color color, ToolKind? tool = null, DialKind? dial = null)
             {
                 Name = name;
                 Shape = shape;
                 Scale = scale;
                 Color = color;
+                Tool = tool;
+                Dial = dial;
             }
         }
 
         // Left to right along the front of the desk. Sizes are in world units (planet radius = 1).
-        private static readonly ToolProp[] ToolProps =
+        private static readonly PropSpec[] PropSpecs =
         {
-            new ToolProp("Dial_Time", PrimitiveType.Cylinder, new Vector3(0.22f, 0.03f, 0.22f), new Color(0.55f, 0.45f, 0.25f)),
-            new ToolProp("Tool_WateringCan", PrimitiveType.Cylinder, new Vector3(0.20f, 0.14f, 0.20f), new Color(0.30f, 0.45f, 0.60f)),
-            new ToolProp("Tool_CompostScoop", PrimitiveType.Cube, new Vector3(0.28f, 0.10f, 0.16f), new Color(0.35f, 0.25f, 0.15f)),
-            new ToolProp("Tool_SeedJar", PrimitiveType.Cylinder, new Vector3(0.15f, 0.13f, 0.15f), new Color(0.60f, 0.65f, 0.45f)),
-            new ToolProp("Tool_SporeDish", PrimitiveType.Cylinder, new Vector3(0.22f, 0.02f, 0.22f), new Color(0.75f, 0.72f, 0.60f)),
-            new ToolProp("Tool_BoidCage", PrimitiveType.Cube, new Vector3(0.22f, 0.24f, 0.22f), new Color(0.50f, 0.50f, 0.52f)),
-            new ToolProp("Tool_HeatLamp", PrimitiveType.Capsule, new Vector3(0.12f, 0.14f, 0.12f), new Color(0.80f, 0.40f, 0.20f)),
-            new ToolProp("Tool_FrostSpray", PrimitiveType.Capsule, new Vector3(0.11f, 0.15f, 0.11f), new Color(0.65f, 0.80f, 0.90f)),
-            new ToolProp("Tool_Meteor", PrimitiveType.Sphere, new Vector3(0.20f, 0.17f, 0.19f), new Color(0.28f, 0.26f, 0.25f)),
-            new ToolProp("Tool_FieldLens", PrimitiveType.Cylinder, new Vector3(0.20f, 0.015f, 0.20f), new Color(0.70f, 0.80f, 0.80f)),
-            new ToolProp("Dial_Spin", PrimitiveType.Cylinder, new Vector3(0.22f, 0.03f, 0.22f), new Color(0.55f, 0.45f, 0.25f)),
+            new PropSpec("Dial_Time", PrimitiveType.Cylinder, new Vector3(0.22f, 0.03f, 0.22f), new Color(0.55f, 0.45f, 0.25f), dial: DialKind.Time),
+            new PropSpec("Tool_WateringCan", PrimitiveType.Cylinder, new Vector3(0.20f, 0.14f, 0.20f), new Color(0.30f, 0.45f, 0.60f), ToolKind.WateringCan),
+            new PropSpec("Tool_CompostScoop", PrimitiveType.Cube, new Vector3(0.28f, 0.10f, 0.16f), new Color(0.35f, 0.25f, 0.15f), ToolKind.CompostScoop),
+            new PropSpec("Tool_SeedJar", PrimitiveType.Cylinder, new Vector3(0.15f, 0.13f, 0.15f), new Color(0.60f, 0.65f, 0.45f), ToolKind.SeedJar),
+            new PropSpec("Tool_SporeDish", PrimitiveType.Cylinder, new Vector3(0.22f, 0.02f, 0.22f), new Color(0.75f, 0.72f, 0.60f), ToolKind.SporeDish),
+            new PropSpec("Tool_BoidCage", PrimitiveType.Cube, new Vector3(0.22f, 0.24f, 0.22f), new Color(0.50f, 0.50f, 0.52f), ToolKind.BoidCage),
+            new PropSpec("Tool_HeatLamp", PrimitiveType.Capsule, new Vector3(0.12f, 0.14f, 0.12f), new Color(0.80f, 0.40f, 0.20f), ToolKind.HeatLamp),
+            new PropSpec("Tool_FrostSpray", PrimitiveType.Capsule, new Vector3(0.11f, 0.15f, 0.11f), new Color(0.65f, 0.80f, 0.90f), ToolKind.FrostSpray),
+            new PropSpec("Tool_Meteor", PrimitiveType.Sphere, new Vector3(0.20f, 0.17f, 0.19f), new Color(0.28f, 0.26f, 0.25f), ToolKind.Meteor),
+            new PropSpec("Tool_FieldLens", PrimitiveType.Cylinder, new Vector3(0.20f, 0.015f, 0.20f), new Color(0.70f, 0.80f, 0.80f), ToolKind.FieldLens),
+            new PropSpec("Dial_Spin", PrimitiveType.Cylinder, new Vector3(0.22f, 0.03f, 0.22f), new Color(0.55f, 0.45f, 0.25f), dial: DialKind.Spin),
         };
 
         /// <summary>Builds the Terrarium scene from scratch and makes it the first scene in Build Settings.</summary>
@@ -105,7 +109,8 @@ namespace Terrarium.EditorTools
             GameObject planet = BuildPlanet(config, simRoot, lampLight);
             BuildFields(simRoot, planet);
             BuildTools(config);
-            BuildCamera(config, simRoot);
+            CameraRig cameraRig = BuildCamera(config, simRoot, planet);
+            BuildInteraction(simRoot, planet, cameraRig);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, enabled: true) };
@@ -278,25 +283,40 @@ namespace Terrarium.EditorTools
         private static void BuildTools(SimConfig config)
         {
             var tools = new GameObject("Tools").transform;
+            Material pointerMaterial = GetMaterial("DialPointer", new Color(0.85f, 0.25f, 0.15f));
 
             // Spread the props evenly along the front arc of an ellipse centred under the planet.
             // Angles are measured in the desk plane from +x; 270 degrees is straight toward the camera.
             const float startDegrees = 224f;
             const float endDegrees = 316f;
 
-            for (int i = 0; i < ToolProps.Length; i++)
+            for (int i = 0; i < PropSpecs.Length; i++)
             {
-                ToolProp prop = ToolProps[i];
-                float angle = Mathf.Lerp(startDegrees, endDegrees, (float)i / (ToolProps.Length - 1)) * Mathf.Deg2Rad;
+                PropSpec spec = PropSpecs[i];
+                float angle = Mathf.Lerp(startDegrees, endDegrees, (float)i / (PropSpecs.Length - 1)) * Mathf.Deg2Rad;
                 var position = new Vector3(
                     Mathf.Cos(angle) * config.toolArcRadii.x,
-                    RestHeight(prop.Shape, prop.Scale),
+                    RestHeight(spec.Shape, spec.Scale),
                     Mathf.Sin(angle) * config.toolArcRadii.y);
 
-                GameObject tool = CreatePrimitive(prop.Name, prop.Shape, tools, position, Quaternion.identity, prop.Scale, GetMaterial(prop.Name, prop.Color));
+                GameObject prop = CreatePrimitive(spec.Name, spec.Shape, tools, position, Quaternion.identity, spec.Scale, GetMaterial(spec.Name, spec.Color));
 
-                // Tools keep a collider so Phase 6 can pick them with a ray. A box is cheap and close enough.
-                tool.AddComponent<BoxCollider>();
+                // A collider lets the mouse ray find the prop. A box is cheap and close enough.
+                prop.AddComponent<BoxCollider>();
+
+                if (spec.Tool.HasValue)
+                {
+                    SetEnum(prop.AddComponent<ToolProp>(), "kind", (int)spec.Tool.Value);
+                }
+
+                if (spec.Dial.HasValue)
+                {
+                    SetEnum(prop.AddComponent<DialProp>(), "kind", (int)spec.Dial.Value);
+
+                    // A small peg near the rim, so the turn of the dial can be seen.
+                    Vector3 rim = position + Vector3.right * (spec.Scale.x * 0.38f) + Vector3.up * (spec.Scale.y + 0.012f);
+                    CreatePrimitive("Pointer", PrimitiveType.Cube, prop.transform, rim, Quaternion.identity, new Vector3(0.05f, 0.025f, 0.02f), pointerMaterial);
+                }
             }
         }
 
@@ -310,7 +330,7 @@ namespace Terrarium.EditorTools
 
         // ------------------------------------------------------- camera + sim root
 
-        private static void BuildCamera(SimConfig config, SimRoot simRoot)
+        private static CameraRig BuildCamera(SimConfig config, SimRoot simRoot, GameObject planet)
         {
             var cameraObject = new GameObject("Main Camera") { tag = "MainCamera" };
             var camera = cameraObject.AddComponent<Camera>();
@@ -327,6 +347,8 @@ namespace Terrarium.EditorTools
 
             var rig = cameraObject.AddComponent<CameraRig>();
             SetReference(rig, "simRoot", simRoot);
+            SetReference(rig, "planet", planet.transform);
+            return rig;
         }
 
         private static SimRoot BuildSimulationRoot(SimConfig config)
@@ -352,6 +374,48 @@ namespace Terrarium.EditorTools
             SetReference(debugPanel, "simRoot", simRoot);
             SetReference(debugPanel, "painterly", painterly);
             return simRoot;
+        }
+
+        /// <summary>Adds the tool controller, which ties the props, dials, camera and fields together.</summary>
+        private static void BuildInteraction(SimRoot simRoot, GameObject planet, CameraRig cameraRig)
+        {
+            GameObject host = simRoot.gameObject;
+            var controller = host.AddComponent<ToolController>();
+
+            SetReference(controller, "simRoot", simRoot);
+            SetReference(controller, "fieldSet", host.GetComponent<FieldSet>());
+            SetReference(controller, "cameraRig", cameraRig);
+            SetReference(controller, "planet", planet.transform);
+            SetReference(controller, "brushShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Brush.compute"));
+            SetReference(controller, "physarum", host.GetComponent<PhysarumSystem>());
+            SetReference(controller, "panel", host.GetComponent<DebugPanel>());
+            SetReference(controller, "fieldView", host.GetComponent<FieldDebugView>());
+            SetReference(controller, "splashMaterial", GetSplashMaterial());
+
+            foreach (DialProp dial in Object.FindObjectsByType<DialProp>(FindObjectsSortMode.None))
+            {
+                string field = dial.Kind == DialKind.Time ? "timeDial" : "spinDial";
+                SetReference(controller, field, dial);
+            }
+
+            // The debug brush must stand aside while a tool is in hand.
+            SetReference(host.GetComponent<DebugBrush>(), "tools", controller);
+        }
+
+        /// <summary>Creates the material for the dust a meteor throws up (URP's unlit particle shader).</summary>
+        private static Material GetSplashMaterial()
+        {
+            Material material = GetOrCreateMaterial("MeteorSplash", "Universal Render Pipeline/Particles/Unlit");
+            material.SetColor("_BaseColor", new Color(0.22f, 0.15f, 0.10f, 1f));
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        private static void SetEnum(Object component, string fieldName, int value)
+        {
+            var serialized = new SerializedObject(component);
+            serialized.FindProperty(fieldName).enumValueIndex = value;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         // ----------------------------------------------------------------- helpers

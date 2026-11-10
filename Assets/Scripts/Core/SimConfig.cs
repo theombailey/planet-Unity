@@ -215,6 +215,81 @@ namespace Terrarium
         [Tooltip("How fast organic matter turns into nutrients in warm, moist soil, per sim second.")]
         [Range(0f, 0.2f)] public float decompositionRate = 0.02f;
 
+        [Header("Tools (see ToolController)")]
+        [Tooltip("Brush radius as a fraction of the camera's distance to the surface, so a tool covers more from far away and less up close.")]
+        [Range(0.01f, 0.3f)] public float toolRadiusPerDistance = 0.07f;
+
+        [Tooltip("Smallest brush radius, in world units (reached close to the surface).")]
+        [Range(0.002f, 0.1f)] public float toolRadiusMin = 0.01f;
+
+        [Tooltip("Largest brush radius, in world units (reached in desk view).")]
+        [Range(0.05f, 1f)] public float toolRadiusMax = 0.3f;
+
+        [Tooltip("How high above the ground a held tool floats, in world units.")]
+        [Range(0f, 0.5f)] public float toolHoverHeight = 0.12f;
+
+        [Tooltip("Moisture the watering can adds per second at the brush centre (moisture runs 0..1).")]
+        [Range(0.05f, 5f)] public float wateringRate = 0.8f;
+
+        [Tooltip("Nutrients the compost scoop adds per second at the brush centre.")]
+        [Range(0.05f, 5f)] public float compostRate = 1.2f;
+
+        [Tooltip("Organic matter the compost scoop adds per second at the brush centre (it decomposes into nutrients).")]
+        [Range(0f, 5f)] public float compostOrganicRate = 0.6f;
+
+        [Tooltip("Temperature the heat lamp adds per second at the brush centre, in deg C. The climate pulls it back toward its target, so heating a spot has to be sustained.")]
+        [Range(1f, 300f)] public float heatRate = 60f;
+
+        [Tooltip("Temperature the frost spray removes per second at the brush centre, in deg C.")]
+        [Range(1f, 300f)] public float frostRate = 60f;
+
+        [Tooltip("Agents the spore dish tries to start per click.")]
+        [Range(10, 5000)] public int sporeCount = 400;
+
+        [Tooltip("Radius of a meteor crater, in world units.")]
+        [Range(0.03f, 0.6f)] public float meteorRadius = 0.16f;
+
+        [Tooltip("How far a meteor digs the centre of its crater down, in height units (the terrain height runs -1..1). Deep enough on lowland to leave a crater lake.")]
+        [Range(0.05f, 1f)] public float meteorDepth = 0.4f;
+
+        [Tooltip("How far the crater rim is raised, in height units.")]
+        [Range(0f, 0.5f)] public float meteorRimHeight = 0.12f;
+
+        [Tooltip("Organic matter thrown onto the ring just outside a crater.")]
+        [Range(0f, 10f)] public float meteorOrganic = 2f;
+
+        [Tooltip("Seconds before another meteor can be fired.")]
+        [Range(0f, 10f)] public float meteorCooldownSeconds = 1.5f;
+
+        [Header("Camera: surface mode (see CameraRig, SurfaceNavigation)")]
+        [Tooltip("Lowest camera height above the planet radius in surface mode, in world units. Must clear the highest mountain (terrainHeightScale).")]
+        [Range(0.04f, 0.3f)] public float surfaceHeightMin = 0.05f;
+
+        [Tooltip("Highest camera height in surface mode; zooming out past it returns to desk view.")]
+        [Range(0.2f, 2f)] public float surfaceHeightMax = 0.7f;
+
+        [Tooltip("Camera height when surface mode is entered.")]
+        [Range(0.05f, 1f)] public float surfaceHeightDefault = 0.35f;
+
+        [Tooltip("How far the camera looks down from the horizon in surface mode when entered, in degrees.")]
+        [Range(5f, 89f)] public float surfacePitchDefaultDegrees = 62f;
+
+        [Tooltip("How fast WASD moves the camera over the ground, in radians of arc per second per unit of height (so it is slower near the ground).")]
+        [Range(0.1f, 5f)] public float surfaceMoveSpeed = 1.5f;
+
+        [Tooltip("Pan speed for left-drag, in radians of arc per pixel per unit of height.")]
+        [Range(0.0001f, 0.01f)] public float surfaceDragSpeed = 0.0012f;
+
+        [Tooltip("Look speed in surface mode: degrees of turn per pixel of right-drag.")]
+        [Range(0.02f, 1f)] public float surfaceLookDegreesPerPixel = 0.2f;
+
+        [Tooltip("How fast the camera flies between desk view and surface mode (spring stiffness, rad/s; settles in about 4.7 / omega seconds).")]
+        [Range(1f, 20f)] public float surfaceBlendOmega = 3.2f;
+
+        [Header("Dials (see DialProp)")]
+        [Tooltip("Fastest the spin dial can make the planet turn, as a multiple of the starting spin. The slowest is its reciprocal.")]
+        [Range(1.5f, 8f)] public float spinDialRange = 4f;
+
         [Header("Planet surface and debug brush (see PlanetMeshBuilder, DebugBrush)")]
         [Tooltip("Quads along one edge of each of the 6 cube faces of the planet mesh. 128 gives ~99k vertices.")]
         [Range(16, 256)] public int planetMeshSubdivisions = 128;

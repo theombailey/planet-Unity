@@ -74,6 +74,30 @@ MonoBehaviour:
   nutrientNetworkDiffusion: 0.0002
   nutrientTrailSaturation: 2
   decompositionRate: 0.02
+  toolRadiusPerDistance: 0.07
+  toolRadiusMin: 0.01
+  toolRadiusMax: 0.3
+  toolHoverHeight: 0.12
+  wateringRate: 0.8
+  compostRate: 1.2
+  compostOrganicRate: 0.6
+  heatRate: 60
+  frostRate: 60
+  sporeCount: 400
+  meteorRadius: 0.16
+  meteorDepth: 0.4
+  meteorRimHeight: 0.12
+  meteorOrganic: 2
+  meteorCooldownSeconds: 1.5
+  surfaceHeightMin: 0.05
+  surfaceHeightMax: 0.7
+  surfaceHeightDefault: 0.35
+  surfacePitchDefaultDegrees: 62
+  surfaceMoveSpeed: 1.5
+  surfaceDragSpeed: 0.0012
+  surfaceLookDegreesPerPixel: 0.2
+  surfaceBlendOmega: 3.2
+  spinDialRange: 4
   planetMeshSubdivisions: 128
   debugBrushRadius: 0.18
   debugBrushStrength: 1.5

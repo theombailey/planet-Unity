@@ -153,6 +153,27 @@ namespace Terrarium.Physarum
                 deltaSeconds);
         }
 
+        /// <summary>The spore dish: starts agents at random points inside a circle on the planet.</summary>
+        /// <param name="localDirection">Centre, a unit vector in the planet's local space.</param>
+        /// <param name="angularRadius">Radius in radians.</param>
+        /// <param name="count">How many agents to try to start.</param>
+        public void SpawnAgents(Vector3 localDirection, float angularRadius, int count)
+        {
+            if (simulation != null && simulation.IsAllocated)
+            {
+                simulation.SpawnAgents(localDirection, angularRadius, count);
+            }
+        }
+
+        /// <summary>An impact: removes every agent inside a circle on the planet.</summary>
+        public void KillAgents(Vector3 localDirection, float angularRadius)
+        {
+            if (simulation != null && simulation.IsAllocated)
+            {
+                simulation.KillAgents(localDirection, angularRadius);
+            }
+        }
+
         /// <summary>Immediate-mode readout, called from the F1 debug panel.</summary>
         public void OnDebugGui()
         {

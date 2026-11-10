@@ -41,6 +41,9 @@ namespace Terrarium.Interaction
         [Tooltip("Optional: the F1 panel, so clicks on the panel do not paint the planet behind it.")]
         [SerializeField] private DebugPanel panel;
 
+        [Tooltip("Optional: the tool controller; the debug brush stays idle while a tool is in hand or a dial is turning.")]
+        [SerializeField] private ToolController tools;
+
         private FieldBrush brush;
         private Camera viewCamera;
 
@@ -67,6 +70,11 @@ namespace Terrarium.Interaction
         private void Update()
         {
             if (!view.Showing || !InputReader.PaintHeld)
+            {
+                return;
+            }
+
+            if (tools != null && (tools.HoldingTool || tools.TurningDial))
             {
                 return;
             }

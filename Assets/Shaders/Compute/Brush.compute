@@ -3,7 +3,12 @@
 // -----------------------------------------------------------------------------
 // Purpose : Paints a soft round blob onto a cube-sphere field. Every tool
 //           (watering can, compost, heat, meteor...) works by adding to fields
-//           with this kernel, so tools never touch creatures directly.
+//           with these kernels, so tools never touch creatures directly.
+//
+// Kernels :
+//   BrushAdd - adds a soft blob to chosen channels of one field.
+//   Crater   - a meteor impact: digs a bowl into the terrain, raises a rim, and
+//              throws a ring of organic matter onto the soil around it.
 //
 // Idea    : The brush is a point on the sphere (a direction) with an angular
 //           radius. Each texel asks "how far is my centre direction from the
@@ -35,6 +40,7 @@
 // =============================================================================
 
 #pragma kernel BrushAdd
+#pragma kernel Crater
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 
@@ -67,4 +73,56 @@ void BrushAdd(uint3 id : SV_DispatchThreadID)
     bool4 touched = _BrushAmount != 0.0;
 
     _Target[id] = touched ? painted : before;
+}
+
+// ---- Crater ---------------------------------------------------------------------
+// Idea    : An impact digs a bowl, piles a rim of thrown-out rock around it, and scatters
+//           broken material (organic matter) on the ground just outside.
+// Equations (angle = angular distance from the impact, R = crater radius):
+//     bowl   = (1 - (angle / R)^2)  for angle < R, else 0            deepest at the centre
+//     rim    = exp( -((angle - R) / (0.25 R))^2 )  for angle > 0.9 R  a ridge at the edge
+//     height = clamp( height - depth * bowl + rimHeight * rim, -1, 1 )
+//     ring   = smoothstep(0.7 R, R, angle) * (1 - smoothstep(R, 1.8 R, angle))
+//     organic matter += organicAmount * ring
+//     A crater cut below sea level (height < 0) becomes a crater lake, because the planet
+//     counts ground below zero as water.
+// Parameters: _BrushDirection, _BrushAngularRadius (R), _CraterDepth, _CraterRim, _CraterOrganic.
+// Textures  : _CraterTerrain (R height) and _CraterSoil (G organic), both read and written in place.
+
+RWTexture2DArray<float4> _CraterTerrain;
+RWTexture2DArray<float4> _CraterSoil;
+float _CraterDepth;
+float _CraterRim;
+float _CraterOrganic;
+
+[numthreads(8, 8, 1)]
+void Crater(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+    float angle = acos(clamp(dot(direction, _BrushDirection), -1.0, 1.0));
+    float radius = max(_BrushAngularRadius, 1e-4);
+
+    if (angle > radius * 1.8)
+    {
+        return;
+    }
+
+    float ratio = angle / radius;
+    float bowl = ratio < 1.0 ? 1.0 - ratio * ratio : 0.0;
+    float rimDistance = (angle - radius) / (0.25 * radius);
+    float rim = angle > 0.9 * radius ? exp(-rimDistance * rimDistance) : 0.0;
+
+    float4 terrain = _CraterTerrain[id];
+    terrain.r = clamp(terrain.r - _CraterDepth * bowl + _CraterRim * rim, -1.0, 1.0);
+    _CraterTerrain[id] = terrain;
+
+    float ring = smoothstep(0.7 * radius, radius, angle) * (1.0 - smoothstep(radius, 1.8 * radius, angle));
+    float4 soil = _CraterSoil[id];
+    soil.g += _CraterOrganic * ring;
+    _CraterSoil[id] = soil;
 }

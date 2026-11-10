@@ -133,6 +133,62 @@ namespace Terrarium.Tests
         }
 
         [Test]
+        public void SimClock_SetDayLength_KeepsTheSpinAngleAndSeasonContinuous()
+        {
+            var clock = new SimClock(config);
+            clock.SetTimeScale(4);
+            int total = 0;
+            while (total < 1300)
+            {
+                total += clock.Advance(0.01f);
+            }
+
+            float spinBefore = clock.SpinAngleRadians;
+            float leanBefore = clock.LeanRadians;
+            int dayBefore = clock.DayIndex;
+            int yearBefore = clock.YearIndex;
+
+            clock.SetDayLength(5f);   // twice as fast as the 10 s day
+
+            Assert.AreEqual(spinBefore, clock.SpinAngleRadians, 1e-4f, "The planet must not jump when the dial turns.");
+            Assert.AreEqual(leanBefore, clock.LeanRadians, 1e-4f, "The season must not jump either.");
+            Assert.AreEqual(dayBefore, clock.DayIndex);
+            Assert.AreEqual(yearBefore, clock.YearIndex);
+            Assert.AreEqual(5f, clock.DayLengthSeconds);
+        }
+
+        [Test]
+        public void SimClock_SetDayLength_ThenTurnsAtTheNewRate()
+        {
+            var clock = new SimClock(config);
+            clock.SetDayLength(5f);
+            float start = clock.DayPhase;
+
+            // 125 steps of 0.01 s is 1.25 s: a quarter of a 5 s day.
+            clock.SetTimeScale(1);
+            int steps = 0;
+            while (steps < 125)
+            {
+                steps += clock.Advance(0.0125f);
+            }
+
+            float advanced = (clock.DayPhase - start + 1f) % 1f;
+            Assert.AreEqual(0.25f, advanced, 0.01f);
+        }
+
+        [Test]
+        public void SimClock_SetDayLength_IsClampedToTheAllowedRange()
+        {
+            var clock = new SimClock(config);
+
+            clock.SetDayLength(0.1f);
+            Assert.AreEqual(SimClock.MinDayLengthSeconds, clock.DayLengthSeconds);
+
+            clock.SetDayLength(10_000f);
+            Assert.AreEqual(SimClock.MaxDayLengthSeconds, clock.DayLengthSeconds);
+        }
+
+        [Test]
         public void SimClock_Reset_ReturnsToTimeZero()
         {
             var clock = new SimClock(config);

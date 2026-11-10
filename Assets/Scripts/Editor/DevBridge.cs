@@ -14,6 +14,13 @@
 //           reset-config     overwrite the SimConfig asset with the code defaults
 //           view on|off [field] [channel] [edges on|off] [grid on|off] [range min max]   field debug view
 //           paint corner|edge radius amount   paint at the cube corner/edge facing the camera
+//           mouse on name|planet [down|up]    move the synthetic mouse onto an object, optionally pressing the button
+//           mouse at x y [down|up]            move the synthetic mouse to pixel coordinates
+//           key escape                        press Escape
+//           hand                              what the tool controller sees: hover, held tool, picked point
+//           tool kind land|x y z [seconds]    use a tool at a point (Play mode)
+//           fly surface|desk [land|x y z]     smooth camera flight to / from the surface
+//           record frames                     record the camera path to check a flight is smooth
 //           camera yaw pitch distance         jump the desk camera
 //           physarum                          living agent count (Play mode)
 //           status                            play / pause state, frame count and frame time
@@ -37,6 +44,9 @@ using System.Text;
 using UnityEditor;
 using UnityEditor.TestTools.TestRunner.Api;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+using UnityEngine.InputSystem.Controls;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
@@ -137,6 +147,30 @@ namespace Terrarium.EditorTools
 
                     clockOwner.Clock.SetTimeScale(int.Parse(parts[1]));
                     WriteResult($"ok: time scale {clockOwner.Clock.TimeScale}, sim time {clockOwner.Clock.SimTimeSeconds:0.0} s, year {clockOwner.Clock.YearIndex} phase {clockOwner.Clock.YearPhase:0.00}");
+                    break;
+
+                case "tool":
+                    WriteResult(UseTool(parts));
+                    break;
+
+                case "fly":
+                    WriteResult(FlyCamera(parts));
+                    break;
+
+                case "record":
+                    WriteResult(StartCameraRecording(parts));
+                    break;
+
+                case "mouse":
+                    WriteResult(MouseCommand(parts));
+                    break;
+
+                case "key":
+                    WriteResult(KeyCommand(parts));
+                    break;
+
+                case "hand":
+                    WriteResult(HandState());
                     break;
 
                 case "preset":
@@ -301,6 +335,266 @@ namespace Terrarium.EditorTools
 
             brush.PaintAtLocalDirection(best, radius, amount);
             return $"ok: painted {(corner ? "corner" : "edge")} at local {best}, facing dot {bestDot:0.00}";
+        }
+
+        /// <summary>
+        /// "tool name land|x y z [seconds]": uses a tool at a point as if the mouse held it there. Continuous
+        /// tools run for the given seconds (default 1) in 0.05 s slices; one-shot tools fire once. "land" picks a
+        /// highland point (a fixed, repeatable one). Prints the point so field probes can be aimed at it.
+        /// </summary>
+        private static string UseTool(string[] parts)
+        {
+            var controller = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.ToolController>();
+            var fieldSet = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldSet>();
+            var planetMotion = UnityEngine.Object.FindFirstObjectByType<Terrarium.Climate.PlanetMotion>();
+            if (controller == null || fieldSet == null || planetMotion == null || parts.Length < 3 || !EditorApplication.isPlaying
+                || !System.Enum.TryParse(parts[1], true, out Terrarium.Interaction.ToolKind kind))
+            {
+                return "error: usage 'tool kind land|x y z [seconds]' in Play mode (kinds: WateringCan CompostScoop HeatLamp FrostSpray SporeDish Meteor SeedJar BoidCage)";
+            }
+
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            int next = 3;
+            Vector3 local;
+            if (parts[2] == "land")
+            {
+                local = FindHighland(fieldSet);
+            }
+            else
+            {
+                local = new Vector3(float.Parse(parts[2], culture), float.Parse(parts[3], culture), float.Parse(parts[4], culture)).normalized;
+                next = 5;
+            }
+
+            float seconds = parts.Length > next ? float.Parse(parts[next], culture) : 1f;
+            Vector3 world = planetMotion.transform.position + planetMotion.transform.rotation * local;
+            const float slice = 0.05f;
+
+            if (Terrarium.Interaction.ToolInfo.IsContinuous(kind))
+            {
+                for (float t = 0f; t < seconds - 1e-4f; t += slice)
+                {
+                    controller.Use(kind, local, world, 3f, slice);
+                }
+            }
+            else
+            {
+                controller.Use(kind, local, world, 3f, slice);
+            }
+
+            Terrarium.Sphere.Texel texel = Terrarium.Sphere.CubeSphere.DirToTexel(local, fieldSet.Resolution);
+            return $"ok: used {kind} at local ({local.x:0.000}, {local.y:0.000}, {local.z:0.000}) = texel face {texel.Face} x {texel.X} y {texel.Y}, for {seconds}s";
+        }
+
+        // A repeatable high-ground point: the first texel (scanning faces in order) with a height between 0.25 and 0.5.
+        private static Vector3 FindHighland(Terrarium.Sphere.FieldSet fieldSet)
+        {
+            RenderTexture terrain = fieldSet.Get(Terrarium.Sphere.FieldId.Terrain).Current;
+            var request = UnityEngine.Rendering.AsyncGPUReadback.Request(terrain, 0);
+            request.WaitForCompletion();
+            int n = terrain.width;
+
+            for (int face = 0; face < 6; face++)
+            {
+                Unity.Collections.NativeArray<float> slice = request.GetData<float>(face);
+                for (int y = n / 4; y < n * 3 / 4; y += 3)
+                {
+                    for (int x = n / 4; x < n * 3 / 4; x += 3)
+                    {
+                        float h = slice[(y * n + x) * 4];
+                        if (h > 0.25f && h < 0.5f)
+                        {
+                            return Terrarium.Sphere.CubeSphere.TexelCentreDir(face, x, y, n);
+                        }
+                    }
+                }
+            }
+
+            return Vector3.right;
+        }
+
+        /// <summary>"fly surface|desk [land | x y z]": starts the smooth camera flight (Play mode).</summary>
+        private static string FlyCamera(string[] parts)
+        {
+            var rig = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.CameraRig>();
+            var fieldSet = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldSet>();
+            if (rig == null || fieldSet == null || parts.Length < 2 || !EditorApplication.isPlaying)
+            {
+                return "error: usage 'fly surface|desk [land|x y z]' in Play mode";
+            }
+
+            if (parts[1] == "desk")
+            {
+                rig.FlyToDesk();
+                return "ok: flying to the desk view";
+            }
+
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            Vector3 local = parts.Length > 2 && parts[2] != "land"
+                ? new Vector3(float.Parse(parts[2], culture), float.Parse(parts[3], culture), float.Parse(parts[4], culture)).normalized
+                : FindHighland(fieldSet);
+            rig.FlyToSurface(local);
+            return $"ok: flying to the surface over local ({local.x:0.000}, {local.y:0.000}, {local.z:0.000})";
+        }
+
+        private static readonly System.Collections.Generic.List<Vector3> RecordedPositions = new System.Collections.Generic.List<Vector3>();
+        private static int recordFramesLeft;
+
+        /// <summary>
+        /// "record frames": records the camera position for that many editor frames, then reports the path length,
+        /// the largest single-frame jump and how many frames were seen. A smooth flight has a small largest jump.
+        /// </summary>
+        private static string StartCameraRecording(string[] parts)
+        {
+            if (!EditorApplication.isPlaying || Camera.main == null || parts.Length < 2)
+            {
+                return "error: usage 'record frames' in Play mode";
+            }
+
+            RecordedPositions.Clear();
+            recordFramesLeft = int.Parse(parts[1]);
+            EditorApplication.update += RecordFrame;
+            return "ok: recording";
+        }
+
+        private static void RecordFrame()
+        {
+            if (!EditorApplication.isPlaying || Camera.main == null)
+            {
+                EditorApplication.update -= RecordFrame;
+                return;
+            }
+
+            RecordedPositions.Add(Camera.main.transform.position);
+            if (--recordFramesLeft > 0)
+            {
+                return;
+            }
+
+            EditorApplication.update -= RecordFrame;
+            float path = 0f;
+            float largest = 0f;
+            for (int i = 1; i < RecordedPositions.Count; i++)
+            {
+                float step = Vector3.Distance(RecordedPositions[i], RecordedPositions[i - 1]);
+                path += step;
+                largest = Mathf.Max(largest, step);
+            }
+
+            WriteResult($"ok: recorded {RecordedPositions.Count} frames, path {path:0.000} units, largest single-frame jump {largest:0.0000} " +
+                        $"({(path > 0f ? largest / path : 0f):P1} of the path), start {RecordedPositions[0]}, end {RecordedPositions[RecordedPositions.Count - 1]}");
+        }
+
+        private static bool leftDown;
+        private static Vector2 pointerPosition;
+
+        /// <summary>
+        /// "mouse on &lt;ObjectName|planet&gt; [down|up]" or "mouse at x y [down|up]": moves the (synthetic) mouse pointer onto an
+        /// object's screen position or to pixel coordinates, optionally pressing or releasing the left button. Uses the
+        /// Input System's event queue, so the game sees it exactly like real input.
+        /// </summary>
+        private static string MouseCommand(string[] parts)
+        {
+            Camera camera = Camera.main;
+            if (!EditorApplication.isPlaying || camera == null || parts.Length < 2)
+            {
+                return "error: usage 'mouse on name|planet [down|up]' or 'mouse at x y [down|up]' in Play mode";
+            }
+
+            if (parts[1] == "scroll" && parts.Length >= 3)
+            {
+                // One wheel step per call; the wheel is released again a moment later so it counts as a single notch.
+                Mouse wheelMouse = Mouse.current ?? InputSystem.AddDevice<Mouse>();
+                float notches = float.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture);
+                InputSystem.QueueStateEvent(wheelMouse, new MouseState { position = pointerPosition, scroll = new Vector2(0f, 120f * notches) });
+                EditorApplication.delayCall += () => InputSystem.QueueStateEvent(wheelMouse, new MouseState { position = pointerPosition });
+                return $"ok: scrolled {notches} notch(es)";
+            }
+
+            Vector2 previousPosition = pointerPosition;
+            int next;
+            if (parts[1] == "on" && parts.Length >= 3)
+            {
+                Transform target = parts[2] == "planet"
+                    ? UnityEngine.Object.FindFirstObjectByType<Terrarium.Climate.PlanetMotion>().transform
+                    : GameObject.Find(parts[2])?.transform;
+                if (target == null)
+                {
+                    return $"error: no object named '{parts[2]}'";
+                }
+
+                Vector3 screen = camera.WorldToScreenPoint(target.position);
+                pointerPosition = new Vector2(screen.x, screen.y);
+                next = 3;
+            }
+            else if (parts[1] == "at" && parts.Length >= 4)
+            {
+                var culture = System.Globalization.CultureInfo.InvariantCulture;
+                pointerPosition = new Vector2(float.Parse(parts[2], culture), float.Parse(parts[3], culture));
+                next = 4;
+            }
+            else
+            {
+                return "error: usage 'mouse on name|planet [down|up]' or 'mouse at x y [down|up]'";
+            }
+
+            if (parts.Length > next)
+            {
+                leftDown = parts[next] == "down";
+            }
+
+            Mouse mouse = Mouse.current ?? InputSystem.AddDevice<Mouse>();
+            var state = new MouseState { position = pointerPosition, delta = pointerPosition - previousPosition };
+            if (leftDown)
+            {
+                state = state.WithButton(MouseButton.Left);
+            }
+
+            InputSystem.QueueStateEvent(mouse, state);
+            return $"ok: pointer at ({pointerPosition.x:0}, {pointerPosition.y:0}) of {camera.pixelWidth}x{camera.pixelHeight}, left button {(leftDown ? "down" : "up")}";
+        }
+
+        /// <summary>"key escape": presses and releases a key through the Input System (only Escape is supported).</summary>
+        private static string KeyCommand(string[] parts)
+        {
+            if (!EditorApplication.isPlaying || parts.Length < 2 || parts[1] != "escape")
+            {
+                return "error: usage 'key escape' in Play mode";
+            }
+
+            Keyboard keyboard = Keyboard.current ?? InputSystem.AddDevice<Keyboard>();
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.Escape));
+            EditorApplication.delayCall += () => InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            return "ok: Escape pressed";
+        }
+
+        /// <summary>"hand": what the tool controller sees: hovered / held tool and the picked surface point.</summary>
+        private static string HandState()
+        {
+            var controller = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.ToolController>();
+            var fieldSet = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldSet>();
+            if (controller == null || !EditorApplication.isPlaying)
+            {
+                return "error: needs Play mode and a ToolController";
+            }
+
+            string hover = controller.HoveredTool != null ? controller.HoveredTool.Kind.ToString()
+                : controller.HoveredDial != null ? controller.HoveredDial.Kind + " dial" : "nothing";
+            string held = controller.HeldTool != null ? controller.HeldTool.Kind.ToString() : "nothing";
+            string hit = "no";
+            if (controller.HasPlanetHit)
+            {
+                Vector3 local = controller.PlanetHitLocal;
+                Terrarium.Sphere.Texel texel = Terrarium.Sphere.CubeSphere.DirToTexel(local, fieldSet.Resolution);
+                hit = $"yes, local ({local.x:0.000}, {local.y:0.000}, {local.z:0.000}) = texel face {texel.Face} x {texel.X} y {texel.Y}";
+            }
+
+            var rig = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.CameraRig>();
+            var simRoot = UnityEngine.Object.FindFirstObjectByType<SimRoot>();
+            string mode = rig != null && rig.InSurfaceMode ? "SURFACE" : "desk";
+            string clock = simRoot != null ? $"time scale {simRoot.Clock.TimeScale}x, day length {simRoot.Clock.DayLengthSeconds:0.0} s" : string.Empty;
+
+            return $"ok: hovering {hover}; holding {held}; mouse over planet: {hit}; camera: {mode}; {clock}";
         }
 
         /// <summary>"probe field face x y": reads one texel of a field back from the GPU (Play mode).</summary>
