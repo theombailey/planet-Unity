@@ -34,6 +34,7 @@
 using Terrarium.Climate;
 using Terrarium.Physarum;
 using Terrarium.Sphere;
+using Terrarium.Trees;
 using UnityEngine;
 
 namespace Terrarium.Interaction
@@ -55,6 +56,7 @@ namespace Terrarium.Interaction
         [SerializeField] private Transform planet;
         [SerializeField] private ComputeShader brushShader;
         [SerializeField] private PhysarumSystem physarum;
+        [SerializeField] private TreeManager trees;
         [SerializeField] private DebugPanel panel;
         [SerializeField] private FieldDebugView fieldView;
         [SerializeField] private DialProp timeDial;
@@ -430,7 +432,12 @@ namespace Terrarium.Interaction
                     break;
 
                 case ToolKind.SeedJar:
-                    Say("The seed jar is empty for now: trees arrive in the next phase.");
+                    string problem = trees != null ? trees.PlantSeed(localDirection) : "There is no forest here.";
+                    if (problem != null)
+                    {
+                        Say(problem);
+                    }
+
                     break;
 
                 case ToolKind.BoidCage:
@@ -456,8 +463,12 @@ namespace Terrarium.Interaction
                 fieldSet.Get(FieldId.Soil).Current,
                 localDirection, angularRadius, config.meteorDepth, config.meteorRimHeight, config.meteorOrganic);
 
-            // Life inside the blast dies. (Trees and flocks join in when they exist.)
+            // Life inside the blast dies. (Flocks join in when they exist.)
             physarum.KillAgents(localDirection, angularRadius * 1.15f);
+            if (trees != null)
+            {
+                trees.KillInRadius(localDirection, angularRadius * 1.15f);
+            }
 
             // The CPU's copy of the heights is now out of date; picking needs the crater.
             heightsDirty = true;

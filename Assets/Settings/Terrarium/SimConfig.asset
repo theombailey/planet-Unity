@@ -74,6 +74,58 @@ MonoBehaviour:
   nutrientNetworkDiffusion: 0.0002
   nutrientTrailSaturation: 2
   decompositionRate: 0.02
+  treeStartSeeds: 400
+  treeSegmentFraction: 0.045
+  treeInfluenceFraction: 0.3
+  treeKillFraction: 0.08
+  treeTrunkFraction: 0.3
+  treeCrownWidthFraction: 0.45
+  treeCrownHeightFraction: 0.4
+  treeAttractorsMax: 450
+  treeAttractorsPerStep: 40
+  treeGravitropism: 0.12
+  treePhototropism: 0.45
+  treeWobble: 0.15
+  treeTipRadius: 0.0005
+  treePipeExponent: 2.5
+  treeLeafSize: 0.0036
+  treeLeavesPerTree: 700
+  treeTwigRadiusMultiple: 2.5
+  treeGrowSecondsPerStep: 2.5
+  treeTempMin: 2
+  treeTempOptimum: 22
+  treeTempMax: 42
+  treeMoistureMin: 0.12
+  treeMoistureSpan: 0.35
+  treeNutrientHalf: 0.12
+  treeMycorrhizaBoost: 2
+  treeShadeStrength: 1.2
+  treeStarveBelow: 0.04
+  treeStarveRate: 0.004
+  treeDroughtMoisture: 0.05
+  treeDroughtRate: 0.006
+  treeFreezeTemp: -18
+  treeFreezeRate: 0.01
+  treeHeatTemp: 50
+  treeHeatRate: 0.01
+  treeRecoverRate: 0.004
+  treeLeafDropTemp: 5
+  treeBudTemp: 10
+  treeAutumnTemp: 15
+  treeLeafRate: 0.04
+  treeSeedInterval: 22
+  treeGerminationChance: 0.25
+  treeSeedDispersalMin: 0.012
+  treeSeedDispersalMax: 0.09
+  treeLifespanMin: 1600
+  treeLifespanMax: 3600
+  treeDeadSeconds: 45
+  treeDeathOrganic: 2.5
+  treeUptakePerSecond: 0.01
+  treeCanopyStrength: 1
+  treeTickRealSeconds: 0.15
+  treeMeshesPerFrame: 2
+  treeStepsPerFrame: 8
   toolRadiusPerDistance: 0.07
   toolRadiusMin: 0.01
   toolRadiusMax: 0.3

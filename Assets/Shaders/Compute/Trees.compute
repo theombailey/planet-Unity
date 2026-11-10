@@ -1,0 +1,176 @@
+// =============================================================================
+// Trees.compute
+// -----------------------------------------------------------------------------
+// Purpose : The three things the tree system needs from the GPU fields.
+//
+// Kernels :
+//   TreeSample   - reads the world at a list of points (every tree's root, plus
+//                  places where seeds have landed) so the CPU can decide how each
+//                  tree is doing. One thread per point.
+//   TreeUptake   - takes nutrients out of the soil around each tree. One thread
+//                  per tree.
+//   CanopySplat  - paints each tree's shade into the soil field's canopy channel
+//                  (Soil.B). One thread per texel.
+//
+// Idea (sample): trees live on the CPU (their branches are a graph), but the world
+//   they live in is on the GPU. Rather than read whole fields back, the CPU sends the
+//   few hundred points it cares about, the GPU looks each one up, and only that small
+//   answer comes back, asynchronously (a few frames later).
+//     Answer 0: nutrients (mean of the root texel and its 8 neighbours), moisture,
+//               temperature, canopy density
+//     Answer 1: trail (fungal network), insolation, terrain height, 0
+//
+// Idea (uptake): a tree draws water and nutrients through roots spread around it, not
+//   from one texel. Each tree takes its requested amount in total from a (2W+1)^2
+//   square of texels around its root, weighted by a Gaussian so most comes from nearby:
+//        w(dx, dy) = exp( -(dx^2 + dy^2) / 8 )
+//        taken(dx, dy) = min( nutrients there, amount * w / SUM w )
+//   Seam-correct: the square steps across cube-face edges with CS_ResolveTexel.
+//   Race note: two trees whose roots overlap may both read a texel before either writes
+//   it, so together they can take a little more than is there. The soil is clamped at
+//   zero, and the effect is tiny next to the amounts involved.
+//
+// Idea (canopy): each tree covers a disc on the ground, solid at its centre and fading
+//   to nothing at its edge. A texel sums the cover of every tree above it:
+//        cover_tree = strength * (1 - smoothstep(0, R, angle))        angle = angular distance to the tree
+//        canopy     = min( SUM cover_tree, 2 )
+//   Trees whose disc does not reach the texel are skipped with one dot product, so the
+//   cost is dominated by that test (texels x trees, a few tens of millions of cheap ops).
+//   It is a "gather" (each texel reads all trees), so no two threads write the same
+//   texel and no atomics are needed.
+//
+// Parameters: _SampleCount, _TreeCount, _Resolution, _UptakeRadius (W, texels).
+//
+// Buffers & textures (texture slice = cube face):
+//   _SampleDirs  read   xyz = unit direction in the planet's frame
+//   _Samples     write  two float4 per point (see above)
+//   _Trees       read   direction, canopy radius (rad), uptake (nutrients to take now),
+//                       canopy strength, cos(canopy radius)
+//   _Soil, _Climate, _Terrain, _Trail  read        _SoilRW  read+write (in place)
+// =============================================================================
+
+#pragma kernel TreeSample
+#pragma kernel TreeUptake
+#pragma kernel CanopySplat
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+
+struct TreeGpu
+{
+    float3 direction;
+    float canopyRadius;
+    float uptake;
+    float strength;
+    float cosRadius;
+    float pad;
+};
+
+StructuredBuffer<float4> _SampleDirs;
+RWStructuredBuffer<float4> _Samples;
+StructuredBuffer<TreeGpu> _Trees;
+
+Texture2DArray<float4> _Soil;
+Texture2DArray<float4> _Climate;
+Texture2DArray<float4> _Terrain;
+Texture2DArray<float> _Trail;
+RWTexture2DArray<float4> _SoilRW;
+
+int _Resolution;
+uint _SampleCount;
+uint _TreeCount;
+int _UptakeRadius;
+
+[numthreads(64, 1, 1)]
+void TreeSample(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _SampleCount)
+    {
+        return;
+    }
+
+    float3 direction = _SampleDirs[id.x].xyz;
+    int3 centre = CS_DirToTexel(direction, _Resolution);
+
+    // Nutrients: the mean over the 3x3 texels around the root.
+    float nutrients = 0.0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            nutrients += _Soil[uint3(CS_ResolveTexel(int3(centre.xy + int2(dx, dy), centre.z), _Resolution))].r;
+        }
+    }
+
+    uint3 here = uint3(centre);
+    float4 climate = _Climate[here];
+    _Samples[id.x * 2] = float4(nutrients / 9.0, climate.g, climate.r, _Soil[here].b);
+    _Samples[id.x * 2 + 1] = float4(_Trail[here], climate.b, _Terrain[here].r, 0.0);
+}
+
+[numthreads(64, 1, 1)]
+void TreeUptake(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TreeCount)
+    {
+        return;
+    }
+
+    TreeGpu tree = _Trees[id.x];
+    if (tree.uptake <= 0.0)
+    {
+        return;
+    }
+
+    int3 centre = CS_DirToTexel(tree.direction, _Resolution);
+
+    float weightSum = 0.0;
+    for (int dy = -_UptakeRadius; dy <= _UptakeRadius; dy++)
+    {
+        for (int dx = -_UptakeRadius; dx <= _UptakeRadius; dx++)
+        {
+            weightSum += exp(-(dx * dx + dy * dy) * 0.125);
+        }
+    }
+
+    for (int ey = -_UptakeRadius; ey <= _UptakeRadius; ey++)
+    {
+        for (int ex = -_UptakeRadius; ex <= _UptakeRadius; ex++)
+        {
+            uint3 texel = uint3(CS_ResolveTexel(int3(centre.xy + int2(ex, ey), centre.z), _Resolution));
+            float share = tree.uptake * exp(-(ex * ex + ey * ey) * 0.125) / weightSum;
+
+            float4 soil = _SoilRW[texel];
+            soil.r = max(0.0, soil.r - share);
+            _SoilRW[texel] = soil;
+        }
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CanopySplat(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+
+    float canopy = 0.0;
+    for (uint i = 0; i < _TreeCount; i++)
+    {
+        TreeGpu tree = _Trees[i];
+        float cosine = dot(direction, tree.direction);
+        if (cosine < tree.cosRadius || tree.strength <= 0.0)
+        {
+            continue;
+        }
+
+        float angle = acos(clamp(cosine, -1.0, 1.0));
+        canopy += tree.strength * (1.0 - smoothstep(0.0, tree.canopyRadius, angle));
+    }
+
+    float4 soil = _SoilRW[id];
+    soil.b = min(canopy, 2.0);
+    _SoilRW[id] = soil;
+}

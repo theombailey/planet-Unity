@@ -161,6 +161,42 @@ namespace Terrarium.EditorTools
                     WriteResult(StartCameraRecording(parts));
                     break;
 
+                case "surface":
+                    var surfaceRig = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.CameraRig>();
+                    if (surfaceRig == null || parts.Length < 6 || !EditorApplication.isPlaying)
+                    {
+                        WriteResult("error: usage 'surface x y z height pitch' in Play mode");
+                        break;
+                    }
+
+                    var invariant = System.Globalization.CultureInfo.InvariantCulture;
+                    surfaceRig.SnapToSurface(
+                        new Vector3(float.Parse(parts[1], invariant), float.Parse(parts[2], invariant), float.Parse(parts[3], invariant)),
+                        float.Parse(parts[4], invariant), float.Parse(parts[5], invariant));
+                    WriteResult("ok: camera placed on the surface");
+                    break;
+
+                case "look":
+                    var lookRig = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.CameraRig>();
+                    if (lookRig == null || parts.Length < 7 || !EditorApplication.isPlaying)
+                    {
+                        WriteResult("error: usage 'look tx ty tz distanceRadians height pitch' in Play mode");
+                        break;
+                    }
+
+                    var lookCulture = System.Globalization.CultureInfo.InvariantCulture;
+                    Vector3 target = new Vector3(float.Parse(parts[1], lookCulture), float.Parse(parts[2], lookCulture), float.Parse(parts[3], lookCulture)).normalized;
+                    float back = float.Parse(parts[4], lookCulture);
+                    Vector3 along = Terrarium.Interaction.SurfaceNavigation.HeadingNear(target, Vector3.up);
+                    Vector3 stand = (target * Mathf.Cos(back) - along * Mathf.Sin(back)).normalized;
+                    lookRig.SnapToSurface(stand, target, float.Parse(parts[5], lookCulture), float.Parse(parts[6], lookCulture));
+                    WriteResult("ok: camera standing near the target, facing it");
+                    break;
+
+                case "trees":
+                    WriteResult(TreesReport());
+                    break;
+
                 case "mouse":
                     WriteResult(MouseCommand(parts));
                     break;
@@ -483,6 +519,33 @@ namespace Terrarium.EditorTools
 
             WriteResult($"ok: recorded {RecordedPositions.Count} frames, path {path:0.000} units, largest single-frame jump {largest:0.0000} " +
                         $"({(path > 0f ? largest / path : 0f):P1} of the path), start {RecordedPositions[0]}, end {RecordedPositions[RecordedPositions.Count - 1]}");
+        }
+
+        /// <summary>"trees": how many trees stand, how many are alive, and a few details of each of the first ones.</summary>
+        private static string TreesReport()
+        {
+            var manager = UnityEngine.Object.FindFirstObjectByType<Terrarium.Trees.TreeManager>();
+            if (manager == null || !EditorApplication.isPlaying)
+            {
+                return "error: needs Play mode and a TreeManager";
+            }
+
+            var report = new StringBuilder($"ok: trees {manager.TreeCount} standing, {manager.LiveCount} alive, capacity {manager.Capacity}\\n");
+            int shown = 0;
+            for (int slot = 0; slot < manager.Capacity && shown < 8; slot++)
+            {
+                Terrarium.Trees.Tree tree = manager.TreeAt(slot);
+                if (tree == null)
+                {
+                    continue;
+                }
+
+                report.AppendLine($"  slot {slot} at ({tree.Direction.x:0.000} {tree.Direction.y:0.000} {tree.Direction.z:0.000}): nodes {tree.Colony.NodeCount}, leaves {tree.LeafCount}, age {tree.Age:0}s, health {tree.Health:0.00}, growth {tree.GrowthRate:0.00}, " +
+                                  $"richness {tree.Richness:0.00}, leaf {tree.LeafAmount:0.00}, autumn {tree.Autumn:0.00}, mature {tree.Mature}, dead {tree.Dead}");
+                shown++;
+            }
+
+            return report.ToString();
         }
 
         private static bool leftDown;

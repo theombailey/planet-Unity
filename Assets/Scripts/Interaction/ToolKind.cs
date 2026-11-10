@@ -11,7 +11,7 @@
 //   FrostSpray     lowers temperature         (continuous)
 //   SporeDish      starts fungal agents       (one burst per click)
 //   Meteor         digs a crater, kills life  (one impact per click, with a cooldown)
-//   SeedJar        will plant a tree          (arrives with the tree system)
+//   SeedJar        plants a tree seed         (it grows only if the spot allows)
 //   BoidCage       will release a flock       (arrives with the flock system)
 //   FieldLens      reads the ground under the cursor; overlays the temperature while held
 // =============================================================================
@@ -77,7 +77,7 @@ namespace Terrarium.Interaction
             {
                 case ToolKind.WateringCan: return "hold the left button over the planet to rain";
                 case ToolKind.CompostScoop: return "hold the left button over the planet to spread compost";
-                case ToolKind.SeedJar: return "click to drop a seed (trees arrive in a later phase)";
+                case ToolKind.SeedJar: return "click on dry land to plant a seed";
                 case ToolKind.SporeDish: return "click to scatter fungal spores";
                 case ToolKind.BoidCage: return "click to release a flock (flocks arrive in a later phase)";
                 case ToolKind.HeatLamp: return "hold the left button to warm the ground";

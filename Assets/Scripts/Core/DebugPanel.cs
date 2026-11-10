@@ -19,6 +19,7 @@ using Terrarium.Interaction;
 using Terrarium.Physarum;
 using Terrarium.Rendering;
 using Terrarium.Sphere;
+using Terrarium.Trees;
 using UnityEngine;
 
 namespace Terrarium
@@ -47,6 +48,9 @@ namespace Terrarium
 
         [Tooltip("The physarum population readout shown on the panel (optional).")]
         [SerializeField] private PhysarumSystem physarum;
+
+        [Tooltip("The tree readout shown on the panel (optional).")]
+        [SerializeField] private TreeManager trees;
 
         [Tooltip("Whether the panel is showing when Play starts.")]
         [SerializeField] private bool visible = true;
@@ -162,6 +166,12 @@ namespace Terrarium
             {
                 GUILayout.Label("Physarum network");
                 physarum.OnDebugGui();
+            }
+
+            if (trees != null)
+            {
+                GUILayout.Label("Forest");
+                trees.OnDebugGui();
             }
 
             if (fieldView != null)

@@ -215,6 +215,164 @@ namespace Terrarium
         [Tooltip("How fast organic matter turns into nutrients in warm, moist soil, per sim second.")]
         [Range(0f, 0.2f)] public float decompositionRate = 0.02f;
 
+        [Header("Trees: shape (see SpaceColonization, TreeMesher)")]
+        [Tooltip("Pioneer seeds scattered on land when a world starts. They only grow where conditions allow.")]
+        [Range(0, 500)] public int treeStartSeeds = 400;
+
+        [Tooltip("Length of one branch segment, as a fraction of the tree's mature height.")]
+        [Range(0.01f, 0.15f)] public float treeSegmentFraction = 0.045f;
+
+        [Tooltip("How far an attractor reaches for a branch, as a fraction of mature height. Larger = longer, sweeping branches; smaller = dense, twiggy ones.")]
+        [Range(0.05f, 1f)] public float treeInfluenceFraction = 0.3f;
+
+        [Tooltip("An attractor this close to a branch tip is used up, as a fraction of mature height.")]
+        [Range(0.01f, 0.4f)] public float treeKillFraction = 0.08f;
+
+        [Tooltip("Height of the bare trunk, as a fraction of mature height.")]
+        [Range(0.05f, 0.7f)] public float treeTrunkFraction = 0.3f;
+
+        [Tooltip("Half-width of the crown, as a fraction of mature height (at full richness).")]
+        [Range(0.1f, 1.2f)] public float treeCrownWidthFraction = 0.45f;
+
+        [Tooltip("Half-height of the crown, as a fraction of mature height (at full richness).")]
+        [Range(0.1f, 1f)] public float treeCrownHeightFraction = 0.4f;
+
+        [Tooltip("Most attractors a tree can hold, at full richness. A tree on poor ground gets a fraction of them, so it is sparse.")]
+        [Range(50, 1500)] public int treeAttractorsMax = 450;
+
+        [Tooltip("Attractors added each growth step, at full richness.")]
+        [Range(5, 200)] public int treeAttractorsPerStep = 40;
+
+        [Tooltip("Pull toward local up in each new segment (1 = as strong as the pull toward attractors).")]
+        [Range(0f, 1f)] public float treeGravitropism = 0.12f;
+
+        [Tooltip("Pull toward the lamp in each new segment. Trees lean toward the light.")]
+        [Range(0f, 1.5f)] public float treePhototropism = 0.45f;
+
+        [Tooltip("Random wobble in each new segment.")]
+        [Range(0f, 0.6f)] public float treeWobble = 0.15f;
+
+        [Tooltip("Radius of a twig tip, in world units.")]
+        [Range(0.0001f, 0.003f)] public float treeTipRadius = 0.0005f;
+
+        [Tooltip("Pipe-model exponent: r_parent^e = sum of r_child^e. About 2.5 for real trees.")]
+        [Range(2f, 3f)] public float treePipeExponent = 2.5f;
+
+        [Tooltip("Size of one leaf, in world units.")]
+        [Range(0.001f, 0.02f)] public float treeLeafSize = 0.0036f;
+
+        [Tooltip("Most leaves one tree can show. The shader draws this many per tree slot.")]
+        [Range(50, 2000)] public int treeLeavesPerTree = 700;
+
+        [Tooltip("Branches no thicker than this many tip radii carry leaves.")]
+        [Range(1f, 8f)] public float treeTwigRadiusMultiple = 2.5f;
+
+        [Header("Trees: life (see TreeLife, TreeManager)")]
+        [Tooltip("Sim seconds of full-speed growth per growth step (a growth step adds one layer of branches).")]
+        [Range(0.2f, 20f)] public float treeGrowSecondsPerStep = 2.5f;
+
+        [Tooltip("Coldest temperature a tree can grow in, deg C.")]
+        [Range(-20f, 20f)] public float treeTempMin = 2f;
+
+        [Tooltip("Temperature trees grow fastest at, deg C.")]
+        [Range(5f, 35f)] public float treeTempOptimum = 22f;
+
+        [Tooltip("Hottest temperature a tree can grow in, deg C.")]
+        [Range(25f, 60f)] public float treeTempMax = 42f;
+
+        [Tooltip("Moisture below which a tree does not grow.")]
+        [Range(0f, 0.5f)] public float treeMoistureMin = 0.12f;
+
+        [Tooltip("Moisture range over which growth rises from none to full.")]
+        [Range(0.05f, 1f)] public float treeMoistureSpan = 0.35f;
+
+        [Tooltip("Soil nutrients at which the nutrient factor is one half.")]
+        [Range(0.01f, 1f)] public float treeNutrientHalf = 0.12f;
+
+        [Tooltip("How much the fungal network (trail) improves a tree's nutrient uptake: effective nutrients = n x (1 + this x trail).")]
+        [Range(0f, 10f)] public float treeMycorrhizaBoost = 2f;
+
+        [Tooltip("How strongly neighbours' canopy shades a tree: light factor = 1 / (1 + this x neighbours' canopy).")]
+        [Range(0f, 5f)] public float treeShadeStrength = 1.2f;
+
+        [Tooltip("Growth rate below which a tree is starving and loses health.")]
+        [Range(0f, 0.3f)] public float treeStarveBelow = 0.04f;
+
+        [Tooltip("Health lost per sim second when starving.")]
+        [Range(0f, 0.05f)] public float treeStarveRate = 0.004f;
+
+        [Tooltip("Moisture below which a tree suffers drought.")]
+        [Range(0f, 0.3f)] public float treeDroughtMoisture = 0.05f;
+
+        [Tooltip("Health lost per sim second in drought.")]
+        [Range(0f, 0.05f)] public float treeDroughtRate = 0.006f;
+
+        [Tooltip("Temperature below which a tree freezes, deg C.")]
+        [Range(-60f, 0f)] public float treeFreezeTemp = -18f;
+
+        [Tooltip("Health lost per sim second when frozen.")]
+        [Range(0f, 0.1f)] public float treeFreezeRate = 0.01f;
+
+        [Tooltip("Temperature above which a tree is scorched, deg C.")]
+        [Range(35f, 90f)] public float treeHeatTemp = 50f;
+
+        [Tooltip("Health lost per sim second when scorched.")]
+        [Range(0f, 0.1f)] public float treeHeatRate = 0.01f;
+
+        [Tooltip("Health regained per sim second while growing well.")]
+        [Range(0f, 0.05f)] public float treeRecoverRate = 0.004f;
+
+        [Tooltip("Below this temperature a deciduous tree has dropped all its leaves, deg C.")]
+        [Range(-10f, 20f)] public float treeLeafDropTemp = 5f;
+
+        [Tooltip("Above this temperature a tree is in full leaf, deg C.")]
+        [Range(0f, 25f)] public float treeBudTemp = 10f;
+
+        [Tooltip("Below this temperature, leaves start to turn their autumn colours, deg C.")]
+        [Range(5f, 30f)] public float treeAutumnTemp = 15f;
+
+        [Tooltip("How fast leaves bud or fall, as a fraction of a full canopy per sim second.")]
+        [Range(0.005f, 0.5f)] public float treeLeafRate = 0.04f;
+
+        [Tooltip("Sim seconds between seeds from a mature, healthy tree.")]
+        [Range(2f, 200f)] public float treeSeedInterval = 22f;
+
+        [Tooltip("Chance a seed germinates in ideal conditions (it is multiplied by how good the spot is).")]
+        [Range(0f, 1f)] public float treeGerminationChance = 0.25f;
+
+        [Tooltip("Nearest a seed falls from its tree, in radians of arc.")]
+        [Range(0.002f, 0.1f)] public float treeSeedDispersalMin = 0.012f;
+
+        [Tooltip("Furthest a seed falls from its tree, in radians of arc.")]
+        [Range(0.01f, 0.4f)] public float treeSeedDispersalMax = 0.09f;
+
+        [Tooltip("Shortest tree lifespan, in sim seconds.")]
+        [Range(100f, 20000f)] public float treeLifespanMin = 1600f;
+
+        [Tooltip("Longest tree lifespan, in sim seconds.")]
+        [Range(200f, 40000f)] public float treeLifespanMax = 3600f;
+
+        [Tooltip("How long a dead tree stands before it collapses, in sim seconds.")]
+        [Range(1f, 600f)] public float treeDeadSeconds = 45f;
+
+        [Tooltip("Organic matter a full-grown tree returns to the soil when it collapses.")]
+        [Range(0f, 20f)] public float treeDeathOrganic = 2.5f;
+
+        [Tooltip("Nutrients a tree takes from the soil per sim second at full growth rate and full size.")]
+        [Range(0f, 0.1f)] public float treeUptakePerSecond = 0.01f;
+
+        [Tooltip("How much canopy density a full-grown tree in full leaf adds to the field (used for shading and food).")]
+        [Range(0.1f, 3f)] public float treeCanopyStrength = 1f;
+
+        [Tooltip("Real seconds between the tree system's GPU passes (sampling the world, taking nutrients, painting canopy).")]
+        [Range(0.03f, 1f)] public float treeTickRealSeconds = 0.15f;
+
+        [Tooltip("Most branch meshes rebuilt in one frame. Spreads growth over frames so many trees never spike the frame time.")]
+        [Range(1, 20)] public int treeMeshesPerFrame = 2;
+
+        [Tooltip("Most growth steps run in one frame, across all trees.")]
+        [Range(1, 50)] public int treeStepsPerFrame = 8;
+
         [Header("Tools (see ToolController)")]
         [Tooltip("Brush radius as a fraction of the camera's distance to the surface, so a tool covers more from far away and less up close.")]
         [Range(0.01f, 0.3f)] public float toolRadiusPerDistance = 0.07f;

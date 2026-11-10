@@ -127,6 +127,20 @@ namespace Terrarium.Interaction
             blend = new SpringFloat(1f);
         }
 
+        /// <summary>
+        /// Jumps to surface mode standing at one point and facing toward another along the ground.
+        /// Used by the editor's DevBridge to frame a close-up of something (such as a tree).
+        /// </summary>
+        /// <param name="localDirection">Where to stand, a unit vector in the planet's local space.</param>
+        /// <param name="lookToward">A point on the planet to face (planet local space).</param>
+        /// <param name="heightUnits">Height above the surface, in world units.</param>
+        /// <param name="pitchDegrees">How far the camera looks down from the horizon.</param>
+        public void SnapToSurface(Vector3 localDirection, Vector3 lookToward, float heightUnits, float pitchDegrees)
+        {
+            SnapToSurface(localDirection, heightUnits, pitchDegrees);
+            surfaceHeading = SurfaceNavigation.HeadingNear(surfacePosition, lookToward.normalized);
+        }
+
         private void Start()
         {
             if (simRoot == null || simRoot.Config == null || planet == null)

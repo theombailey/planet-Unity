@@ -11,7 +11,7 @@
 // Tick order per step (later phases fill in the rest):
 //     1. Climate   - insolation, temperature, moisture, weathering
 //     2. Physarum  - sense / move / deposit, trail diffusion, nutrient transport
-//     3. Trees     - growth, seeding, death, canopy splat                          (Phase 7)
+//     3. Trees     - growth, seeding, death, canopy splat
 //     4. Boids     - steering, energy, seed carrying                               (Phase 8)
 //     5. Stats     - GPU reductions for audio and the HUD                          (Phase 9)
 //
@@ -25,6 +25,7 @@
 
 using Terrarium.Climate;
 using Terrarium.Physarum;
+using Terrarium.Trees;
 using UnityEngine;
 
 namespace Terrarium
@@ -40,6 +41,9 @@ namespace Terrarium
 
         [Tooltip("Step 2: physarum agents, trail and nutrient transport.")]
         [SerializeField] private PhysarumSystem physarum;
+
+        [Tooltip("Step 3: trees (time is accumulated here; the work is done in their own bounded ticks).")]
+        [SerializeField] private TreeManager trees;
 
         private void Update()
         {
@@ -57,6 +61,10 @@ namespace Terrarium
                 double stepTime = endTime - (steps - 1 - i) * (double)stepSeconds;
                 climate.Step(stepSeconds, stepTime);
                 physarum.Step(stepSeconds);
+                if (trees != null)
+                {
+                    trees.Step(stepSeconds);
+                }
             }
         }
     }
