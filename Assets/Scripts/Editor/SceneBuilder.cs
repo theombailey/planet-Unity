@@ -18,6 +18,7 @@
 //           Terrarium/Desk); the materials themselves are generated here too.
 // =============================================================================
 
+using Terrarium.Boids;
 using Terrarium.Climate;
 using Terrarium.Interaction;
 using Terrarium.Physarum;
@@ -253,11 +254,20 @@ namespace Terrarium.EditorTools
             SetReference(trees, "woodMaterial", GetOrCreateMaterial("Wood", "Terrarium/Wood"));
             SetReference(trees, "leafMaterial", GetOrCreateMaterial("Leaves", "Terrarium/Leaves"));
 
+            var boids = host.AddComponent<BoidSystem>();
+            SetReference(boids, "simRoot", simRoot);
+            SetReference(boids, "fieldSet", fieldSet);
+            SetReference(boids, "boidShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Boids.compute"));
+            SetReference(boids, "planet", planet.transform);
+            SetReference(boids, "trees", trees);
+            SetReference(boids, "boidMaterial", GetOrCreateMaterial("Boids", "Terrarium/Boids"));
+
             var loop = host.AddComponent<SimLoop>();
             SetReference(loop, "simRoot", simRoot);
             SetReference(loop, "climate", climate);
             SetReference(loop, "physarum", physarum);
             SetReference(loop, "trees", trees);
+            SetReference(loop, "boids", boids);
 
             var view = host.AddComponent<FieldDebugView>();
             SetReference(view, "fieldSet", fieldSet);
@@ -276,6 +286,7 @@ namespace Terrarium.EditorTools
             SetReference(panel, "climate", climate);
             SetReference(panel, "physarum", physarum);
             SetReference(panel, "trees", trees);
+            SetReference(panel, "boids", boids);
             SetReference(panel, "fieldView", view);
             SetReference(panel, "debugBrush", brush);
         }
@@ -402,6 +413,7 @@ namespace Terrarium.EditorTools
             SetReference(controller, "brushShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Brush.compute"));
             SetReference(controller, "physarum", host.GetComponent<PhysarumSystem>());
             SetReference(controller, "trees", host.GetComponent<TreeManager>());
+            SetReference(controller, "boids", host.GetComponent<BoidSystem>());
             SetReference(controller, "panel", host.GetComponent<DebugPanel>());
             SetReference(controller, "fieldView", host.GetComponent<FieldDebugView>());
             SetReference(controller, "splashMaterial", GetSplashMaterial());

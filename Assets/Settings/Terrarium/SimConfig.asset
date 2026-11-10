@@ -126,6 +126,44 @@ MonoBehaviour:
   treeTickRealSeconds: 0.15
   treeMeshesPerFrame: 2
   treeStepsPerFrame: 8
+  boidStartCount: 1500
+  boidStartClusters: 40
+  boidPerception: 0.04
+  boidSeparationRadius: 0.012
+  boidSeparationWeight: 3
+  boidAlignmentWeight: 1.2
+  boidCohesionWeight: 0.8
+  boidMaxSpeed: 0.06
+  boidMinSpeed: 0.025
+  boidMaxForce: 0.25
+  boidHoverHeight: 0.025
+  boidAltitudeSpring: 20
+  boidAltitudeDamping: 6
+  boidFoodWeight: 1.5
+  boidSenseReach: 0.04
+  boidPreferredTemp: 20
+  boidWarmWeight: 0.8
+  boidWander: 0.15
+  boidEatRate: 0.05
+  boidUpkeep: 0.003
+  boidFlightCost: 0.5
+  boidCrowdCost: 0.00015
+  boidColdLimit: -10
+  boidColdCost: 0.005
+  boidStartEnergy: 14
+  boidReproduceEnergy: 18
+  boidBirthCost: 2.5
+  boidBreedCrowdLimit: 20
+  boidSeedPickupRate: 0.03
+  boidSeedMinCanopy: 0.25
+  boidSeedCarrySeconds: 25
+  boidSeedCooldown: 15
+  boidDeathOrganic: 0.05
+  boidCageCount: 120
+  boidSize: 0.004
+  boidMinPixels: 2.5
+  boidFlapRate: 9
+  boidReadbackRealSeconds: 0.25
   toolRadiusPerDistance: 0.07
   toolRadiusMin: 0.01
   toolRadiusMax: 0.3

@@ -2,7 +2,7 @@
 
 A small living planet you can water, warm, seed, and watch over time. It is built in Unity 6 (6000.1.14f1) with URP and the new Input System, and every simulation runs on the GPU or in plain C#.
 
-This README describes the **current state** of the project (end of Phase 7, trees). Anything marked *not yet* is planned but does not work in the build.
+This README describes the **current state** of the project (end of Phase 8, boids). Anything marked *not yet* is planned but does not work in the build.
 
 ---
 
@@ -94,7 +94,7 @@ Nine tools sit on the desk. Hover one to highlight it (it gets a thick ink outli
 | **Meteor** | Digs a crater, throws up dust, and kills life inside the blast (fungus and trees). It has a short cooldown. | Click on the planet. |
 | **Seed jar** | Plants a tree seed. It only grows if the spot allows (dry land, not too cold or hot). If the spot is wrong, a message tells you why. | Click on dry land. |
 | **Field lens** | Reads the ground under the cursor (height, climate, soil, fungal trail). Hold the left button to see temperature shown over the planet. | Hover to read; hold to see the temperature overlay. |
-| **Bird cage** | *Not yet.* Clicking shows a message. Flocks arrive in a later phase. | — |
+| **Bird cage** | Releases a flock of birds (boids) at the clicked spot, all starting out heading the same way. They then follow their own rules. | Click on the planet. |
 
 ---
 
@@ -138,6 +138,7 @@ Press **F1** to open the panel on the left side of the screen. It is for develop
 - **Terrain and climate**: sliders for the land/sea balance, climate settings, and the terrain tools.
 - **Physarum network**: population readout.
 - **Forest**: tree count, living and dead trees, leaf cover, and growth readout.
+- **Boids**: birds alive out of the pool, births and deaths in the last step, seeds dropped so far, and a *Re-scatter boids* button.
 - **Field view** and **debug brush** controls (see the next section).
 - **World seed**: *Randomise seed* picks a new random seed; *Config seed* returns to the seed in the config asset.
 
@@ -167,8 +168,12 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
   - Their leaves turn green in summer, orange and yellow in autumn, and fall in winter.
   - Mature trees drop seeds that may germinate nearby. Trees that starve, dry out, freeze, or overheat die, turn grey, and rot back into soil nutrients.
   - Meteors kill trees inside their blast.
+- **Birds (boids).** Flocks of tiny birds fly just above the ground. Each bird follows three local rules (stay apart from close neighbours, match its neighbours' heading, drift toward their centre) plus two appetites: it climbs toward denser tree canopy, which is its food, and it drifts toward ground at a comfortable temperature. Nobody tells a flock to visit a forest or to leave for the warm side of the planet; they follow those slopes.
+  - Birds eat from the canopy, pay energy to stay alive, fly and crowd each other, and starve if they find no food. A well-fed bird that is not crowded has a chick, so the population settles by itself.
+  - A bird flying over a forest may pick up a seed and drop it some time later, somewhere else. The tree system then decides whether the seed can germinate there, so birds carry forests to new ground.
+  - Dead birds feed the soil, and a meteor kills the birds in its blast.
 - **Life stops at a cap.** The forest is capped (about 300 trees) so the frame rate stays steady.
-- **Not yet:** bird flocks (Phase 8), ecosystem balancing and presets (Phase 9), generative sound (Phase 10), and final polish and a build (Phase 11).
+- **Not yet:** ecosystem balancing and presets (Phase 9), generative sound (Phase 10), and final polish and a build (Phase 11).
 
 ---
 
@@ -196,8 +201,9 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 | `Assets/Scripts/Climate` | Lamp, temperature, moisture, terrain |
 | `Assets/Scripts/Physarum` | Fungal agents and nutrient transport |
 | `Assets/Scripts/Trees` | Space colonization, tree mesher, tree life, tree manager |
+| `Assets/Scripts/Boids` | Boid simulation (GPU buffers, spatial hash grid) and the scene glue that draws them and carries seeds to the trees |
 | `Assets/Scripts/Interaction` | Input, camera rig, tools, dials, surface navigation |
-| `Assets/Shaders` | Compute shaders (fields, physarum, trees) and painterly surface shaders |
+| `Assets/Shaders` | Compute shaders (fields, physarum, trees, boids) and painterly surface shaders |
 | `Assets/Tests/EditMode` | Unit and GPU tests |
 
 ---

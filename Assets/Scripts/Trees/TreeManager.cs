@@ -223,6 +223,19 @@ namespace Terrarium.Trees
             return null;
         }
 
+        /// <summary>
+        /// A seed has landed here (dropped by a boid). It joins the same queue as the trees' own seeds, so the soil, moisture
+        /// and warmth at that spot decide whether it germinates; nothing is planted by force.
+        /// </summary>
+        /// <param name="localDirection">Where it landed, a unit vector in the planet's local space.</param>
+        public void ReceiveSeed(Vector3 localDirection)
+        {
+            if (seedQueue.Count < MaxSeedQueue)
+            {
+                seedQueue.Enqueue(localDirection.normalized);
+            }
+        }
+
         /// <summary>An impact: every tree inside the circle is destroyed at once.</summary>
         public void KillInRadius(Vector3 localDirection, float angularRadius)
         {

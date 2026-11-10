@@ -14,6 +14,7 @@
 //           readout text is still only rebuilt a few times a second.
 // =============================================================================
 
+using Terrarium.Boids;
 using Terrarium.Climate;
 using Terrarium.Interaction;
 using Terrarium.Physarum;
@@ -51,6 +52,9 @@ namespace Terrarium
 
         [Tooltip("The tree readout shown on the panel (optional).")]
         [SerializeField] private TreeManager trees;
+
+        [Tooltip("The boid readout shown on the panel (optional).")]
+        [SerializeField] private BoidSystem boids;
 
         [Tooltip("Whether the panel is showing when Play starts.")]
         [SerializeField] private bool visible = true;
@@ -172,6 +176,12 @@ namespace Terrarium
             {
                 GUILayout.Label("Forest");
                 trees.OnDebugGui();
+            }
+
+            if (boids != null)
+            {
+                GUILayout.Label("Boids");
+                boids.OnDebugGui();
             }
 
             if (fieldView != null)

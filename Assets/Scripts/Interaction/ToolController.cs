@@ -31,6 +31,7 @@
 //            left-drag pan is switched off (CameraRig.LeftDragBlocked).
 // =============================================================================
 
+using Terrarium.Boids;
 using Terrarium.Climate;
 using Terrarium.Physarum;
 using Terrarium.Sphere;
@@ -57,6 +58,7 @@ namespace Terrarium.Interaction
         [SerializeField] private ComputeShader brushShader;
         [SerializeField] private PhysarumSystem physarum;
         [SerializeField] private TreeManager trees;
+        [SerializeField] private BoidSystem boids;
         [SerializeField] private DebugPanel panel;
         [SerializeField] private FieldDebugView fieldView;
         [SerializeField] private DialProp timeDial;
@@ -441,7 +443,15 @@ namespace Terrarium.Interaction
                     break;
 
                 case ToolKind.BoidCage:
-                    Say("The bird cage is empty for now: flocks arrive in a later phase.");
+                    if (boids != null)
+                    {
+                        boids.ReleaseFlock(localDirection, Mathf.Max(angularRadius * 0.5f, 0.01f), config.boidCageCount);
+                    }
+                    else
+                    {
+                        Say("There are no birds here.");
+                    }
+
                     break;
             }
         }
@@ -463,11 +473,16 @@ namespace Terrarium.Interaction
                 fieldSet.Get(FieldId.Soil).Current,
                 localDirection, angularRadius, config.meteorDepth, config.meteorRimHeight, config.meteorOrganic);
 
-            // Life inside the blast dies. (Flocks join in when they exist.)
+            // Life inside the blast dies.
             physarum.KillAgents(localDirection, angularRadius * 1.15f);
             if (trees != null)
             {
                 trees.KillInRadius(localDirection, angularRadius * 1.15f);
+            }
+
+            if (boids != null)
+            {
+                boids.KillInRadius(localDirection, angularRadius * 1.15f);
             }
 
             // The CPU's copy of the heights is now out of date; picking needs the crater.

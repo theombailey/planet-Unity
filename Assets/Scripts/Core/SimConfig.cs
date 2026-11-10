@@ -373,6 +373,123 @@ namespace Terrarium
         [Tooltip("Most growth steps run in one frame, across all trees.")]
         [Range(1, 50)] public int treeStepsPerFrame = 8;
 
+        [Header("Boids: flocking (see Boids.compute). Lengths are in planet radii, speeds per sim second")]
+        [Tooltip("Boids alive when a world starts, scattered in small clusters on land. The population then finds its own level.")]
+        [Range(0, 20000)] public int boidStartCount = 1500;
+
+        [Tooltip("How many separate clusters the starting boids are split into.")]
+        [Range(1, 200)] public int boidStartClusters = 40;
+
+        [Tooltip("How far a boid sees its neighbours. Also the cell size of the spatial hash grid.")]
+        [Range(0.01f, 0.2f)] public float boidPerception = 0.04f;
+
+        [Tooltip("Neighbours closer than this are pushed away from.")]
+        [Range(0.002f, 0.1f)] public float boidSeparationRadius = 0.012f;
+
+        [Tooltip("Strength of the push away from crowding neighbours.")]
+        [Range(0f, 10f)] public float boidSeparationWeight = 3f;
+
+        [Tooltip("Strength of the pull toward the neighbours' average heading.")]
+        [Range(0f, 10f)] public float boidAlignmentWeight = 1.2f;
+
+        [Tooltip("Strength of the pull toward the neighbours' centre.")]
+        [Range(0f, 10f)] public float boidCohesionWeight = 0.8f;
+
+        [Tooltip("Fastest a boid flies, in planet radii per sim second.")]
+        [Range(0.005f, 0.3f)] public float boidMaxSpeed = 0.06f;
+
+        [Tooltip("Slowest a boid flies (birds do not hover).")]
+        [Range(0f, 0.2f)] public float boidMinSpeed = 0.025f;
+
+        [Tooltip("Strongest sideways steering acceleration.")]
+        [Range(0.01f, 2f)] public float boidMaxForce = 0.25f;
+
+        [Tooltip("Height boids fly above the ground, in planet radii.")]
+        [Range(0.002f, 0.1f)] public float boidHoverHeight = 0.025f;
+
+        [Tooltip("Spring pulling a boid back to its hover height (acceleration per planet radius of error).")]
+        [Range(1f, 100f)] public float boidAltitudeSpring = 20f;
+
+        [Tooltip("Damping of up and down motion.")]
+        [Range(0.5f, 30f)] public float boidAltitudeDamping = 6f;
+
+        [Tooltip("Strength of the pull up the canopy (food) gradient.")]
+        [Range(0f, 10f)] public float boidFoodWeight = 1.5f;
+
+        [Tooltip("How far ahead a boid samples the canopy and temperature to find their gradients, in planet radii.")]
+        [Range(0.005f, 0.2f)] public float boidSenseReach = 0.04f;
+
+        [Tooltip("Temperature boids are happiest at, deg C. They drift toward ground at this temperature; nothing tells them where that is.")]
+        [Range(0f, 40f)] public float boidPreferredTemp = 20f;
+
+        [Tooltip("Strength of the drift toward comfortable temperature.")]
+        [Range(0f, 10f)] public float boidWarmWeight = 0.8f;
+
+        [Tooltip("Random steering that keeps flocks from freezing into a pattern.")]
+        [Range(0f, 1f)] public float boidWander = 0.15f;
+
+        [Header("Boids: energy and seeds")]
+        [Tooltip("Energy a boid gains per sim second over full canopy (less over thinner canopy).")]
+        [Range(0f, 0.5f)] public float boidEatRate = 0.05f;
+
+        [Tooltip("Energy a boid pays per sim second just to stay alive.")]
+        [Range(0f, 0.1f)] public float boidUpkeep = 0.003f;
+
+        [Tooltip("Extra energy per sim second for flying: this x speed squared.")]
+        [Range(0f, 20f)] public float boidFlightCost = 0.5f;
+
+        [Tooltip("Energy per sim second paid for each neighbour within sight. This is what stops the population growing without limit.")]
+        [Range(0f, 0.02f)] public float boidCrowdCost = 0.00015f;
+
+        [Tooltip("Ground colder than this costs energy, deg C.")]
+        [Range(-20f, 20f)] public float boidColdLimit = -10f;
+
+        [Tooltip("Energy per sim second lost in ground 15 degrees below the cold limit.")]
+        [Range(0f, 0.2f)] public float boidColdCost = 0.005f;
+
+        [Tooltip("Energy a newborn boid starts with, and what the starting flock begins with.")]
+        [Range(0.1f, 30f)] public float boidStartEnergy = 14f;
+
+        [Tooltip("A boid with more energy than this has a chick, if it is not crowded.")]
+        [Range(0.5f, 40f)] public float boidReproduceEnergy = 18f;
+
+        [Tooltip("Energy the parent spends on a chick (the chick and parent split the rest).")]
+        [Range(0f, 10f)] public float boidBirthCost = 2.5f;
+
+        [Tooltip("A boid with more neighbours than this does not breed.")]
+        [Range(1, 64)] public int boidBreedCrowdLimit = 20;
+
+        [Tooltip("Chance per sim second, over full canopy, that a boid picks up a seed.")]
+        [Range(0f, 1f)] public float boidSeedPickupRate = 0.03f;
+
+        [Tooltip("Canopy density below which a boid cannot find a seed.")]
+        [Range(0f, 2f)] public float boidSeedMinCanopy = 0.25f;
+
+        [Tooltip("Sim seconds a boid carries a seed before dropping it.")]
+        [Range(1f, 200f)] public float boidSeedCarrySeconds = 25f;
+
+        [Tooltip("Sim seconds after a drop before a boid picks up another seed.")]
+        [Range(0f, 200f)] public float boidSeedCooldown = 15f;
+
+        [Tooltip("Organic matter a dead boid returns to the soil.")]
+        [Range(0f, 1f)] public float boidDeathOrganic = 0.05f;
+
+        [Tooltip("Boids released by one click of the bird cage.")]
+        [Range(10, 2000)] public int boidCageCount = 120;
+
+        [Header("Boids: drawing")]
+        [Tooltip("Wing span of a boid, in world units.")]
+        [Range(0.001f, 0.02f)] public float boidSize = 0.004f;
+
+        [Tooltip("Smallest size a boid is drawn at on screen, in pixels, so distant flocks read as drifting ink smudges.")]
+        [Range(0f, 8f)] public float boidMinPixels = 2.5f;
+
+        [Tooltip("Wing beats per real second.")]
+        [Range(1f, 30f)] public float boidFlapRate = 9f;
+
+        [Tooltip("Real seconds between reads of the boid counters and the seed-drop events.")]
+        [Range(0.05f, 1f)] public float boidReadbackRealSeconds = 0.25f;
+
         [Header("Tools (see ToolController)")]
         [Tooltip("Brush radius as a fraction of the camera's distance to the surface, so a tool covers more from far away and less up close.")]
         [Range(0.01f, 0.3f)] public float toolRadiusPerDistance = 0.07f;

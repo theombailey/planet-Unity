@@ -23,6 +23,7 @@
 //           the SimClock dial, never by Unity's own Time.timeScale.
 // =============================================================================
 
+using Terrarium.Boids;
 using Terrarium.Climate;
 using Terrarium.Physarum;
 using Terrarium.Trees;
@@ -45,6 +46,9 @@ namespace Terrarium
         [Tooltip("Step 3: trees (time is accumulated here; the work is done in their own bounded ticks).")]
         [SerializeField] private TreeManager trees;
 
+        [Tooltip("Step 4: boids (steering, energy, seed carrying).")]
+        [SerializeField] private BoidSystem boids;
+
         private void Update()
         {
             if (simRoot == null || simRoot.Clock == null || climate == null || !climate.enabled || physarum == null || !physarum.enabled)
@@ -64,6 +68,11 @@ namespace Terrarium
                 if (trees != null)
                 {
                     trees.Step(stepSeconds);
+                }
+
+                if (boids != null && boids.enabled)
+                {
+                    boids.Step(stepSeconds);
                 }
             }
         }

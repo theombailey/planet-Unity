@@ -132,6 +132,10 @@ namespace Terrarium.EditorTools
                         : $"ok: physarum alive {physarumSystem.AliveCount} of {physarumSystem.PoolSize}, born {physarumSystem.BornLastStep}, died {physarumSystem.DiedLastStep} (last step)");
                     break;
 
+                case "boids":
+                    WriteResult(BoidsReport(parts.Length > 1 && parts[1] == "detail"));
+                    break;
+
                 case "status":
                     WriteResult($"playing={EditorApplication.isPlaying} paused={EditorApplication.isPaused} frame={Time.frameCount} " +
                                 $"realtime={Time.realtimeSinceStartup:0.0}s unscaledDelta={Time.unscaledDeltaTime * 1000f:0.0}ms focused={UnityEditorInternal.InternalEditorUtility.isApplicationActive}");
@@ -519,6 +523,84 @@ namespace Terrarium.EditorTools
 
             WriteResult($"ok: recorded {RecordedPositions.Count} frames, path {path:0.000} units, largest single-frame jump {largest:0.0000} " +
                         $"({(path > 0f ? largest / path : 0f):P1} of the path), start {RecordedPositions[0]}, end {RecordedPositions[RecordedPositions.Count - 1]}");
+        }
+
+        /// <summary>
+        /// "boids [detail]": the boid counters from the last readback; with "detail", also reads the boid buffers right now
+        /// (a blocking read, fine for an editor tool) and reports energies, heights and the number of broken (NaN) boids.
+        /// </summary>
+        private static string BoidsReport(bool detail)
+        {
+            var system = UnityEngine.Object.FindFirstObjectByType<Terrarium.Boids.BoidSystem>();
+            var manager = UnityEngine.Object.FindFirstObjectByType<Terrarium.Trees.TreeManager>();
+            if (system == null || !EditorApplication.isPlaying)
+            {
+                return "error: needs Play mode and a BoidSystem";
+            }
+
+            string summary = $"ok: boids alive {system.AliveCount} of {system.PoolSize}, born {system.BornLastStep}, died {system.DiedLastStep} (last step), " +
+                             $"seeds dropped {system.SeedsDropped}, trees {(manager != null ? manager.TreeCount : 0)}";
+            if (!detail || system.Simulation == null || !system.Simulation.IsAllocated)
+            {
+                return summary;
+            }
+
+            Terrarium.Boids.BoidSimulation simulation = system.Simulation;
+            var posEnergy = new Vector4[simulation.PoolSize];
+            var velSeed = new Vector4[simulation.PoolSize];
+            var alive = new uint[simulation.PoolSize];
+            simulation.PosEnergy.GetData(posEnergy);
+            simulation.VelSeed.GetData(velSeed);
+            simulation.Alive.GetData(alive);
+
+            int live = 0;
+            int broken = 0;
+            int carrying = 0;
+            Vector3 firstDirection = Vector3.up;
+            float energySum = 0f;
+            float energyMin = float.MaxValue;
+            float energyMax = float.MinValue;
+            float radiusMin = float.MaxValue;
+            float radiusMax = float.MinValue;
+            float speedSum = 0f;
+            for (int i = 0; i < alive.Length; i++)
+            {
+                if (alive[i] == 0u)
+                {
+                    continue;
+                }
+
+                Vector4 pe = posEnergy[i];
+                if (float.IsNaN(pe.x) || float.IsNaN(pe.w))
+                {
+                    broken++;
+                    continue;
+                }
+
+                if (live == 0)
+                {
+                    firstDirection = new Vector3(pe.x, pe.y, pe.z).normalized;
+                }
+
+                live++;
+                energySum += pe.w;
+                energyMin = Mathf.Min(energyMin, pe.w);
+                energyMax = Mathf.Max(energyMax, pe.w);
+                float radius = new Vector3(pe.x, pe.y, pe.z).magnitude;
+                radiusMin = Mathf.Min(radiusMin, radius);
+                radiusMax = Mathf.Max(radiusMax, radius);
+                speedSum += new Vector3(velSeed[i].x, velSeed[i].y, velSeed[i].z).magnitude;
+                if (velSeed[i].w > 0f)
+                {
+                    carrying++;
+                }
+            }
+
+            return live == 0
+                ? summary + $"\\n  buffers: no live boids, {broken} broken"
+                : summary + $"\\n  buffers: {live} live ({broken} broken), energy mean {energySum / live:0.000} min {energyMin:0.000} max {energyMax:0.000}, " +
+                  $"radius {radiusMin:0.000}..{radiusMax:0.000}, mean speed {speedSum / live:0.0000}, carrying seeds {carrying}, " +
+                  $"first live boid over ({firstDirection.x:0.000} {firstDirection.y:0.000} {firstDirection.z:0.000})";
         }
 
         /// <summary>"trees": how many trees stand, how many are alive, and a few details of each of the first ones.</summary>

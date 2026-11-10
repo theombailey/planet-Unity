@@ -1,0 +1,713 @@
+// =============================================================================
+// Boids.compute
+// -----------------------------------------------------------------------------
+// Purpose : The flocks of small flying creatures. Each boid follows three local
+//           steering rules (after Craig Reynolds' boids), plus hunger and a liking
+//           for comfortable ground, and carries seeds from tree to tree.
+//
+// Kernels :
+//   InitBoids     - scatters the starting flocks (small clusters on land).
+//   CopyBoids     - carries boids into a re-sized pool (quality preset change).
+//   ClearCounters - zeroes the population counters before a step.
+//   ClearDrops    - empties the seed-drop events, once the CPU has read them.
+//   ClearGrid     - empties the spatial hash grid.
+//   BuildGrid     - every live boid adds itself to the cell it is in.
+//   BoidStep      - one step of every boid: see its neighbours, steer, fly, eat, pay
+//                   upkeep, carry or drop a seed, die or breed.
+//   SpawnBoids    - the bird cage: releases a flock inside a small circle.
+//   KillBoids     - an impact: removes every boid inside a circle.
+//   ApplyReturn   - adds the bodies of dead boids to the soil's organic matter.
+//
+// Idea (Reynolds' three rules, each one a "desired change of velocity"):
+//   SEPARATION  away from neighbours that are too close:  sum of  (d / |d|) * (1 - |d| / sepRadius)
+//   ALIGNMENT   toward the neighbours' average velocity:   average(v_j) - v
+//   COHESION    toward the neighbours' centre:             (average(p_j) - p) / perception * maxSpeed
+//   Added to those, also local:
+//   FOOD        up the slope of the canopy density (the trees' leaves are the food)
+//   COMFORT     toward ground at the preferred temperature: up the temperature slope if it is
+//               too cold, down it if it is too hot
+//   WANDER      a little random steering, so a flock never freezes into a pattern
+//   Nobody tells the boids to go to a forest or to leave for a warmer hemisphere: they follow
+//   gradients, and the flock follows its members.
+//
+// Acceleration is  a = sum( weight_k * desiredChange_k ), limited to maxForce, then kept in the
+// ground's tangent plane. Height is separate: a spring pulls the boid to  groundRadius + hover,
+//   a_up = spring * (target - r) - damping * v_up        target = 1 + heightScale * max(h, 0) + hover
+// so flocks rise over mountains and skim valleys.
+//
+// Geometry: positions are in the planet's own frame (a unit sphere is the sea level), the same
+// frame as the fields, so the spin of the planet does not matter here. A boid at p has
+// "up" = p / |p|. Each step the velocity is split into an up part v_r (a number) and a tangent
+// part v_t, the boid moves by (v_t + up v_r) dt, and the tangent part is then turned to be
+// tangent at the NEW position (its length kept), so flying in a straight line follows the sphere.
+//
+// Spatial hash grid (neighbour search without looking at every boid):
+//   The shell is cut into cubes of side perception. cell = floor((p + extent) / cellSize).
+//   BuildGrid makes, per cell, a linked list:  prev = Exchange(head[cell], i + 1);  next[i] = prev
+//   (stored +1 so 0 means "none"). A boid looks only in its own cell and the 26 around it, which
+//   together hold everything within `perception`. The lists are walked with a cap of 24 entries
+//   per cell, so a crowded cell costs a bounded amount (the boid then sees a sample of it).
+//
+// Energy (per step of dt seconds; all rates per sim second):
+//   energy += eatRate * saturate(canopy) * dt                 food from the canopy overhead (renewable)
+//   energy -= (upkeep + flightCost * speed^2 + crowdCost * neighbours + coldCost) * dt
+//   coldCost = coldRate * saturate((coldLimit - T) / 15)      in ground colder than coldLimit
+//   energy <= 0                -> dies, deathOrganic of body mass joins the soil
+//   energy > reproduceEnergy and not crowded -> a chick takes a free slot; both keep (energy - birthCost) / 2
+//   The crowding cost is what limits the population: more neighbours, more upkeep.
+//
+// Seeds: a boid over canopy denser than seedMinCanopy may pick one up (chance seedPickupRate * canopy * dt).
+//   It carries it for seedCarrySeconds, then drops it: an event (the ground direction) is appended to
+//   _Drops. The CPU reads the events with AsyncGPUReadback and hands them to the tree manager, which
+//   decides whether the seed germinates there. A boid that dies also drops its seed. After a drop it
+//   rests for seedCooldown seconds (carry is stored as a NEGATIVE number while resting).
+//
+// Concurrency (many boids act in the same moment; what is racy and why that is acceptable):
+//   - A boid reads its neighbours' position and velocity while they may be rewriting them this
+//     very step. It sees either the old or the new value; they differ by one step of motion, so the
+//     steering error is negligible.
+//   - Counters, the drop count and the dead boids' returns use InterlockedAdd, so none is lost.
+//   - A chick takes a dead slot picked at random, claimed with InterlockedCompareExchange (0 dead -> 2
+//     newborn). If the slot is taken the birth simply waits for a later step. A newborn (state 2) is
+//     switched to alive (1) at the start of the next step, so it is never processed while it is being
+//     written.
+//   - The grid lists are built by many threads at once, so the ORDER in a cell varies from run to
+//     run. Summing neighbours in a different order changes the last digit of a float, so runs are
+//     not bit-for-bit repeatable, but they are statistically the same.
+//
+// Boid buffers (one element per pool slot):
+//   _PosEnergy  float4   xyz position (planet frame, |p| about 1), w energy
+//   _VelSeed    float4   xyz velocity, w seed timer (> 0 carrying, < 0 resting, 0 free)
+//   _Alive      uint     0 dead, 1 alive, 2 newborn
+//
+// Parameters: see the variables below; they come from SimConfig "Boids".
+// =============================================================================
+
+#pragma kernel InitBoids
+#pragma kernel CopyBoids
+#pragma kernel ClearCounters
+#pragma kernel ClearDrops
+#pragma kernel ClearGrid
+#pragma kernel BuildGrid
+#pragma kernel BoidStep
+#pragma kernel SpawnBoids
+#pragma kernel KillBoids
+#pragma kernel ApplyReturn
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+#include "Assets/Shaders/Include/Noise.hlsl"
+
+#define NUTRIENT_SCALE 1048576.0
+#define MAX_PER_CELL 24
+
+RWStructuredBuffer<float4> _PosEnergy;
+RWStructuredBuffer<float4> _VelSeed;
+RWStructuredBuffer<uint> _Alive;
+RWStructuredBuffer<float4> _OldPosEnergy;       // CopyBoids source
+RWStructuredBuffer<float4> _OldVelSeed;
+RWStructuredBuffer<uint> _OldAlive;
+
+RWStructuredBuffer<uint> _CellHead;             // per grid cell: first boid + 1, or 0
+RWStructuredBuffer<uint> _Next;                 // per boid: next boid in the same cell + 1, or 0
+RWStructuredBuffer<uint> _Counters;             // [0] alive, [1] births, [2] deaths, [3] seed drops
+RWStructuredBuffer<float4> _Drops;              // seed-drop events: xyz ground direction, w = 1
+RWStructuredBuffer<uint> _Returned;             // per texel, fixed point (NUTRIENT_SCALE)
+
+Texture2DArray<float4> _Soil;                   // B canopy
+Texture2DArray<float4> _Terrain;                // R height
+Texture2DArray<float4> _Climate;                // R temperature
+RWTexture2DArray<float4> _SoilRW;               // ApplyReturn
+
+uint _PoolSize;
+uint _OldPoolSize;
+uint _StartCount;
+uint _StartClusters;
+uint _Frame;
+int _Resolution;
+int _GridDim;
+uint _GridCells;
+uint _DropCapacity;
+float _GridExtent;
+float _CellSize;
+float _DeltaTime;
+float _Seed;
+
+float _Perception;
+float _SeparationRadius;
+float _SeparationWeight;
+float _AlignmentWeight;
+float _CohesionWeight;
+float _MaxSpeed;
+float _MinSpeed;
+float _MaxForce;
+float _Hover;
+float _HeightScale;
+float _AltitudeSpring;
+float _AltitudeDamping;
+float _FoodWeight;
+float _SenseReach;
+float _PreferredTemp;
+float _WarmWeight;
+float _Wander;
+
+float _EatRate;
+float _Upkeep;
+float _FlightCost;
+float _CrowdCost;
+float _ColdLimit;
+float _ColdCost;
+float _StartEnergy;
+float _ReproduceEnergy;
+float _BirthCost;
+uint _BreedCrowdLimit;
+float _SeedPickupRate;
+float _SeedMinCanopy;
+float _SeedCarry;
+float _SeedCooldown;
+float _DeathOrganic;
+
+float3 _EventDirection;      // SpawnBoids / KillBoids: centre of the circle (unit vector, planet frame)
+float _EventRadius;          // ... and its radius in radians
+uint _SpawnCount;
+
+// ---- small helpers ----------------------------------------------------------------
+
+float Random01(inout uint state)
+{
+    state = HashUint(state);
+    return (state >> 8) * (1.0 / 16777216.0);
+}
+
+float3 RandomDirection(inout uint state)
+{
+    float z = Random01(state) * 2.0 - 1.0;
+    float phi = Random01(state) * 6.28318530718;
+    float r = sqrt(saturate(1.0 - z * z));
+    return float3(r * cos(phi), z, r * sin(phi));
+}
+
+// Random unit vector at right angles to `up`.
+float3 RandomTangent(float3 up, inout uint state)
+{
+    float3 reference = abs(up.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 t1 = normalize(cross(up, reference));
+    float3 t2 = cross(up, t1);
+    float angle = Random01(state) * 6.28318530718;
+    return t1 * cos(angle) + t2 * sin(angle);
+}
+
+// A random point inside the circle of angular radius `radius` around `centre` (uniform over the cap's area).
+float3 RandomInCap(float3 centre, float radius, inout uint state)
+{
+    float3 tangent = RandomTangent(centre, state);
+    float angle = radius * sqrt(Random01(state));
+    float s, c;
+    sincos(angle, s, c);
+    return normalize(centre * c + tangent * s);
+}
+
+uint TexelIndex(int3 texel)
+{
+    return (uint)((texel.z * _Resolution + texel.y) * _Resolution + texel.x);
+}
+
+float HeightAt(float3 direction)
+{
+    return _Terrain[uint3(CS_DirToTexel(direction, _Resolution))].r;
+}
+
+float CanopyAt(float3 direction)
+{
+    return _Soil[uint3(CS_DirToTexel(direction, _Resolution))].b;
+}
+
+float TemperatureAt(float3 direction)
+{
+    return _Climate[uint3(CS_DirToTexel(direction, _Resolution))].r;
+}
+
+// Radius of the flight shell above a ground direction.
+float ShellRadius(float3 direction)
+{
+    return 1.0 + _HeightScale * max(HeightAt(direction), 0.0) + _Hover;
+}
+
+// Point `distance` radians away from `direction` along tangent `heading`.
+float3 Ahead(float3 direction, float3 heading, float distance)
+{
+    float s, c;
+    sincos(distance, s, c);
+    return normalize(direction * c + heading * s);
+}
+
+// Slope of the canopy (field 0) or temperature (field 1) around a point, as a tangent vector:
+//   (value ahead - value behind) along `forward`, (value right - value left) along `right`.
+float3 Slope(float3 direction, float3 forward, float3 right, float reach, int field)
+{
+    float ahead;
+    float behind;
+    float onRight;
+    float onLeft;
+    float3 pa = Ahead(direction, forward, reach);
+    float3 pb = Ahead(direction, -forward, reach);
+    float3 pr = Ahead(direction, right, reach);
+    float3 pl = Ahead(direction, -right, reach);
+    if (field == 0)
+    {
+        ahead = CanopyAt(pa);
+        behind = CanopyAt(pb);
+        onRight = CanopyAt(pr);
+        onLeft = CanopyAt(pl);
+    }
+    else
+    {
+        ahead = TemperatureAt(pa);
+        behind = TemperatureAt(pb);
+        onRight = TemperatureAt(pr);
+        onLeft = TemperatureAt(pl);
+    }
+
+    return forward * (ahead - behind) + right * (onRight - onLeft);
+}
+
+int3 CellOf(float3 p)
+{
+    return clamp(int3(floor((p + _GridExtent) / _CellSize)), int3(0, 0, 0), int3(_GridDim - 1, _GridDim - 1, _GridDim - 1));
+}
+
+uint CellIndex(int3 c)
+{
+    return (uint)((c.z * _GridDim + c.y) * _GridDim + c.x);
+}
+
+// Appends a seed-drop event at a ground direction (dropped if the event buffer is full).
+void EmitDrop(float3 direction)
+{
+    uint slot;
+    InterlockedAdd(_Counters[3], 1u, slot);
+    if (slot < _DropCapacity)
+    {
+        _Drops[slot] = float4(direction, 1.0);
+    }
+}
+
+// A dead boid's body joins the soil (applied by ApplyReturn).
+void ReturnBody(float3 direction)
+{
+    int3 texel = CS_DirToTexel(direction, _Resolution);
+    InterlockedAdd(_Returned[TexelIndex(texel)], (uint)(_DeathOrganic * NUTRIENT_SCALE));
+}
+
+// ---- kernels ----------------------------------------------------------------------
+
+[numthreads(64, 1, 1)]
+void InitBoids(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize)
+    {
+        return;
+    }
+
+    _Alive[index] = 0u;
+    _PosEnergy[index] = float4(0, 1, 0, 0);
+    _VelSeed[index] = float4(0, 0, 0, 0);
+    _Next[index] = 0u;
+
+    if (index >= _StartCount)
+    {
+        return;
+    }
+
+    // Boids are dealt out to clusters in order, so a cluster is a run of neighbouring indices.
+    uint perCluster = max(1u, (_StartCount + _StartClusters - 1u) / _StartClusters);
+    uint cluster = index / perCluster;
+    uint clusterState = HashUint(cluster * 2654435761u + asuint(_Seed) + 777u);
+
+    // The cluster's centre: a random spot on dry land (about 40% of the planet is).
+    float3 centre = float3(0, 1, 0);
+    bool found = false;
+    for (int attempt = 0; attempt < 16 && !found; attempt++)
+    {
+        float3 candidate = RandomDirection(clusterState);
+        if (HeightAt(candidate) > 0.0)
+        {
+            centre = candidate;
+            found = true;
+        }
+    }
+
+    if (!found)
+    {
+        return;
+    }
+
+    uint state = HashUint(index * 747796405u + asuint(_Seed) + 99u);
+    float3 direction = RandomInCap(centre, 0.06, state);
+    float3 heading = RandomTangent(centre, clusterState);          // the whole cluster starts out heading one way
+    float3 tangent = normalize(heading - direction * dot(heading, direction));
+    float3 jitter = RandomTangent(direction, state) * 0.2;
+    float3 velocity = normalize(tangent + jitter) * (_MaxSpeed * 0.7);
+
+    _PosEnergy[index] = float4(direction * ShellRadius(direction), _StartEnergy);
+    _VelSeed[index] = float4(velocity, 0.0);
+    _Alive[index] = 1u;
+}
+
+[numthreads(64, 1, 1)]
+void CopyBoids(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize)
+    {
+        return;
+    }
+
+    bool exists = index < _OldPoolSize;
+    _Alive[index] = exists ? _OldAlive[index] : 0u;
+    _PosEnergy[index] = exists ? _OldPosEnergy[index] : float4(0, 1, 0, 0);
+    _VelSeed[index] = exists ? _OldVelSeed[index] : float4(0, 0, 0, 0);
+    _Next[index] = 0u;
+}
+
+[numthreads(1, 1, 1)]
+void ClearCounters(uint3 id : SV_DispatchThreadID)
+{
+    _Counters[0] = 0u;
+    _Counters[1] = 0u;
+    _Counters[2] = 0u;
+}
+
+// Empties the seed-drop events (every unused entry has w = 0, so the CPU needs no count to read them).
+[numthreads(64, 1, 1)]
+void ClearDrops(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < _DropCapacity)
+    {
+        _Drops[id.x] = float4(0, 0, 0, 0);
+    }
+
+    if (id.x == 0u)
+    {
+        _Counters[3] = 0u;
+    }
+}
+
+[numthreads(64, 1, 1)]
+void ClearGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < _GridCells)
+    {
+        _CellHead[id.x] = 0u;
+    }
+}
+
+[numthreads(64, 1, 1)]
+void BuildGrid(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize || _Alive[index] != 1u)
+    {
+        return;
+    }
+
+    uint cell = CellIndex(CellOf(_PosEnergy[index].xyz));
+    uint previous;
+    InterlockedExchange(_CellHead[cell], index + 1u, previous);
+    _Next[index] = previous;
+}
+
+[numthreads(64, 1, 1)]
+void BoidStep(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize)
+    {
+        return;
+    }
+
+    uint life = _Alive[index];
+    if (life == 2u)
+    {
+        _Alive[index] = 1u;          // a newborn joins in next step
+        return;
+    }
+
+    if (life != 1u)
+    {
+        return;
+    }
+
+    InterlockedAdd(_Counters[0], 1u);
+
+    float4 posEnergy = _PosEnergy[index];
+    float4 velSeed = _VelSeed[index];
+    float3 position = posEnergy.xyz;
+    float energy = posEnergy.w;
+    float3 velocity = velSeed.xyz;
+    float carry = velSeed.w;
+    float dt = _DeltaTime;
+    float3 up = normalize(position);
+    uint rng = HashUint(index * 747796405u + _Frame * 2891336453u + asuint(_Seed));
+
+    // ---- 1. Who is nearby? (27 cells of the grid) -------------------------------------------
+    float3 separation = float3(0, 0, 0);
+    float3 neighbourVelocity = float3(0, 0, 0);
+    float3 neighbourCentre = float3(0, 0, 0);
+    uint neighbours = 0u;
+    float perceptionSq = _Perception * _Perception;
+    int3 cell = CellOf(position);
+
+    for (int dz = -1; dz <= 1; dz++)
+    {
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int3 c = cell + int3(dx, dy, dz);
+                if (c.x < 0 || c.y < 0 || c.z < 0 || c.x >= _GridDim || c.y >= _GridDim || c.z >= _GridDim)
+                {
+                    continue;
+                }
+
+                uint entry = _CellHead[CellIndex(c)];
+                for (uint guard = 0u; entry != 0u && guard < MAX_PER_CELL; guard++)
+                {
+                    uint other = entry - 1u;
+                    entry = _Next[other];
+                    if (other == index)
+                    {
+                        continue;
+                    }
+
+                    float3 offset = position - _PosEnergy[other].xyz;
+                    float distanceSq = dot(offset, offset);
+                    if (distanceSq >= perceptionSq)
+                    {
+                        continue;
+                    }
+
+                    neighbours++;
+                    neighbourVelocity += _VelSeed[other].xyz;
+                    neighbourCentre += _PosEnergy[other].xyz;
+
+                    float gap = sqrt(distanceSq);
+                    if (gap < _SeparationRadius && gap > 1e-6)
+                    {
+                        separation += (offset / gap) * (1.0 - gap / _SeparationRadius);
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 2. Steering: every term is a desired change of velocity, times a weight ----------------
+    float3 speedAxis = velocity - up * dot(velocity, up);             // the tangent part of the velocity
+    float speed = length(speedAxis);
+    float3 forward = speed > 1e-6 ? speedAxis / speed : RandomTangent(up, rng);
+    float3 right = cross(up, forward);
+
+    float3 steer = float3(0, 0, 0);
+    if (neighbours > 0u)
+    {
+        float inverse = 1.0 / neighbours;
+        steer += _SeparationWeight * separation * _MaxSpeed;
+        steer += _AlignmentWeight * (neighbourVelocity * inverse - velocity);
+        steer += _CohesionWeight * ((neighbourCentre * inverse - position) / _Perception) * _MaxSpeed;
+    }
+
+    // Food: up the slope of the canopy, seen at two scales so a forest is noticed from a distance.
+    float3 foodSlope = Slope(up, forward, right, _SenseReach, 0) + 0.5 * Slope(up, forward, right, _SenseReach * 3.0, 0);
+    float foodLength = length(foodSlope);
+    if (foodLength > 1e-5)
+    {
+        steer += _FoodWeight * (foodSlope / max(foodLength, 1.0)) * _MaxSpeed;
+    }
+
+    // Comfort: toward ground at the preferred temperature.
+    float here = TemperatureAt(up);
+    float want = clamp((_PreferredTemp - here) / 10.0, -1.0, 1.0);
+    float3 warmSlope = Slope(up, forward, right, _SenseReach * 2.0, 1);
+    float warmLength = length(warmSlope);
+    if (warmLength > 1e-5)
+    {
+        steer += _WarmWeight * want * (warmSlope / warmLength) * saturate(warmLength / 2.0) * _MaxSpeed;
+    }
+
+    steer += _Wander * RandomTangent(up, rng) * _MaxSpeed;
+
+    // Keep to the tangent plane and limit the push.
+    steer -= up * dot(steer, up);
+    float steerLength = length(steer);
+    if (steerLength > _MaxForce)
+    {
+        steer *= _MaxForce / steerLength;
+    }
+
+    // ---- 3. Fly --------------------------------------------------------------------------------
+    float radius = length(position);
+    float upSpeed = dot(velocity, up);
+    float3 tangentVelocity = speedAxis + steer * dt;
+
+    float newSpeed = length(tangentVelocity);
+    if (newSpeed > _MaxSpeed)
+    {
+        tangentVelocity *= _MaxSpeed / newSpeed;
+        newSpeed = _MaxSpeed;
+    }
+    else if (newSpeed < _MinSpeed)
+    {
+        tangentVelocity = (newSpeed > 1e-6 ? tangentVelocity / newSpeed : forward) * _MinSpeed;
+        newSpeed = _MinSpeed;
+    }
+
+    float target = ShellRadius(up);
+    upSpeed += (_AltitudeSpring * (target - radius) - _AltitudeDamping * upSpeed) * dt;
+
+    float3 newPosition = position + (tangentVelocity + up * upSpeed) * dt;
+    float3 newUp = normalize(newPosition);
+
+    // Turn the tangent velocity to be tangent at the new place (same length).
+    tangentVelocity -= newUp * dot(tangentVelocity, newUp);
+    float tangentLength = length(tangentVelocity);
+    tangentVelocity = tangentLength > 1e-6 ? tangentVelocity * (newSpeed / tangentLength) : forward * newSpeed;
+    velocity = tangentVelocity + newUp * upSpeed;
+
+    // ---- 4. Energy ------------------------------------------------------------------------------
+    float canopy = CanopyAt(newUp);
+    float temperature = TemperatureAt(newUp);
+    float cold = _ColdCost * saturate((_ColdLimit - temperature) / 15.0);
+    energy += (_EatRate * saturate(canopy) - _Upkeep - _FlightCost * newSpeed * newSpeed - _CrowdCost * neighbours - cold) * dt;
+
+    // ---- 5. Seeds --------------------------------------------------------------------------------
+    if (carry > 0.0)
+    {
+        carry -= dt;
+        if (carry <= 0.0)
+        {
+            EmitDrop(newUp);
+            carry = -_SeedCooldown;
+        }
+    }
+    else if (carry < 0.0)
+    {
+        carry = min(0.0, carry + dt);
+    }
+    else if (canopy > _SeedMinCanopy && Random01(rng) < _SeedPickupRate * canopy * dt)
+    {
+        carry = _SeedCarry;
+    }
+
+    // ---- 6. Death or birth ----------------------------------------------------------------------
+    if (energy <= 0.0)
+    {
+        if (carry > 0.0)
+        {
+            EmitDrop(newUp);
+        }
+
+        ReturnBody(newUp);
+        _Alive[index] = 0u;
+        InterlockedAdd(_Counters[2], 1u);
+        return;
+    }
+
+    if (energy > _ReproduceEnergy && neighbours <= _BreedCrowdLimit)
+    {
+        for (int attempt = 0; attempt < 4; attempt++)
+        {
+            rng = HashUint(rng);
+            uint slot = rng % _PoolSize;
+            uint previous;
+            InterlockedCompareExchange(_Alive[slot], 0u, 2u, previous);
+            if (previous == 0u)
+            {
+                float share = (energy - _BirthCost) * 0.5;
+                energy = share;
+                float3 childUp = normalize(newPosition + RandomTangent(newUp, rng) * 0.003);
+                _PosEnergy[slot] = float4(childUp * length(newPosition), share);
+                _VelSeed[slot] = float4(velocity, 0.0);
+                InterlockedAdd(_Counters[1], 1u);
+                break;
+            }
+        }
+    }
+
+    _PosEnergy[index] = float4(newPosition, energy);
+    _VelSeed[index] = float4(velocity, carry);
+}
+
+[numthreads(64, 1, 1)]
+void SpawnBoids(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _SpawnCount)
+    {
+        return;
+    }
+
+    uint state = HashUint(id.x * 747796405u + _Frame * 2891336453u + 4242u);
+    float3 direction = RandomInCap(_EventDirection, _EventRadius, state);
+
+    // One heading for the whole flock (the same for every thread), with a little scatter on top.
+    uint flockState = HashUint(_Frame * 2891336453u + 17u);
+    float3 heading = RandomTangent(_EventDirection, flockState);
+    float3 tangent = normalize(heading - direction * dot(heading, direction));
+    float3 velocity = normalize(tangent + RandomTangent(direction, state) * 0.25) * (_MaxSpeed * 0.8);
+
+    for (int attempt = 0; attempt < 8; attempt++)
+    {
+        state = HashUint(state);
+        uint slot = state % _PoolSize;
+        uint previous;
+        InterlockedCompareExchange(_Alive[slot], 0u, 2u, previous);
+        if (previous == 0u)
+        {
+            _PosEnergy[slot] = float4(direction * ShellRadius(direction), _StartEnergy);
+            _VelSeed[slot] = float4(velocity, 0.0);
+            InterlockedAdd(_Counters[1], 1u);
+            return;
+        }
+    }
+}
+
+[numthreads(64, 1, 1)]
+void KillBoids(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _PoolSize || _Alive[index] == 0u)
+    {
+        return;
+    }
+
+    float3 position = _PosEnergy[index].xyz;
+    float3 direction = normalize(position);
+    if (dot(direction, _EventDirection) < cos(_EventRadius))
+    {
+        return;
+    }
+
+    ReturnBody(direction);
+    _Alive[index] = 0u;
+    InterlockedAdd(_Counters[2], 1u);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyReturn(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    uint index = TexelIndex(int3(id));
+    uint amount = _Returned[index];
+    if (amount == 0u)
+    {
+        return;
+    }
+
+    float4 soil = _SoilRW[id];
+    soil.g += amount / NUTRIENT_SCALE;
+    _SoilRW[id] = soil;
+    _Returned[index] = 0u;
+}

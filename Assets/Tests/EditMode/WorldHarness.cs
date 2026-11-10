@@ -12,6 +12,7 @@
 
 using System;
 using System.Collections.Generic;
+using Terrarium.Boids;
 using Terrarium.Climate;
 using Terrarium.Physarum;
 using Terrarium.Sphere;
@@ -28,6 +29,7 @@ namespace Terrarium.Tests
         private readonly TerrainGenerator terrainGenerator;
         private readonly ClimateSimulation simulation;
         private readonly List<PhysarumSimulation> physarumSimulations = new List<PhysarumSimulation>();
+        private readonly List<BoidSimulation> boidSimulations = new List<BoidSimulation>();
 
         /// <summary>Creates the fields and loads the compute shaders. Tweak <paramref name="configure"/> to change parameters.</summary>
         public WorldHarness(int resolution, Action<SimConfig> configure = null)
@@ -91,6 +93,30 @@ namespace Terrarium.Tests
             physarum.Allocate(poolSize, Resolution);
             physarumSimulations.Add(physarum);
             return physarum;
+        }
+
+        /// <summary>Creates a boid simulation on this world's resolution. Released with the harness.</summary>
+        public BoidSimulation CreateBoids(int poolSize)
+        {
+            var boidShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Shaders/Compute/Boids.compute");
+            if (boidShader == null)
+            {
+                throw new InvalidOperationException("Boids.compute not found.");
+            }
+
+            var boids = new BoidSimulation(boidShader, Config);
+            boids.Allocate(poolSize, Resolution);
+            boidSimulations.Add(boids);
+            return boids;
+        }
+
+        /// <summary>Runs boid steps of <paramref name="stepSeconds"/> each.</summary>
+        public void RunBoids(BoidSimulation boids, int steps, float stepSeconds)
+        {
+            for (int i = 0; i < steps; i++)
+            {
+                boids.Step(Soil, Terrain.Current, Climate.Current, stepSeconds);
+            }
         }
 
         /// <summary>Runs physarum steps of <paramref name="stepSeconds"/> each.</summary>
@@ -190,6 +216,11 @@ namespace Terrarium.Tests
             foreach (PhysarumSimulation physarum in physarumSimulations)
             {
                 physarum.Dispose();
+            }
+
+            foreach (BoidSimulation boids in boidSimulations)
+            {
+                boids.Dispose();
             }
 
             Terrain.Release();
