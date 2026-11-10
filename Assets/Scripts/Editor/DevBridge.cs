@@ -136,6 +136,36 @@ namespace Terrarium.EditorTools
                     WriteResult(BoidsReport(parts.Length > 1 && parts[1] == "detail"));
                     break;
 
+                case "eco":
+                    var statsSystem = UnityEngine.Object.FindFirstObjectByType<StatsSystem>();
+                    if (statsSystem == null || !EditorApplication.isPlaying)
+                    {
+                        WriteResult("error: needs Play mode and a StatsSystem");
+                        break;
+                    }
+
+                    EcosystemStats e = statsSystem.Latest;
+                    WriteResult($"eco year={e.Year} phase={e.YearPhase:0.00} fungus={e.PhysarumAlive} trees={e.TreesAlive}/{e.TreesStanding} birds={e.BoidsAlive} " +
+                                $"leaf={e.MeanLeafCover:0.00} canopy={e.MeanCanopy:0.000} temp={e.MeanTemperature:0.0} nutrients={e.MeanNutrients:0.000} " +
+                                $"organic={e.MeanOrganic:0.000} trail={e.MeanTrail:0.000} birdEnergy={e.BoidMeanEnergy:0.0} valid={e.Valid}");
+                    break;
+
+                case "stability":
+                    var runner = UnityEngine.Object.FindFirstObjectByType<StabilityRunner>();
+                    if (runner == null || !EditorApplication.isPlaying)
+                    {
+                        WriteResult("error: needs Play mode and a StabilityRunner");
+                        break;
+                    }
+
+                    if (parts.Length > 1 && parts[1] == "start")
+                    {
+                        runner.Begin();
+                    }
+
+                    WriteResult(runner.Summary + "\n" + runner.Report);
+                    break;
+
                 case "status":
                     WriteResult($"playing={EditorApplication.isPlaying} paused={EditorApplication.isPaused} frame={Time.frameCount} " +
                                 $"realtime={Time.realtimeSinceStartup:0.0}s unscaledDelta={Time.unscaledDeltaTime * 1000f:0.0}ms focused={UnityEditorInternal.InternalEditorUtility.isApplicationActive}");

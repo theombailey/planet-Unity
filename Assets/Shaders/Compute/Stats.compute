@@ -1,0 +1,137 @@
+// =============================================================================
+// Stats.compute
+// -----------------------------------------------------------------------------
+// Purpose : Boils the whole world down to a handful of numbers (average nutrients,
+//           average temperature, how many boids and how fast they fly ...) so the
+//           debug panel, the stability check and the audio can read the state of
+//           the ecosystem without ever reading a whole field back.
+//
+// Kernels :
+//   ClearStats   - zeroes the accumulator buffer.
+//   ReduceFields - adds up the soil, climate, trail and terrain fields over every texel.
+//   ReduceBoids  - adds up the live boids' count, speed, energy and seed carriers.
+//
+// Idea (a "reduction"): many threads must add into the same few totals. Doing that with
+//   one global atomic add per texel would make 400,000 threads queue for the same few
+//   addresses. Instead each 8 x 8 thread group first adds into a small private (groupshared)
+//   array, then ONE thread per group adds the group's partial sums into the global totals:
+//        total = sum over groups ( sum over threads in the group )
+//   so the global addresses see 1/64 of the traffic.
+//
+// Fixed point: atomics work on integers, so every value is multiplied by a scale, clamped
+//   to a sane range first (so a freak value cannot overflow the 32-bit total) and rounded:
+//        stored = uint( clamp(value, lo, hi) - lo ) * scale          temperature uses lo = -100
+//   The C# side divides by scale and by the texel (or boid) count to get the mean.
+//   Largest total: 8 * 128 * 393,216 texels = 4.0e8, well inside 4.29e9.
+//
+// Note: texels are NOT weighted by the area they cover. On a cube sphere a texel near a face
+//   corner covers about half the area of one at a face centre, so "mean" here means "mean
+//   over texels". That is fine for a trend; it is not an exact planetary average.
+//
+// Accumulator layout (uint per slot):
+//   fields: 0 nutrients, 1 organic, 2 canopy, 3 temperature (offset +100), 4 trail, 5 land texels
+//   boids : 8 live count, 9 speed sum, 10 energy sum, 11 seed carriers
+// =============================================================================
+
+#pragma kernel ClearStats
+#pragma kernel ReduceFields
+#pragma kernel ReduceBoids
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+
+#define FIELD_SCALE 128.0
+#define TEMP_SCALE 16.0
+#define SPEED_SCALE 10000.0
+#define ENERGY_SCALE 100.0
+
+RWStructuredBuffer<uint> _StatsAcc;
+
+Texture2DArray<float4> _Soil;
+Texture2DArray<float4> _Climate;
+Texture2DArray<float4> _Terrain;
+Texture2DArray<float> _Trail;
+
+StructuredBuffer<float4> _PosEnergy;
+StructuredBuffer<float4> _VelSeed;
+StructuredBuffer<uint> _Alive;
+
+int _Resolution;
+uint _PoolSize;
+
+groupshared uint gs[12];
+
+[numthreads(16, 1, 1)]
+void ClearStats(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 16u)
+    {
+        _StatsAcc[id.x] = 0u;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void ReduceFields(uint3 id : SV_DispatchThreadID, uint group : SV_GroupIndex)
+{
+    if (group < 6u)
+    {
+        gs[group] = 0u;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (id.x < (uint)_Resolution && id.y < (uint)_Resolution)
+    {
+        float4 soil = _Soil[id];
+        float4 climate = _Climate[id];
+        float height = _Terrain[id].r;
+        float trail = _Trail[id];
+
+        InterlockedAdd(gs[0], (uint)(clamp(soil.r, 0.0, 8.0) * FIELD_SCALE));
+        InterlockedAdd(gs[1], (uint)(clamp(soil.g, 0.0, 8.0) * FIELD_SCALE));
+        InterlockedAdd(gs[2], (uint)(clamp(soil.b, 0.0, 2.0) * FIELD_SCALE));
+        InterlockedAdd(gs[3], (uint)((clamp(climate.r, -100.0, 100.0) + 100.0) * TEMP_SCALE));
+        InterlockedAdd(gs[4], (uint)(clamp(trail, 0.0, 8.0) * FIELD_SCALE));
+        if (height > 0.0)
+        {
+            InterlockedAdd(gs[5], 1u);
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (group < 6u)
+    {
+        InterlockedAdd(_StatsAcc[group], gs[group]);
+    }
+}
+
+[numthreads(64, 1, 1)]
+void ReduceBoids(uint3 id : SV_DispatchThreadID, uint group : SV_GroupIndex)
+{
+    if (group < 4u)
+    {
+        gs[group] = 0u;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (id.x < _PoolSize && _Alive[id.x] == 1u)
+    {
+        float4 velSeed = _VelSeed[id.x];
+        float energy = clamp(_PosEnergy[id.x].w, 0.0, 40.0);
+        InterlockedAdd(gs[0], 1u);
+        InterlockedAdd(gs[1], (uint)(min(length(velSeed.xyz), 1.0) * SPEED_SCALE));
+        InterlockedAdd(gs[2], (uint)(energy * ENERGY_SCALE));
+        if (velSeed.w > 0.0)
+        {
+            InterlockedAdd(gs[3], 1u);
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (group < 4u)
+    {
+        InterlockedAdd(_StatsAcc[8u + group], gs[group]);
+    }
+}

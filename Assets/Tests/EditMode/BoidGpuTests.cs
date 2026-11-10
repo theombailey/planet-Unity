@@ -406,6 +406,85 @@ namespace Terrarium.Tests
             }
         }
 
+        // ------------------------------------------------------------------ forest scent
+
+        private static float[] ReadScent(BoidSimulation boids)
+        {
+            int resolution = boids.ScentResolution;
+            var result = new float[CubeSphere.FaceCount * resolution * resolution];
+            UnityEngine.Rendering.AsyncGPUReadbackRequest request = UnityEngine.Rendering.AsyncGPUReadback.Request(boids.ScentTexture, 0);
+            request.WaitForCompletion();
+            Assert.IsFalse(request.hasError, "Scent readback failed.");
+            int perFace = resolution * resolution;
+            for (int face = 0; face < CubeSphere.FaceCount; face++)
+            {
+                Unity.Collections.NativeArray<float>.Copy(request.GetData<float>(face), 0, result, face * perFace, perFace);
+            }
+
+            return result;
+        }
+
+        private static float ScentAt(BoidSimulation boids, float[] scent, Vector3 direction)
+        {
+            Texel texel = CubeSphere.DirToTexel(direction, boids.ScentResolution);
+            return scent[(texel.Face * boids.ScentResolution + texel.Y) * boids.ScentResolution + texel.X];
+        }
+
+        [Test]
+        public void ForestScent_GlowsAroundCanopy_AndFadesWithDistance()
+        {
+            using (var world = new WorldHarness(Resolution, FreeEnergy))
+            {
+                BoidSimulation boids = world.CreateBoids(100);
+                Vector3 forest = Vector3.up;
+                PaintCanopy(world, forest, 0.1f);
+
+                world.RunBoids(boids, 400, Step);
+                float[] scent = ReadScent(boids);
+
+                Vector3 at0 = forest;
+                Vector3 at03 = Quaternion.AngleAxis(Mathf.Rad2Deg * 0.3f, Vector3.right) * forest;
+                Vector3 at08 = Quaternion.AngleAxis(Mathf.Rad2Deg * 0.8f, Vector3.right) * forest;
+                float s0 = ScentAt(boids, scent, at0);
+                float s03 = ScentAt(boids, scent, at03);
+                float s08 = ScentAt(boids, scent, at08);
+
+                Assert.Greater(s0, 0.01f, "The scent should be strongest over the forest.");
+                Assert.Greater(s03, s08, $"The scent should fade with distance ({s03:0.0000} at 0.3 rad, {s08:0.0000} at 0.8 rad).");
+                Assert.Greater(s03, 2e-4f, "The glow should reach well beyond the forest itself.");
+                Assert.Greater(s0, s03 * 1.5f, "...but be much weaker out there.");
+                Assert.Less(ScentAt(boids, scent, Vector3.down), s03 * 0.2f, "There is hardly any scent on the far side of the planet.");
+            }
+        }
+
+        [Test]
+        public void Boids_FindAForest_FromBeyondSightOfIt_ByItsScent()
+        {
+            using (var world = new WorldHarness(Resolution, FreeEnergy))
+            {
+                Vector3 forest = Vector3.up;
+                PaintCanopy(world, forest, 0.1f);
+                Vector3 start = Quaternion.AngleAxis(Mathf.Rad2Deg * 0.8f, Vector3.right) * forest;
+
+                // Let the scent build up first, in both worlds' sims, with no boids yet.
+                world.Config.boidScentWeight = 0f;
+                BoidSimulation control = world.CreateBoids(2000);
+                world.RunBoids(control, 300, Step);
+                Spawn(world, control, start, 0.03f, 150);
+                world.RunBoids(control, 300, Step);
+                float without = MeanAngleTo(LiveBoids(control), forest);
+
+                world.Config.boidScentWeight = 2f;
+                BoidSimulation sniffing = world.CreateBoids(2000);
+                world.RunBoids(sniffing, 300, Step);
+                Spawn(world, sniffing, start, 0.03f, 150);
+                world.RunBoids(sniffing, 300, Step);
+                float with = MeanAngleTo(LiveBoids(sniffing), forest);
+
+                Assert.Less(with, without * 0.7f, $"Boids that follow the scent ended {with:0.00} rad from the forest, the others {without:0.00}.");
+            }
+        }
+
         // ------------------------------------------------------------------ impacts, pools, starting flocks
 
         [Test]

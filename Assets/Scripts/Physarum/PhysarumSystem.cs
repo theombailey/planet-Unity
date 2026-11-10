@@ -25,6 +25,7 @@ namespace Terrarium.Physarum
     public sealed class PhysarumSystem : MonoBehaviour
     {
         private const float ReadbackIntervalSeconds = 0.25f;
+        private const float SporeBatch = 16f;
 
         [Tooltip("The simulation: config, preset and seed.")]
         [SerializeField] private SimRoot simRoot;
@@ -40,6 +41,8 @@ namespace Terrarium.Physarum
 
         private PhysarumSimulation simulation;
         private bool needsSeeding;
+        private Rng sporeRng = new Rng(1);
+        private float sporeBacklog;
         private float readbackTimer;
         private bool readbackPending;
 
@@ -142,7 +145,22 @@ namespace Terrarium.Physarum
             if (needsSeeding)
             {
                 simulation.SeedAgents(terrain.Current, simRoot.ActiveSeed, config.physarumStartAgents);
+                sporeRng = new Rng(simRoot.ActiveSeed ^ 0x2545F491);
+                sporeBacklog = 0f;
                 needsSeeding = false;
+            }
+
+            // Spore rain: a faint background supply of new agents at random places, so a crashed network
+            // can recover instead of staying extinct. Landed in batches to keep the number of dispatches low.
+            sporeBacklog += config.physarumSporeRain * deltaSeconds;
+            if (sporeBacklog >= SporeBatch)
+            {
+                int count = (int)sporeBacklog;
+                sporeBacklog -= count;
+                float z = sporeRng.Range(-1f, 1f);
+                float phi = sporeRng.Range(0f, 2f * Mathf.PI);
+                float r = Mathf.Sqrt(Mathf.Max(0f, 1f - z * z));
+                simulation.SpawnAgents(new Vector3(r * Mathf.Cos(phi), z, r * Mathf.Sin(phi)), 0.03f, count);
             }
 
             simulation.Step(

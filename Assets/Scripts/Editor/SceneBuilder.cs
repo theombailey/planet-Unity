@@ -262,6 +262,25 @@ namespace Terrarium.EditorTools
             SetReference(boids, "trees", trees);
             SetReference(boids, "boidMaterial", GetOrCreateMaterial("Boids", "Terrarium/Boids"));
 
+            var stats = host.AddComponent<StatsSystem>();
+            SetReference(stats, "simRoot", simRoot);
+            SetReference(stats, "fieldSet", fieldSet);
+            SetReference(stats, "statsShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Stats.compute"));
+            SetReference(stats, "boids", boids);
+            SetReference(stats, "physarum", physarum);
+            SetReference(stats, "trees", trees);
+
+            // The sound has to live on the same object as the AudioListener for OnAudioFilterRead to run.
+            AudioListener listener = UnityEngine.Object.FindFirstObjectByType<AudioListener>();
+            var sound = listener.gameObject.AddComponent<Terrarium.Audio.GenerativeAudio>();
+            SetReference(sound, "stats", stats);
+            SetReference(sound, "simRoot", simRoot);
+
+            var stability = host.AddComponent<StabilityRunner>();
+            SetReference(stability, "simRoot", simRoot);
+            SetReference(stability, "stats", stats);
+            SetReference(stability, "boids", boids);
+
             var loop = host.AddComponent<SimLoop>();
             SetReference(loop, "simRoot", simRoot);
             SetReference(loop, "climate", climate);
@@ -287,6 +306,9 @@ namespace Terrarium.EditorTools
             SetReference(panel, "physarum", physarum);
             SetReference(panel, "trees", trees);
             SetReference(panel, "boids", boids);
+            SetReference(panel, "stats", stats);
+            SetReference(panel, "stability", stability);
+            SetReference(panel, "sound", sound);
             SetReference(panel, "fieldView", view);
             SetReference(panel, "debugBrush", brush);
         }
@@ -404,7 +426,13 @@ namespace Terrarium.EditorTools
         private static void BuildInteraction(SimRoot simRoot, GameObject planet, CameraRig cameraRig)
         {
             GameObject host = simRoot.gameObject;
+            var demo = host.AddComponent<DemoMode>();
+            SetReference(demo, "simRoot", simRoot);
+            SetReference(demo, "cameraRig", cameraRig);
+            SetReference(demo, "panel", host.GetComponent<DebugPanel>());
+
             var controller = host.AddComponent<ToolController>();
+            SetReference(controller, "sound", UnityEngine.Object.FindFirstObjectByType<Terrarium.Audio.GenerativeAudio>());
 
             SetReference(controller, "simRoot", simRoot);
             SetReference(controller, "fieldSet", host.GetComponent<FieldSet>());

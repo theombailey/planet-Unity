@@ -56,6 +56,15 @@ namespace Terrarium
         [Tooltip("The boid readout shown on the panel (optional).")]
         [SerializeField] private BoidSystem boids;
 
+        [Tooltip("The ecosystem summary shown at the top of the panel (optional).")]
+        [SerializeField] private StatsSystem stats;
+
+        [Tooltip("The generative sound, for the volume slider (optional).")]
+        [SerializeField] private Terrarium.Audio.GenerativeAudio sound;
+
+        [Tooltip("The automatic multi-seed health check (optional).")]
+        [SerializeField] private StabilityRunner stability;
+
         [Tooltip("Whether the panel is showing when Play starts.")]
         [SerializeField] private bool visible = true;
 
@@ -86,6 +95,12 @@ namespace Terrarium
             {
                 timeScaleLabels[i] = SimClock.TimeScaleSteps[i] == 0 ? "Pause" : SimClock.TimeScaleSteps[i] + "x";
             }
+        }
+
+        /// <summary>Shows or hides the panel (demo mode hides it).</summary>
+        public void SetVisible(bool show)
+        {
+            visible = show;
         }
 
         private void Update()
@@ -129,6 +144,22 @@ namespace Terrarium
 
             GUILayout.Label("TERRARIUM DEBUG  (F1 to hide)");
             GUILayout.Label(readoutText);
+
+            if (stats != null)
+            {
+                GUILayout.Label("Ecosystem");
+                stats.OnDebugGui();
+            }
+
+            if (stability != null)
+            {
+                stability.OnDebugGui();
+            }
+
+            if (sound != null)
+            {
+                sound.OnDebugGui();
+            }
 
             GUILayout.Label("Time scale  (Space = pause)");
             SimClock clock = simRoot.Clock;
@@ -193,6 +224,25 @@ namespace Terrarium
             {
                 debugBrush.OnDebugGui();
             }
+
+            GUILayout.Label("Presets  (change the climate, then start a new world)");
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Lush"))
+            {
+                SimPresets.Apply(simRoot.Config, SimPresetKind.Lush);
+                simRoot.Reseed(simRoot.Config.seed);
+            }
+            if (GUILayout.Button("Harsh"))
+            {
+                SimPresets.Apply(simRoot.Config, SimPresetKind.Harsh);
+                simRoot.Reseed(simRoot.Config.seed);
+            }
+            if (GUILayout.Button("Fresh start"))
+            {
+                SimPresets.Apply(simRoot.Config, SimPresetKind.FreshStart);
+                simRoot.Reseed(simRoot.Config.seed);
+            }
+            GUILayout.EndHorizontal();
 
             GUILayout.Label("World seed  (R = randomise)");
             GUILayout.BeginHorizontal();

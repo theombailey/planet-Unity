@@ -62,9 +62,14 @@ namespace Terrarium.Boids
         private ComputeBuffer counters;
         private ComputeBuffer drops;
         private ComputeBuffer returned;
+        private RenderTexture scentCurrent;
+        private RenderTexture scentOther;
+        private int scentResolution;
         private int gridDim;
         private float cellSize;
         private uint frame;
+        private readonly int clearScentKernel;
+        private readonly int scentStepKernel;
 
         /// <summary>Creates a simulation using the compute shader and the given parameters.</summary>
         public BoidSimulation(ComputeShader boidShader, SimConfig simConfig)
@@ -82,7 +87,15 @@ namespace Terrarium.Boids
             spawnKernel = shader.FindKernel("SpawnBoids");
             killKernel = shader.FindKernel("KillBoids");
             applyReturnKernel = shader.FindKernel("ApplyReturn");
+            clearScentKernel = shader.FindKernel("ClearScent");
+            scentStepKernel = shader.FindKernel("ScentStep");
         }
+
+        /// <summary>The forest-scent grid (R float, one slice per cube face). For tests and debugging.</summary>
+        public RenderTexture ScentTexture => scentCurrent;
+
+        /// <summary>Texels per face edge of the scent grid.</summary>
+        public int ScentResolution => scentResolution;
 
         /// <summary>Number of boid slots (the most boids that can be alive).</summary>
         public int PoolSize { get; private set; }
@@ -130,6 +143,7 @@ namespace Terrarium.Boids
             }
 
             BuildGridBuffer();
+            BuildScentTextures(resolution);
 
             if (posEnergy == null || PoolSize != poolSize)
             {
@@ -179,6 +193,7 @@ namespace Terrarium.Boids
         public void SeedBoids(RenderTexture terrain, int seed)
         {
             SetCommon();
+            ClearScent();
             shader.SetFloat(SeedId, seed);
             shader.SetInt(StartCountId, Mathf.Min(config.boidStartCount, PoolSize));
             shader.SetInt(StartClustersId, Mathf.Max(1, config.boidStartClusters));
@@ -246,6 +261,14 @@ namespace Terrarium.Boids
             SetCommon();
             SetSteering(deltaSeconds);
 
+            // The forest scent: spread, fade and refill it from the canopy (reads last step's, writes the other, swaps).
+            shader.SetTexture(scentStepKernel, ScentReadId, scentCurrent);
+            shader.SetTexture(scentStepKernel, ScentWriteId, scentOther);
+            shader.SetTexture(scentStepKernel, SoilId, soil.Current);
+            int scentGroups = (scentResolution + TexelGroupSize - 1) / TexelGroupSize;
+            shader.Dispatch(scentStepKernel, scentGroups, scentGroups, CubeSphere.FaceCount);
+            (scentCurrent, scentOther) = (scentOther, scentCurrent);
+
             shader.SetBuffer(clearCountersKernel, CountersId, counters);
             shader.Dispatch(clearCountersKernel, 1, 1, 1);
 
@@ -267,6 +290,7 @@ namespace Terrarium.Boids
             shader.SetBuffer(stepKernel, DropsId, drops);
             shader.SetBuffer(stepKernel, ReturnedId, returned);
             shader.SetTexture(stepKernel, SoilId, soil.Current);
+            shader.SetTexture(stepKernel, ScentId, scentCurrent);
             shader.SetTexture(stepKernel, TerrainId, terrain);
             shader.SetTexture(stepKernel, ClimateId, climate);
             shader.Dispatch(stepKernel, Groups(PoolSize), 1, 1);
@@ -288,6 +312,7 @@ namespace Terrarium.Boids
             Release(ref counters);
             Release(ref drops);
             Release(ref returned);
+            ReleaseScent();
             PoolSize = 0;
         }
 
@@ -308,9 +333,76 @@ namespace Terrarium.Boids
             cellHead.SetData(new uint[dim * dim * dim]);
         }
 
+        // The scent grid: as fine as 32 texels per face edge, but never finer than half the field, and a whole
+        // number of field texels to each scent texel. Two textures, because each step reads one and writes the other.
+        private void BuildScentTextures(int fieldResolution)
+        {
+            int resolution = Mathf.Max(2, Mathf.Min(32, fieldResolution / 2));
+            if (scentCurrent != null && scentResolution == resolution)
+            {
+                return;
+            }
+
+            ReleaseScent();
+            scentResolution = resolution;
+            scentCurrent = NewScentTexture(resolution);
+            scentOther = NewScentTexture(resolution);
+            ClearScent();
+        }
+
+        private static RenderTexture NewScentTexture(int resolution)
+        {
+            var descriptor = new RenderTextureDescriptor(resolution, resolution, RenderTextureFormat.RFloat, 0)
+            {
+                dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray,
+                volumeDepth = CubeSphere.FaceCount,
+                enableRandomWrite = true,
+                useMipMap = false,
+            };
+            var texture = new RenderTexture(descriptor) { name = "BoidScent", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            texture.Create();
+            return texture;
+        }
+
+        private void ReleaseScent()
+        {
+            if (scentCurrent != null)
+            {
+                scentCurrent.Release();
+                UnityEngine.Object.DestroyImmediate(scentCurrent);
+                scentCurrent = null;
+            }
+
+            if (scentOther != null)
+            {
+                scentOther.Release();
+                UnityEngine.Object.DestroyImmediate(scentOther);
+                scentOther = null;
+            }
+        }
+
+        /// <summary>Empties the forest scent (a new world has none yet).</summary>
+        public void ClearScent()
+        {
+            if (scentCurrent == null)
+            {
+                return;
+            }
+
+            shader.SetInt(ScentResId, scentResolution);
+            int groups = (scentResolution + TexelGroupSize - 1) / TexelGroupSize;
+            foreach (RenderTexture texture in new[] { scentCurrent, scentOther })
+            {
+                shader.SetTexture(clearScentKernel, ScentWriteId, texture);
+                shader.Dispatch(clearScentKernel, groups, groups, CubeSphere.FaceCount);
+            }
+        }
+
         // Parameters every kernel needs.
         private void SetCommon()
         {
+            shader.SetInt(ScentResId, scentResolution);
+            shader.SetInt(ScentRatioId, Mathf.Max(1, Resolution / Mathf.Max(1, scentResolution)));
             shader.SetInt(PoolSizeId, PoolSize);
             shader.SetInt(ResolutionId, Resolution);
             shader.SetInt(FrameId, (int)frame);
@@ -344,6 +436,10 @@ namespace Terrarium.Boids
             shader.SetFloat(PreferredTempId, config.boidPreferredTemp);
             shader.SetFloat(WarmWeightId, config.boidWarmWeight);
             shader.SetFloat(WanderId, config.boidWander);
+            shader.SetFloat(ScentWeightId, config.boidScentWeight);
+            shader.SetFloat(ScentReachId, config.boidScentReach);
+            shader.SetFloat(ScentSpreadId, config.boidScentSpread);
+            shader.SetFloat(ScentDecayId, config.boidScentDecay);
 
             shader.SetFloat(EatRateId, config.boidEatRate);
             shader.SetFloat(UpkeepId, config.boidUpkeep);
@@ -382,6 +478,15 @@ namespace Terrarium.Boids
         }
 
         // Shader property ids, looked up once so a step allocates nothing.
+        private static readonly int ScentId = Shader.PropertyToID("_Scent");
+        private static readonly int ScentReadId = Shader.PropertyToID("_ScentRead");
+        private static readonly int ScentWriteId = Shader.PropertyToID("_ScentWrite");
+        private static readonly int ScentResId = Shader.PropertyToID("_ScentRes");
+        private static readonly int ScentRatioId = Shader.PropertyToID("_ScentRatio");
+        private static readonly int ScentWeightId = Shader.PropertyToID("_ScentWeight");
+        private static readonly int ScentReachId = Shader.PropertyToID("_ScentReach");
+        private static readonly int ScentSpreadId = Shader.PropertyToID("_ScentSpread");
+        private static readonly int ScentDecayId = Shader.PropertyToID("_ScentDecay");
         private static readonly int PosEnergyId = Shader.PropertyToID("_PosEnergy");
         private static readonly int VelSeedId = Shader.PropertyToID("_VelSeed");
         private static readonly int AliveId = Shader.PropertyToID("_Alive");

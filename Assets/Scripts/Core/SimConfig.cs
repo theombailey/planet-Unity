@@ -202,6 +202,9 @@ namespace Terrarium
         [Tooltip("Energy lost per sim second in ground 10 deg C below the cold limit (scales up with the cold).")]
         [Range(0f, 5f)] public float physarumColdPenalty = 0.4f;
 
+        [Tooltip("Spores that drift in from elsewhere: new agents landing at random places, per sim second. A faint background supply, so the network can recover after a crash instead of dying out for good. Zero turns it off.")]
+        [Range(0f, 100f)] public float physarumSporeRain = 6f;
+
         [Header("Nutrient transport (see Nutrients.compute)")]
         [Tooltip("Plain spreading of nutrients through the soil, in radians squared per sim second.")]
         [Range(0f, 0.001f)] public float nutrientDiffusion = 0.00002f;
@@ -375,10 +378,10 @@ namespace Terrarium
 
         [Header("Boids: flocking (see Boids.compute). Lengths are in planet radii, speeds per sim second")]
         [Tooltip("Boids alive when a world starts, scattered in small clusters on land. The population then finds its own level.")]
-        [Range(0, 20000)] public int boidStartCount = 1500;
+        [Range(0, 20000)] public int boidStartCount = 800;
 
         [Tooltip("How many separate clusters the starting boids are split into.")]
-        [Range(1, 200)] public int boidStartClusters = 40;
+        [Range(1, 200)] public int boidStartClusters = 24;
 
         [Tooltip("How far a boid sees its neighbours. Also the cell size of the spatial hash grid.")]
         [Range(0.01f, 0.2f)] public float boidPerception = 0.04f;
@@ -428,18 +431,30 @@ namespace Terrarium
         [Tooltip("Random steering that keeps flocks from freezing into a pattern.")]
         [Range(0f, 1f)] public float boidWander = 0.15f;
 
+        [Tooltip("Strength of the pull up the forest-scent slope. The scent is a broad glow around forests that lets boids feel a forest from far away.")]
+        [Range(0f, 10f)] public float boidScentWeight = 1.2f;
+
+        [Tooltip("How far apart the scent samples are when finding its slope, in planet radii.")]
+        [Range(0.02f, 0.5f)] public float boidScentReach = 0.12f;
+
+        [Tooltip("How fast the scent spreads sideways: the share of each scent cell mixed with its neighbours per sim second. More = a wider glow.")]
+        [Range(0f, 20f)] public float boidScentSpread = 3f;
+
+        [Tooltip("How fast the scent fades, per sim second. Less = a longer-lasting, wider glow.")]
+        [Range(0.005f, 1f)] public float boidScentDecay = 0.05f;
+
         [Header("Boids: energy and seeds")]
         [Tooltip("Energy a boid gains per sim second over full canopy (less over thinner canopy).")]
-        [Range(0f, 0.5f)] public float boidEatRate = 0.05f;
+        [Range(0f, 0.5f)] public float boidEatRate = 0.035f;
 
         [Tooltip("Energy a boid pays per sim second just to stay alive.")]
-        [Range(0f, 0.1f)] public float boidUpkeep = 0.003f;
+        [Range(0f, 0.1f)] public float boidUpkeep = 0.004f;
 
         [Tooltip("Extra energy per sim second for flying: this x speed squared.")]
         [Range(0f, 20f)] public float boidFlightCost = 0.5f;
 
         [Tooltip("Energy per sim second paid for each neighbour within sight. This is what stops the population growing without limit.")]
-        [Range(0f, 0.02f)] public float boidCrowdCost = 0.00015f;
+        [Range(0f, 0.02f)] public float boidCrowdCost = 0.0002f;
 
         [Tooltip("Ground colder than this costs energy, deg C.")]
         [Range(-20f, 20f)] public float boidColdLimit = -10f;

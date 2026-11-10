@@ -17,6 +17,8 @@
 //   SpawnBoids    - the bird cage: releases a flock inside a small circle.
 //   KillBoids     - an impact: removes every boid inside a circle.
 //   ApplyReturn   - adds the bodies of dead boids to the soil's organic matter.
+//   ClearScent    - empties the forest-scent grid.
+//   ScentStep     - spreads and fades the forest scent, and feeds it from the canopy.
 //
 // Idea (Reynolds' three rules, each one a "desired change of velocity"):
 //   SEPARATION  away from neighbours that are too close:  sum of  (d / |d|) * (1 - |d| / sepRadius)
@@ -26,6 +28,8 @@
 //   FOOD        up the slope of the canopy density (the trees' leaves are the food)
 //   COMFORT     toward ground at the preferred temperature: up the temperature slope if it is
 //               too cold, down it if it is too hot
+//   SCENT       up the slope of a broad, smooth "forest scent" (see ScentStep), so a forest is felt from
+//               far beyond the short range at which the canopy itself can be sensed
 //   WANDER      a little random steering, so a flock never freezes into a pattern
 //   Nobody tells the boids to go to a forest or to leave for a warmer hemisphere: they follow
 //   gradients, and the flock follows its members.
@@ -93,6 +97,8 @@
 #pragma kernel SpawnBoids
 #pragma kernel KillBoids
 #pragma kernel ApplyReturn
+#pragma kernel ClearScent
+#pragma kernel ScentStep
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 #include "Assets/Shaders/Include/Noise.hlsl"
@@ -117,6 +123,16 @@ Texture2DArray<float4> _Soil;                   // B canopy
 Texture2DArray<float4> _Terrain;                // R height
 Texture2DArray<float4> _Climate;                // R temperature
 RWTexture2DArray<float4> _SoilRW;               // ApplyReturn
+Texture2DArray<float> _Scent;                   // BoidStep: the forest scent, coarse grid (see ScentStep)
+Texture2DArray<float> _ScentRead;               // ScentStep: last step's scent
+RWTexture2DArray<float> _ScentWrite;            // ScentStep / ClearScent: this step's scent
+
+int _ScentRes;               // texels per face edge of the scent grid
+int _ScentRatio;             // field texels per scent texel along one edge
+float _ScentSpread;
+float _ScentDecay;
+float _ScentWeight;
+float _ScentReach;
 
 uint _PoolSize;
 uint _OldPoolSize;
@@ -224,6 +240,11 @@ float CanopyAt(float3 direction)
 float TemperatureAt(float3 direction)
 {
     return _Climate[uint3(CS_DirToTexel(direction, _Resolution))].r;
+}
+
+float ScentAt(float3 direction)
+{
+    return _Scent[uint3(CS_DirToTexel(direction, _ScentRes))];
 }
 
 // Radius of the flight shell above a ground direction.
@@ -524,6 +545,21 @@ void BoidStep(uint3 id : SV_DispatchThreadID)
         steer += _FoodWeight * (foodSlope / max(foodLength, 1.0)) * _MaxSpeed;
     }
 
+    // Forest scent: a broad, smooth trace of where the canopy is, so a forest is felt from far beyond sight.
+    // The pull is on the RELATIVE slope (slope / scent), so even a faint trace far away pulls at full strength.
+    float scentHere = ScentAt(up);
+    if (scentHere > 2e-4)
+    {
+        float reach = _ScentReach;
+        float3 scentSlope = forward * (ScentAt(Ahead(up, forward, reach)) - ScentAt(Ahead(up, -forward, reach)))
+                          + right * (ScentAt(Ahead(up, right, reach)) - ScentAt(Ahead(up, -right, reach)));
+        float scentLength = length(scentSlope);
+        if (scentLength > 1e-7)
+        {
+            steer += _ScentWeight * (scentSlope / scentLength) * saturate(scentLength / scentHere) * _MaxSpeed;
+        }
+    }
+
     // Comfort: toward ground at the preferred temperature.
     float here = TemperatureAt(up);
     float want = clamp((_PreferredTemp - here) / 10.0, -1.0, 1.0);
@@ -710,4 +746,62 @@ void ApplyReturn(uint3 id : SV_DispatchThreadID)
     soil.g += amount / NUTRIENT_SCALE;
     _SoilRW[id] = soil;
     _Returned[index] = 0u;
+}
+
+// ---- the forest scent -----------------------------------------------------------------
+
+[numthreads(8, 8, 1)]
+void ClearScent(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < (uint)_ScentRes && id.y < (uint)_ScentRes)
+    {
+        _ScentWrite[id] = 0.0;
+    }
+}
+
+// One step of the scent, on a coarse grid (a few dozen texels per face edge):
+//   scent' = blur(scent) * (1 - decay dt)  +  decay dt * canopyAverage
+//   blur   = mix(scent, mean of the 3x3 neighbourhood, saturate(spread dt))     (seam-aware)
+// The canopy average is the mean of the _ScentRatio^2 field texels this coarse texel covers.
+// Canopy is a source that keeps pouring scent in; the blur spreads it, the decay fades it. A forest
+// therefore sits in a smooth glow that reaches a good way beyond its edge; the width of the glow is
+//   L ~ sqrt( D / decay ),  D = spread * 0.33 texel^2 per second,
+// about 4 coarse texels (0.2 radians) with the defaults. Over a uniform canopy c the scent settles at c,
+// so scent is in the same units as canopy density.
+[numthreads(8, 8, 1)]
+void ScentStep(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_ScentRes || id.y >= (uint)_ScentRes)
+    {
+        return;
+    }
+
+    int3 texel = int3(id);
+
+    float sum = 0.0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int3 neighbour = (dx == 0 && dy == 0) ? texel : CS_NeighbourTexel(texel, int2(dx, dy), _ScentRes);
+            sum += _ScentRead[uint3(neighbour)];
+        }
+    }
+
+    float centre = _ScentRead[id];
+    float blurred = lerp(centre, sum / 9.0, saturate(_ScentSpread * _DeltaTime));
+
+    float canopy = 0.0;
+    for (int j = 0; j < _ScentRatio; j++)
+    {
+        for (int i = 0; i < _ScentRatio; i++)
+        {
+            canopy += _Soil[uint3(id.x * _ScentRatio + i, id.y * _ScentRatio + j, id.z)].b;
+        }
+    }
+
+    canopy /= (float)(_ScentRatio * _ScentRatio);
+
+    float fade = saturate(_ScentDecay * _DeltaTime);
+    _ScentWrite[id] = blurred * (1.0 - fade) + fade * canopy;
 }

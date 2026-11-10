@@ -59,6 +59,9 @@ namespace Terrarium.Interaction
         [SerializeField] private PhysarumSystem physarum;
         [SerializeField] private TreeManager trees;
         [SerializeField] private BoidSystem boids;
+
+        [Tooltip("The generative sound, told when a tool is used (optional).")]
+        [SerializeField] private Terrarium.Audio.GenerativeAudio sound;
         [SerializeField] private DebugPanel panel;
         [SerializeField] private FieldDebugView fieldView;
         [SerializeField] private DialProp timeDial;
@@ -405,6 +408,11 @@ namespace Terrarium.Interaction
             float radiusWorld = Mathf.Clamp(distanceToSurface * config.toolRadiusPerDistance, config.toolRadiusMin, config.toolRadiusMax);
             float angularRadius = FieldBrush.AngularRadius(radiusWorld, config.planetRadius);
             float dt = deltaSeconds;
+
+            if (sound != null)
+            {
+                sound.NotifyTool(kind);
+            }
 
             switch (kind)
             {

@@ -2,7 +2,7 @@
 
 A small living planet you can water, warm, seed, and watch over time. It is built in Unity 6 (6000.1.14f1) with URP and the new Input System, and every simulation runs on the GPU or in plain C#.
 
-This README describes the **current state** of the project (end of Phase 8, boids). Anything marked *not yet* is planned but does not work in the build.
+This README describes the **current state** of the project (end of Phase 11, with presets, stability check, sound and demo mode). Anything marked *not yet* is planned but does not work in the build.
 
 ---
 
@@ -117,6 +117,7 @@ The dials keep showing the real state, so pressing **Space** or re-seeding the w
 |---|---|
 | **F1** | Show or hide the debug panel. |
 | **F2** | Show or hide the field view overlay on the planet. |
+| **F3** | Demo mode: hides the panel, glides the camera in and tours the planet. Click or scroll to take over. |
 | **Space** | Pause or resume the simulation. |
 | **R** | Re-seed the world with a random seed. |
 | **Esc** | Put down a held tool. |
@@ -181,14 +182,21 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 
 - Every number you can tune lives in the **SimConfig** asset (`Assets/Settings/Terrarium/SimConfig.asset`), grouped by area (camera, climate, physarum, trees, tools, and so on). Edit them in the Inspector, then press Play to see the change.
 - The **quality presets** (Low, Medium, High) scale things like resolution and particle counts for different machines. You can switch them in the F1 panel.
+- The **climate presets** *Lush* (warm, wet, rich soil), *Harsh* (cold, dry, poor soil) and *Fresh start* (code defaults) are buttons in the F1 panel. They reset the config and start a new world with the same seed.
 - The seed is fixed by default, so the same config gives the same planet. Use *Randomise seed* or **R** for a new one.
+
+---
+
+## Sound
+
+All sound is generated live from maths (no audio files) and follows the ecosystem: wind (stronger when trees are bare, whistlier when cold), a fungus drone, pentatonic bird notes (busier with more birds, an octave lower at night), leaf rustle, and a sound for each tool. The F1 panel has a volume slider.
 
 ---
 
 ## Developer notes
 
 - **Requirements:** Unity 6000.1.14f1, URP 17.1, Forward+, new Input System only. No asset-store packages.
-- **Tests:** run them from the Unity Test Runner (EditMode). Phase 7 has 144 tests passing.
+- **Tests:** run them from the Unity Test Runner (EditMode). The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
 - **Editor bridge:** a file-based command bridge (`Assets/Scripts/Editor/DevBridge.cs`) lets scripts drive the open editor (play, capture screenshots, snap the camera, use tools). It is editor-only and is not part of the game.
 - **Scene and assets:** `SceneBuilder` (editor menu) rebuilds the desk, planet, tools, and dials from code.
 
@@ -201,6 +209,7 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 | `Assets/Scripts/Climate` | Lamp, temperature, moisture, terrain |
 | `Assets/Scripts/Physarum` | Fungal agents and nutrient transport |
 | `Assets/Scripts/Trees` | Space colonization, tree mesher, tree life, tree manager |
+| `Assets/Scripts/Audio` | Generative sound (`OnAudioFilterRead`) |
 | `Assets/Scripts/Boids` | Boid simulation (GPU buffers, spatial hash grid) and the scene glue that draws them and carries seeds to the trees |
 | `Assets/Scripts/Interaction` | Input, camera rig, tools, dials, surface navigation |
 | `Assets/Shaders` | Compute shaders (fields, physarum, trees, boids) and painterly surface shaders |

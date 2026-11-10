@@ -142,6 +142,26 @@ namespace Terrarium.Trees
             }
         }
 
+        /// <summary>Average leaf cover of the living trees: 0 (all bare) to 1 (full leaf). Zero when no tree is alive.</summary>
+        public float MeanLeafCover
+        {
+            get
+            {
+                float sum = 0f;
+                int live = 0;
+                for (int i = 0; i < slots.Length; i++)
+                {
+                    if (slots[i] != null && !slots[i].Dead)
+                    {
+                        sum += slots[i].LeafAmount;
+                        live++;
+                    }
+                }
+
+                return live == 0 ? 0f : sum / live;
+            }
+        }
+
         /// <summary>The most trees the quality preset allows.</summary>
         public int Capacity => capacity;
 
