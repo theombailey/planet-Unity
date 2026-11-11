@@ -104,7 +104,7 @@ Two dials sit on the desk. Hover one and **left-drag sideways** to turn it. Drag
 
 | Dial | Effect |
 |---|---|
-| **Time dial** | Sets simulation speed to one of four stops: **Pause**, **1x**, **4x**, **16x**. |
+| **Time dial** | Sets simulation speed to one of five stops: **Pause**, **0.25x** (slow days), **1x**, **4x**, **16x**. |
 | **Spin dial** | Sets how fast days and years turn: turn it one way for slower days and years, the other way for faster. The camera and lamp follow. |
 
 The dials keep showing the real state, so pressing **Space** or re-seeding the world also moves them.
@@ -133,7 +133,8 @@ There are no gamepad bindings.
 Press **F1** to open the panel on the left side of the screen. It is for development and tuning, and it is visible by default. It shows:
 
 - **Frame rate** and sim time.
-- **Time scale** toolbar: Pause, 1x, 4x, 16x (same as the time dial).
+- **Time scale** toolbar: Pause, 0.25x, 1x, 4x, 16x (same as the time dial).
+- **Sky, Atmosphere, Clouds** switches (next to the sound slider) to turn each layer off and compare.
 - **Quality preset** toolbar: switches between the Low, Medium and High presets. Fields are resampled, so the world does not reset when you change presets.
 - **Painterly effects**: toggles for Bands, Hatching, Outlines, Paper and Boil (the hand-drawn look).
 - **Terrain and climate**: sliders for the land/sea balance, climate settings, and the terrain tools.
@@ -174,7 +175,9 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
   - A bird flying over a forest may pick up a seed and drop it some time later, somewhere else. The tree system then decides whether the seed can germinate there, so birds carry forests to new ground.
   - Dead birds feed the soil, and a meteor kills the birds in its blast.
 - **Life stops at a cap.** The forest is capped (about 300 trees) so the frame rate stays steady.
-- **Not yet:** ecosystem balancing and presets (Phase 9), generative sound (Phase 10), and final polish and a build (Phase 11).
+- **Sky, air and clouds.** From the desk the room is dark and faintly starry, and the planet has a thin glowing rim of air (blue on the lamp's side, orange where day meets night). Dive to the surface and the room fades into the planet's own sky: blue by day, a sunset glow (orange toward the lamp, violet away from it) when the lamp is low, and stars at night.
+  - **Clouds** form where the ground is wet, so they gather over seas and rainy land and thin out over deserts, and the wind carries them round the planet. They are lit by the lamp, turn orange at sunset, and cast shadows on the ground. From the desk they are a layer round the planet; from the surface you see them in the sky.
+  - The sky and clouds are drawn by shaders only (nothing is painted by hand), and every colour and amount is in SimConfig under *Atmosphere and sky* and *Clouds*.
 
 ---
 
@@ -196,7 +199,7 @@ All sound is generated live from maths (no audio files) and follows the ecosyste
 ## Developer notes
 
 - **Requirements:** Unity 6000.1.14f1, URP 17.1, Forward+, new Input System only. No asset-store packages.
-- **Tests:** run them from the Unity Test Runner (EditMode); all 162 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
+- **Tests:** run them from the Unity Test Runner (EditMode); all 167 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
 - **Building the game:** in Unity choose **Terrarium > Build Windows Player**. It writes `Builds/Terrarium/Terrarium.exe` (about 94 MB). Press **F3** in the built game for demo mode.
 - **Editor bridge:** a file-based command bridge (`Assets/Scripts/Editor/DevBridge.cs`) lets scripts drive the open editor (play, capture screenshots, snap the camera, use tools). It is editor-only and is not part of the game.
 - **Scene and assets:** `SceneBuilder` (editor menu) rebuilds the desk, planet, tools, and dials from code.
@@ -213,7 +216,8 @@ All sound is generated live from maths (no audio files) and follows the ecosyste
 | `Assets/Scripts/Audio` | Generative sound (`OnAudioFilterRead`) |
 | `Assets/Scripts/Boids` | Boid simulation (GPU buffers, spatial hash grid) and the scene glue that draws them and carries seeds to the trees |
 | `Assets/Scripts/Interaction` | Input, camera rig, tools, dials, surface navigation |
-| `Assets/Shaders` | Compute shaders (fields, physarum, trees, boids) and painterly surface shaders |
+| `Assets/Scripts/Rendering` | Painterly settings, ink pass, planet mesh, and the sky / atmosphere / cloud controller |
+| `Assets/Shaders` | Compute shaders (fields, physarum, trees, boids), painterly surface shaders, and the Sky, Atmosphere and Clouds shaders |
 | `Assets/Tests/EditMode` | Unit and GPU tests |
 
 ---

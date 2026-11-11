@@ -4,13 +4,19 @@
 // Purpose : Small meshes built from code instead of imported art.
 // Contents: BuildRing - a flat ring (annulus) lying in the XZ plane, facing up.
 //           Used for the decorative levitation ring on the desk.
-// Idea    : Walk round the circle in `segments` steps. At each step place one
+//           BuildUnitSphere - a smooth radius-1 sphere for the sky dome, the
+//           atmosphere shell and the cloud layer.
+// Idea    : Ring: walk round the circle in `segments` steps. At each step place one
 //           vertex on the inner radius and one on the outer radius, then join
 //           neighbouring pairs with two triangles.
+//           Sphere: a grid of rows (latitude) and columns (longitude), joined
+//           with two triangles per cell.
 // Equations:
 //     angle_i = 2*pi * i / segments
 //     inner_i = (cos angle_i, 0, sin angle_i) * innerRadius
 //     outer_i = (cos angle_i, 0, sin angle_i) * outerRadius
+//     sphere vertex = (sin(polar) cos(azimuth), cos(polar), sin(polar) sin(azimuth)),
+//                     polar = pi * row / rows, azimuth = 2*pi * column / columns
 // =============================================================================
 
 using UnityEngine;
@@ -67,6 +73,67 @@ namespace Terrarium.Rendering
             var mesh = new Mesh { name = "Ring" };
             mesh.vertices = vertices;
             mesh.normals = normals;
+            mesh.uv = uvs;
+            mesh.triangles = triangles;
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>
+        /// Builds a smooth sphere of radius 1 (a latitude-longitude grid) with outward normals. Used for the sky
+        /// dome, the atmosphere shell and the cloud layer, which are all drawn by their shaders, so only the
+        /// outline of the mesh matters and it just has to be round.
+        /// </summary>
+        /// <param name="longitudeSegments">Steps round the equator.</param>
+        /// <param name="latitudeSegments">Steps from pole to pole.</param>
+        public static Mesh BuildUnitSphere(int longitudeSegments, int latitudeSegments)
+        {
+            int columns = longitudeSegments + 1;
+            int rows = latitudeSegments + 1;
+            var vertices = new Vector3[columns * rows];
+            var uvs = new Vector2[columns * rows];
+            var triangles = new int[longitudeSegments * latitudeSegments * 6];
+
+            for (int row = 0; row < rows; row++)
+            {
+                float v = (float)row / latitudeSegments;
+                float polar = Mathf.PI * v;                    // 0 at the north pole, pi at the south
+                float ring = Mathf.Sin(polar);
+                float y = Mathf.Cos(polar);
+
+                for (int column = 0; column < columns; column++)
+                {
+                    float u = (float)column / longitudeSegments;
+                    float azimuth = 2f * Mathf.PI * u;
+                    int i = row * columns + column;
+                    vertices[i] = new Vector3(ring * Mathf.Cos(azimuth), y, ring * Mathf.Sin(azimuth));
+                    uvs[i] = new Vector2(u, 1f - v);
+                }
+            }
+
+            int t = 0;
+            for (int row = 0; row < latitudeSegments; row++)
+            {
+                for (int column = 0; column < longitudeSegments; column++)
+                {
+                    int a = row * columns + column;
+                    int b = a + 1;
+                    int c = a + columns;
+                    int d = c + 1;
+
+                    // Clockwise seen from outside, which Unity treats as front-facing.
+                    triangles[t++] = a;
+                    triangles[t++] = b;
+                    triangles[t++] = c;
+                    triangles[t++] = b;
+                    triangles[t++] = d;
+                    triangles[t++] = c;
+                }
+            }
+
+            var mesh = new Mesh { name = "UnitSphere", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            mesh.vertices = vertices;
+            mesh.normals = vertices;     // on a unit sphere the normal is the position
             mesh.uv = uvs;
             mesh.triangles = triangles;
             mesh.RecalculateBounds();

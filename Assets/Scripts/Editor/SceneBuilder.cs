@@ -113,6 +113,7 @@ namespace Terrarium.EditorTools
             BuildTools(config);
             CameraRig cameraRig = BuildCamera(config, simRoot, planet);
             BuildInteraction(simRoot, planet, cameraRig);
+            BuildAtmosphere(simRoot, planet, cameraRig, lampLight);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, enabled: true) };
@@ -455,6 +456,77 @@ namespace Terrarium.EditorTools
 
             // The debug brush must stand aside while a tool is in hand.
             SetReference(host.GetComponent<DebugBrush>(), "tools", controller);
+        }
+
+        /// <summary>Adds the sky dome, the glowing air round the planet and the cloud layer, and the controller that feeds them.</summary>
+        private static void BuildAtmosphere(SimRoot simRoot, GameObject planet, CameraRig cameraRig, Transform lampLight)
+        {
+            Mesh sphere = GetUnitSphereMesh();
+
+            // Sky: huge, follows the camera. Background queue (drawn first); the camera's far plane is 100.
+            GameObject dome = CreateShell("SkyDome", sphere, GetShellMaterial("Sky", "Terrarium/Sky", 1000), null);
+            dome.transform.localScale = Vector3.one * 40f;
+
+            // Glowing air: a bounding sphere round the planet, resized every frame by the controller.
+            GameObject glow = CreateShell("AtmosphereGlow", sphere, GetShellMaterial("Atmosphere", "Terrarium/Atmosphere", 3010), null);
+
+            // Clouds: a child of the planet, so they turn with it (the controller sets its scale). They are
+            // drawn late in the OPAQUE queue (2470, after the cut-out leaves) rather than the transparent one, because
+            // only opaque-queue objects take part in URP's depth/normals pre-pass that the ink outlines are drawn from.
+            GameObject clouds = CreateShell("Clouds", sphere, GetShellMaterial("Clouds", "Terrarium/Clouds", 2470), planet.transform);
+
+            GameObject host = simRoot.gameObject;
+            var controller = host.AddComponent<AtmosphereController>();
+            SetReference(controller, "simRoot", simRoot);
+            SetReference(controller, "cameraRig", cameraRig);
+            SetReference(controller, "planet", planet.transform);
+            SetReference(controller, "lamp", lampLight);
+            SetReference(controller, "skyDome", dome.transform);
+            SetReference(controller, "atmosphereShell", glow.transform);
+            SetReference(controller, "cloudShell", clouds.transform);
+            SetReference(host.GetComponent<DebugPanel>(), "atmosphere", controller);
+        }
+
+        /// <summary>A sphere object that only a shader draws: no shadows, no probes, no collider.</summary>
+        private static GameObject CreateShell(string name, Mesh mesh, Material material, Transform parent)
+        {
+            var shell = new GameObject(name);
+            if (parent != null)
+            {
+                shell.transform.SetParent(parent, worldPositionStays: false);
+            }
+
+            shell.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var meshRenderer = shell.AddComponent<MeshRenderer>();
+            meshRenderer.sharedMaterial = material;
+            meshRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            meshRenderer.receiveShadows = false;
+            meshRenderer.lightProbeUsage = LightProbeUsage.Off;
+            meshRenderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+            return shell;
+        }
+
+        private static Material GetShellMaterial(string name, string shaderName, int renderQueue)
+        {
+            Material material = GetOrCreateMaterial(name, shaderName);
+            material.renderQueue = renderQueue;
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        private static Mesh GetUnitSphereMesh()
+        {
+            EnsureFolder(MeshFolder);
+            string path = $"{MeshFolder}/UnitSphere.asset";
+
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (mesh == null)
+            {
+                mesh = ProceduralMeshes.BuildUnitSphere(longitudeSegments: 96, latitudeSegments: 64);
+                AssetDatabase.CreateAsset(mesh, path);
+            }
+
+            return mesh;
         }
 
         /// <summary>Creates the material for the dust a meteor throws up (URP's unlit particle shader).</summary>

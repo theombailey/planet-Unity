@@ -350,15 +350,24 @@ namespace Terrarium.Tests
         // -------------------------------------------------------------------- dials
 
         [TestCase(0, -75f)]
-        [TestCase(1, -25f)]
-        [TestCase(2, 25f)]
-        [TestCase(3, 75f)]
+        [TestCase(1, -37.5f)]
+        [TestCase(2, 0f)]
+        [TestCase(3, 37.5f)]
+        [TestCase(4, 75f)]
         public void Dial_TimeStops_RoundTrip(int stop, float angle)
         {
             Assert.AreEqual(angle, DialProp.AngleForTimeStop(stop));
             Assert.AreEqual(stop, DialProp.TimeStopForAngle(angle));
-            Assert.AreEqual(stop, DialProp.TimeStopForAngle(angle + 20f), "Within half a spacing of a stop it still snaps to it.");
-            Assert.AreEqual(stop, DialProp.TimeStopForAngle(angle - 20f));
+            Assert.AreEqual(stop, DialProp.TimeStopForAngle(angle + 15f), "Within half a spacing of a stop it still snaps to it.");
+            Assert.AreEqual(stop, DialProp.TimeStopForAngle(angle - 15f));
+        }
+
+        [Test]
+        public void Dial_TimeStops_MatchTheClockSpeeds()
+        {
+            Assert.AreEqual(5, SimClock.TimeScaleSteps.Length);
+            Assert.AreEqual(0.25f, SimClock.TimeScaleSteps[1]);
+            Assert.AreEqual(1f, SimClock.TimeScaleSteps[2], "The middle of the dial is normal speed.");
         }
 
         [Test]

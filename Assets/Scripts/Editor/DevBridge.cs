@@ -25,7 +25,7 @@
 //           camera yaw pitch distance         jump the desk camera
 //           physarum                          living agent count (Play mode)
 //           status                            play / pause state, frame count and frame time
-//           timescale 0|1|4|16               set the sim speed (Play mode)
+//           timescale 0|0.25|1|4|16          set the sim speed (Play mode)
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
 //           probe <field> <face> <x> <y>      read one field texel back from the GPU
 //           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
@@ -180,7 +180,7 @@ namespace Terrarium.EditorTools
                         break;
                     }
 
-                    clockOwner.Clock.SetTimeScale(int.Parse(parts[1]));
+                    clockOwner.Clock.SetTimeScale(float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
                     WriteResult($"ok: time scale {clockOwner.Clock.TimeScale}, sim time {clockOwner.Clock.SimTimeSeconds:0.0} s, year {clockOwner.Clock.YearIndex} phase {clockOwner.Clock.YearPhase:0.00}");
                     break;
 

@@ -77,6 +77,9 @@ namespace Terrarium.Interaction
         /// <summary>True when the camera is in (or flying toward) surface mode.</summary>
         public bool InSurfaceMode => blendTarget > 0.5f;
 
+        /// <summary>How far the camera is from desk view (0) to surface mode (1), smoothed. The sky uses it to mix the dark room into daylight.</summary>
+        public float SurfaceBlend => Mathf.Clamp01(blend.Value);
+
         /// <summary>When true, left-drag does not pan the surface (a tool or the debug brush is using the button).</summary>
         public bool LeftDragBlocked { get; set; }
 

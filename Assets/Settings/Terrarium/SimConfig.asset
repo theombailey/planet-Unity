@@ -225,6 +225,24 @@ MonoBehaviour:
   orbitDegreesPerPixel: 0.2
   zoomFractionPerNotch: 0.12
   cameraSpringOmega: 9
+  atmosphereHeight: 0.2
+  atmosphereStrength: 2.5
+  atmosphereColor: {r: 0.3, g: 0.55, b: 1, a: 1}
+  sunsetColor: {r: 1, g: 0.42, b: 0.16, a: 1}
+  skyZenithColor: {r: 0.09, g: 0.29, b: 0.88, a: 1}
+  skyHorizonColor: {r: 0.5, g: 0.74, b: 0.97, a: 1}
+  nightSkyColor: {r: 0.012, g: 0.022, b: 0.07, a: 1}
+  starDensity: 0.35
+  deskHazeStrength: 1
+  cloudHeight: 0.12
+  cloudCoverage: 0.22
+  cloudMoistureInfluence: 0.7
+  cloudScale: 3
+  skyCloudHeight: 0.9
+  skyCloudScaleMultiplier: 2
+  cloudDriftRadiansPerSecond: 0.02
+  cloudOpacity: 0.85
+  cloudShadowStrength: 0.35
   dayLengthSeconds: 24
   yearLengthDays: 10
   axialTiltDegrees: 32

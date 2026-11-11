@@ -77,6 +77,26 @@ namespace Terrarium.Tests
         }
 
         [Test]
+        public void SimClock_QuarterSpeed_TakesAQuarterOfTheSteps()
+        {
+            var clock = new SimClock(config);
+            clock.SetTimeScale(0.25f);
+
+            // 0.045 s at a quarter speed is 0.01125 sim seconds: one 0.01 step, 0.00125 carried over.
+            int first = clock.Advance(0.045f);
+            Assert.AreEqual(1, first);
+
+            // Nine frames in all owe 9 x 0.01125 = 0.10125 sim seconds: ten whole steps, so the other eight frames add nine.
+            int later = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                later += clock.Advance(0.045f);
+            }
+
+            Assert.AreEqual(9, later);
+        }
+
+        [Test]
         public void SimClock_Advance_NeverExceedsMaxStepsPerFrame_AndDropsTheExcess()
         {
             var clock = new SimClock(config);

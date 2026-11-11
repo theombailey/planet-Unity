@@ -64,7 +64,7 @@ namespace Terrarium
         private float leafMax;
         private int passed;
         private int failed;
-        private int clockBefore;
+        private float clockBefore;
 
         /// <summary>True while a check is running.</summary>
         public bool IsRunning => running;

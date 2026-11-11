@@ -25,6 +25,9 @@
 //     lean > 0 tips the north pole toward the lamp (northern summer),
 //     lean < 0 tips it away (northern winter). That oscillation IS the seasons.
 //
+// Slow motion: the time scale can be below 1 (0.25x = a quarter speed). The accumulator then
+//     collects a quarter of a step per frame, so a step is taken about every fourth frame.
+//
 // Spin dial (changing the day length while running):
 //     If the day length simply changed, dayCount = time / dayLength would jump
 //     and the planet would snap to a new angle. So the offsets are re-chosen at
@@ -53,7 +56,7 @@ namespace Terrarium
     public sealed class SimClock
     {
         /// <summary>The speeds the time dial can be set to. 0 means paused.</summary>
-        public static readonly int[] TimeScaleSteps = { 0, 1, 4, 16 };
+        public static readonly float[] TimeScaleSteps = { 0f, 0.25f, 1f, 4f, 16f };
 
         /// <summary>Shortest day the spin dial may set, in sim seconds.</summary>
         public const float MinDayLengthSeconds = 4f;
@@ -74,7 +77,7 @@ namespace Terrarium
         {
             this.config = config != null ? config : throw new ArgumentNullException(nameof(config));
             DayLengthSeconds = config.dayLengthSeconds;
-            TimeScale = 1;
+            TimeScale = 1f;
         }
 
         /// <summary>Total simulated seconds since the world was created.</summary>
@@ -84,7 +87,7 @@ namespace Terrarium
         public long StepCount { get; private set; }
 
         /// <summary>Current speed multiplier (one of <see cref="TimeScaleSteps"/>; 0 = paused).</summary>
-        public int TimeScale { get; private set; }
+        public float TimeScale { get; private set; }
 
         /// <summary>Length of one planet day in sim seconds. Starts at the config value; the spin dial changes it.</summary>
         public float DayLengthSeconds { get; private set; }
@@ -130,9 +133,9 @@ namespace Terrarium
         }
 
         /// <summary>Sets the speed multiplier. Negative values are treated as 0 (paused).</summary>
-        public void SetTimeScale(int timeScale)
+        public void SetTimeScale(float timeScale)
         {
-            TimeScale = Math.Max(0, timeScale);
+            TimeScale = Math.Max(0f, timeScale);
         }
 
         /// <summary>

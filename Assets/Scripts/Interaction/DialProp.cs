@@ -2,16 +2,16 @@
 // DialProp
 // -----------------------------------------------------------------------------
 // Purpose : A knob on the desk that you grab and turn with the mouse. There are
-//           two: the TIME dial (pause, 1x, 4x, 16x) and the SPIN dial (how fast
+//           two: the TIME dial (pause, 0.25x, 1x, 4x, 16x) and the SPIN dial (how fast
 //           the planet turns, which also speeds up the year).
 // Idea    : Dragging sideways turns the knob; its angle is turned into a value.
-//           The time dial has four click-stops: while dragging it follows the
+//           The time dial has five click-stops: while dragging it follows the
 //           mouse freely, and on release it springs to the nearest stop. The
 //           spin dial is continuous.
 //
 // Equations:
-//   Time dial   angle in [-75, 75] degrees; stops at -75, -25, 25, 75 for 0x, 1x, 4x, 16x.
-//               index = clamp( round( (angle + 75) / 50 ), 0, 3 )
+//   Time dial   angle in [-75, 75] degrees; stops at -75, -37.5, 0, 37.5, 75 for 0x, 0.25x, 1x, 4x, 16x.
+//               index = clamp( round( (angle + 75) / 37.5 ), 0, 4 )
 //   Spin dial   angle in [-90, 90] degrees;
 //               speed multiplier = range ^ (angle / 90)        (angle 0 = unchanged;
 //               +90 = `range` times faster, -90 = `range` times slower: equal steps in
@@ -28,7 +28,7 @@ namespace Terrarium.Interaction
     /// <summary>What a dial controls.</summary>
     public enum DialKind
     {
-        /// <summary>Pause / 1x / 4x / 16x.</summary>
+        /// <summary>Pause / 0.25x / 1x / 4x / 16x.</summary>
         Time,
 
         /// <summary>Planet spin speed.</summary>
@@ -38,8 +38,9 @@ namespace Terrarium.Interaction
     /// <summary>A grab-and-turn knob.</summary>
     public sealed class DialProp : MonoBehaviour
     {
-        private const float TimeStopSpacingDegrees = 50f;
+        private const float TimeStopSpacingDegrees = 37.5f;
         private const float TimeMinAngle = -75f;
+        private const int TimeLastStop = 4;
         private const float SpinMaxAngle = 90f;
         private const float SettleOmega = 12f;
 
@@ -60,19 +61,19 @@ namespace Terrarium.Interaction
         /// <summary>True while the player is turning it.</summary>
         public bool IsDragging => dragging;
 
-        /// <summary>Time dial: the nearest stop, 0..3, for the current angle.</summary>
+        /// <summary>Time dial: the nearest stop, 0..4, for the current angle.</summary>
         public int TimeStopIndex => TimeStopForAngle(angle);
 
-        /// <summary>The time dial's angle for a stop (0..3).</summary>
+        /// <summary>The time dial's angle for a stop (0..4).</summary>
         public static float AngleForTimeStop(int stop)
         {
-            return TimeMinAngle + Mathf.Clamp(stop, 0, 3) * TimeStopSpacingDegrees;
+            return TimeMinAngle + Mathf.Clamp(stop, 0, TimeLastStop) * TimeStopSpacingDegrees;
         }
 
-        /// <summary>The nearest time-dial stop (0..3) for an angle.</summary>
+        /// <summary>The nearest time-dial stop (0..4) for an angle.</summary>
         public static int TimeStopForAngle(float angleDegrees)
         {
-            return Mathf.Clamp(Mathf.RoundToInt((angleDegrees - TimeMinAngle) / TimeStopSpacingDegrees), 0, 3);
+            return Mathf.Clamp(Mathf.RoundToInt((angleDegrees - TimeMinAngle) / TimeStopSpacingDegrees), 0, TimeLastStop);
         }
 
         /// <summary>Spin dial: speed multiplier for an angle, range^(angle/90).</summary>

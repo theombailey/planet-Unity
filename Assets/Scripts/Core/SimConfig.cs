@@ -679,6 +679,62 @@ namespace Terrarium
         [Tooltip("Stiffness of the camera's smoothing spring, in rad/s. Higher = snappier. Settles in about 4.7 / omega seconds.")]
         [Range(1f, 40f)] public float cameraSpringOmega = 9f;
 
+        [Header("Atmosphere and sky (see AtmosphereController)")]
+        [Tooltip("Thickness of the planet's air, in world units above the surface. Sets how wide the glow around the planet is.")]
+        [Range(0.02f, 0.5f)] public float atmosphereHeight = 0.20f;
+
+        [Tooltip("Brightness of the glow around the planet seen from the desk (0 = none).")]
+        [Range(0f, 4f)] public float atmosphereStrength = 2.5f;
+
+        [Tooltip("Colour of the air in daylight (blue, because short wavelengths scatter most).")]
+        public Color atmosphereColor = new Color(0.30f, 0.55f, 1.0f);
+
+        [Tooltip("Colour of the air and sky when the lamp is near the horizon (sunset).")]
+        public Color sunsetColor = new Color(1.0f, 0.42f, 0.16f);
+
+        [Tooltip("Sky colour straight overhead on a clear day, seen from the surface.")]
+        public Color skyZenithColor = new Color(0.09f, 0.29f, 0.88f);
+
+        [Tooltip("Sky colour at the horizon on a clear day, seen from the surface.")]
+        public Color skyHorizonColor = new Color(0.50f, 0.74f, 0.97f);
+
+        [Tooltip("Sky colour at night.")]
+        public Color nightSkyColor = new Color(0.012f, 0.022f, 0.070f);
+
+        [Tooltip("How many stars show at night and, faintly, behind the desk (0 = none).")]
+        [Range(0f, 1f)] public float starDensity = 0.35f;
+
+        [Tooltip("Strength of the faint coloured haze behind the planet in desk view (0 = plain dark room).")]
+        [Range(0f, 3f)] public float deskHazeStrength = 1f;
+
+        [Header("Clouds (see AtmosphereController and Clouds.hlsl)")]
+        [Tooltip("Height of the cloud layer above the surface, in world units.")]
+        [Range(0.02f, 0.5f)] public float cloudHeight = 0.12f;
+
+        [Tooltip("How cloudy it is on the whole (0 = clear, 1 = overcast). Where it is wet, clouds form more easily whatever this says.")]
+        [Range(0f, 1f)] public float cloudCoverage = 0.22f;
+
+        [Tooltip("How much the ground's moisture decides where clouds form (0 = clouds ignore the ground, 1 = clouds sit over wet places).")]
+        [Range(0f, 1f)] public float cloudMoistureInfluence = 0.7f;
+
+        [Tooltip("Size of the cloud pattern: bigger numbers give more, smaller clouds.")]
+        [Range(0.5f, 8f)] public float cloudScale = 3.0f;
+
+        [Tooltip("How high the clouds you see overhead from the surface are, in world units above the ground. Must be higher than the camera can climb (surfaceHeightMax).")]
+        [Range(0.3f, 1.5f)] public float skyCloudHeight = 0.9f;
+
+        [Tooltip("Size of the clouds seen overhead from the surface compared with the planet's cloud layer (2 = clouds half as wide, so there are more of them).")]
+        [Range(0.5f, 6f)] public float skyCloudScaleMultiplier = 2.0f;
+
+        [Tooltip("How fast the wind carries the clouds round the planet, in radians per sim second.")]
+        [Range(0f, 0.2f)] public float cloudDriftRadiansPerSecond = 0.02f;
+
+        [Tooltip("How solid the clouds look (1 = opaque white).")]
+        [Range(0f, 1f)] public float cloudOpacity = 0.85f;
+
+        [Tooltip("How dark the shadow of a cloud is on the ground below it (0 = no shadows).")]
+        [Range(0f, 0.8f)] public float cloudShadowStrength = 0.35f;
+
         [Header("Time (see SimClock)")]
         [Tooltip("Length of one planet day (one full spin) at 1x speed, in real seconds.")]
         [Range(4f, 240f)] public float dayLengthSeconds = 24f;

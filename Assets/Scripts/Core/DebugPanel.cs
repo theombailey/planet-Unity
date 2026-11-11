@@ -62,6 +62,9 @@ namespace Terrarium
         [Tooltip("The generative sound, for the volume slider (optional).")]
         [SerializeField] private Terrarium.Audio.GenerativeAudio sound;
 
+        [Tooltip("The sky, atmosphere and clouds, for their on/off switches (optional).")]
+        [SerializeField] private Terrarium.Rendering.AtmosphereController atmosphere;
+
         [Tooltip("The automatic multi-seed health check (optional).")]
         [SerializeField] private StabilityRunner stability;
 
@@ -69,7 +72,7 @@ namespace Terrarium
         [SerializeField] private bool visible = true;
 
         private Vector2 scrollPosition;
-        private int timeScaleBeforePause = 1;
+        private float timeScaleBeforePause = 1f;
         private float smoothedFrameSeconds = 1f / 60f;
         private float readoutTimer;
         private string readoutText = string.Empty;
@@ -159,6 +162,11 @@ namespace Terrarium
             if (sound != null)
             {
                 sound.OnDebugGui();
+            }
+
+            if (atmosphere != null)
+            {
+                atmosphere.OnDebugGui();
             }
 
             GUILayout.Label("Time scale  (Space = pause)");

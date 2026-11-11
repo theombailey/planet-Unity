@@ -653,7 +653,7 @@ namespace Terrarium.Interaction
             }
             else if (hoveredDial != null)
             {
-                text = hoveredDial.Kind == DialKind.Time ? "Time dial  -  drag sideways: pause, 1x, 4x, 16x" : "Spin dial  -  drag sideways: slower or faster days and years";
+                text = hoveredDial.Kind == DialKind.Time ? "Time dial  -  drag sideways: pause, 0.25x, 1x, 4x, 16x" : "Spin dial  -  drag sideways: slower or faster days and years";
             }
 
             if (Time.unscaledTime < messageUntil)

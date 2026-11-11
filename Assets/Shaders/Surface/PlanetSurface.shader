@@ -25,6 +25,10 @@
 //                      a wash:  pool = 1 - 0.18 * 4 w (1 - w).
 //   OCEAN    A flat wash that deepens with depth, a few drifting ink wave
 //            strokes, and a broken white foam line at the shoreline.
+//   CLOUD    A cloud between a ground point and the lamp darkens the ground: the cloud
+//   SHADOWS  that shades a point is found by following the lamp ray up to the cloud
+//            layer, and its density comes from the same function as the clouds you
+//            see (Clouds.hlsl), so a shadow always sits under its cloud.
 //   LIGHT    The result goes through the shared painterly shading
 //            (banded tone + hatching, Painterly.hlsl).
 //
@@ -102,6 +106,7 @@ Shader "Terrarium/PlanetSurface"
         CBUFFER_END
 
         #include "Assets/Shaders/Include/Painterly.hlsl"
+        #include "Assets/Shaders/Include/Clouds.hlsl"
 
         // Height of the ground in the field, 0 until the fields exist.
         float TerrainHeight(float3 direction)
@@ -258,6 +263,23 @@ Shader "Terrarium/PlanetSurface"
                     float threshold = lerp(0.45, 0.12, closeness);
                     float thread = smoothstep(threshold, threshold + 0.3, trail + fuzz * 0.25 * closeness);
                     albedo = lerp(albedo, _Mycelium.rgb, thread * 0.8);
+                }
+
+                // Cloud shadows: darken the ground where a cloud stands between it and the lamp.
+                if (n > 0 && _CloudLayer.w > 0.5 && _CloudLayer.z > 0.0)
+                {
+                    float3 towardLamp = normalize(_TerrariumLampPosition.xyz - input.positionWS);
+                    float3 upWS = normalize(input.positionWS - _AtmoCentre.xyz);
+                    float lampHeight = dot(upWS, towardLamp);
+                    if (lampHeight > 0.02)
+                    {
+                        float3 cloudWS = CloudAboveAlongLamp(input.positionWS, _AtmoCentre.xyz, towardLamp, _AtmoCentre.w * _CloudLayer.x);
+                        float3 cloudDirection = normalize(TransformWorldToObject(cloudWS));
+                        float cloudMoisture = CS_SampleField4(_ClimateField, cloudDirection, n).g;
+                        float cloudThickness;
+                        float shade = CloudDensity(cloudDirection, cloudMoisture, 1.0, cloudThickness);
+                        albedo *= 1.0 - _CloudLayer.z * shade * smoothstep(0.02, 0.25, lampHeight);
+                    }
                 }
 
                 float3 normalOS = height < 0.0 ? direction : TiltedNormal(direction);
