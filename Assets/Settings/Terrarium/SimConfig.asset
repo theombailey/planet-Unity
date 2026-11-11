@@ -110,9 +110,9 @@ MonoBehaviour:
   treeHeatTemp: 50
   treeHeatRate: 0.01
   treeRecoverRate: 0.004
-  treeLeafDropTemp: 5
-  treeBudTemp: 10
-  treeAutumnTemp: 15
+  treeLeafDropTemp: 9
+  treeBudTemp: 15
+  treeAutumnTemp: 20
   treeLeafRate: 0.04
   treeSeedInterval: 22
   treeGerminationChance: 0.25

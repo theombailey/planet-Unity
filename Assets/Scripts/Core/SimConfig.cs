@@ -326,13 +326,13 @@ namespace Terrarium
         [Range(0f, 0.05f)] public float treeRecoverRate = 0.004f;
 
         [Tooltip("Below this temperature a deciduous tree has dropped all its leaves, deg C.")]
-        [Range(-10f, 20f)] public float treeLeafDropTemp = 5f;
+        [Range(-10f, 20f)] public float treeLeafDropTemp = 9f;
 
         [Tooltip("Above this temperature a tree is in full leaf, deg C.")]
-        [Range(0f, 25f)] public float treeBudTemp = 10f;
+        [Range(0f, 25f)] public float treeBudTemp = 15f;
 
         [Tooltip("Below this temperature, leaves start to turn their autumn colours, deg C.")]
-        [Range(5f, 30f)] public float treeAutumnTemp = 15f;
+        [Range(5f, 30f)] public float treeAutumnTemp = 20f;
 
         [Tooltip("How fast leaves bud or fall, as a fraction of a full canopy per sim second.")]
         [Range(0.005f, 0.5f)] public float treeLeafRate = 0.04f;
