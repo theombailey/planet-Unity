@@ -175,7 +175,7 @@ Shader "Terrarium/Sky"
                 // In rain the sky clouds over you thicken and darken.
                 alpha = saturate(alpha * (1.0 + 1.2 * _RainAmount));
 
-                float3 toLamp = normalize(_TerrariumLampPosition.xyz - (centre + hit));
+                float3 toLamp = _SunDirection.xyz;
                 // Lit by how high the lamp is in THIS sky (mostly), so the clouds are sunlit whenever the sky is
                 // blue, whichever way you look; a little of the true angle keeps them shaded on the far side.
                 float trueLight = dot(hitDirection, toLamp);

@@ -129,7 +129,7 @@ Shader "Terrarium/Clouds"
                 }
 
                 float3 normalWS = normalize(input.positionWS - _AtmoCentre.xyz);
-                float3 toLamp = normalize(_TerrariumLampPosition.xyz - input.positionWS);
+                float3 toLamp = _SunDirection.xyz;
                 float L = dot(normalWS, toLamp);
 
                 return half4(CloudShade(L, thickness, 0.0), alpha);

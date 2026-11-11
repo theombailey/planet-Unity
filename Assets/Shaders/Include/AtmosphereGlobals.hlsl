@@ -11,6 +11,8 @@
 //
 // Values  : _AtmoCentre             xyz = planet centre (world), w = planet radius (world units)
 //           _TerrariumLampPosition  world position of the lamp's bulb
+//           _SunDirection           xyz = unit direction from the planet to the lamp (toward the sun)
+//           _SunColor               rgb = colour x strength of the sun's light on the planet
 // =============================================================================
 
 #ifndef TERRARIUM_ATMOSPHERE_GLOBALS_INCLUDED
@@ -18,5 +20,7 @@
 
 float4 _AtmoCentre;
 float4 _TerrariumLampPosition;
+float4 _SunDirection;
+float4 _SunColor;
 
 #endif

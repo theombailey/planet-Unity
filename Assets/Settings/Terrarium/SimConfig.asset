@@ -26,6 +26,7 @@ MonoBehaviour:
   lampColor: {r: 1, g: 0.82, b: 0.58, a: 1}
   lampIntensity: 9
   lampRange: 12
+  sunIntensity: 1.3
   ambientColor: {r: 0.2, g: 0.25, b: 0.36, a: 1}
   backgroundColor: {r: 0.045, g: 0.04, b: 0.036, a: 1}
   toolArcRadii: {x: 2.2, y: 1.35}
@@ -38,7 +39,7 @@ MonoBehaviour:
   reliefSpan: 0.6
   terrainHeightScale: 0.035
   baseTemperature: 12
-  sunGain: 150
+  sunGain: 65
   altitudeLapse: 25
   latitudeCooling: 28
   landResponse: 0.08

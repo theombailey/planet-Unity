@@ -140,7 +140,7 @@ Shader "Terrarium/Boids"
 
                 // Light body, warmer when it carries a seed.
                 float3 albedo = lerp(float3(0.86, 0.82, 0.72), float3(0.90, 0.62, 0.22), carrying);
-                float3 color = PainterlyShade(albedo, input.positionWS, normalize(input.normalWS), input.positionCS);
+                float3 color = PainterlyShadeSun(albedo, input.positionWS, normalize(input.normalWS), input.positionCS);
 
                 // Ink outline hugging the edges of the triangle; solid ink when the bird is only a smudge.
                 float edge = min(min(input.barycentric.x, input.barycentric.y), 1.0 - input.barycentric.x - input.barycentric.y);

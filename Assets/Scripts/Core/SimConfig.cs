@@ -67,6 +67,9 @@ namespace Terrarium
         [Tooltip("Distance at which the lamp light is cut off, in world units.")]
         [Range(2f, 30f)] public float lampRange = 12f;
 
+        [Tooltip("Brightness of the SUN on the planet. The planet (ground, trees, birds, clouds) is lit by parallel light from the lamp's direction, so exactly half of it is lit; the desk keeps the close lamp light.")]
+        [Range(0f, 4f)] public float sunIntensity = 1.3f;
+
         [Tooltip("Dim, cool fill light that keeps the night side of the planet readable.")]
         public Color ambientColor = new Color(0.20f, 0.25f, 0.36f);
 
@@ -105,8 +108,8 @@ namespace Terrarium
         [Tooltip("Temperature of ground that gets no lamp light, before altitude and latitude cooling, in deg C.")]
         [Range(-60f, 30f)] public float baseTemperature = 12f;
 
-        [Tooltip("Extra temperature at full lamp light (lamp straight overhead), in deg C.")]
-        [Range(0f, 200f)] public float sunGain = 150f;
+        [Tooltip("Extra temperature at full sun (sun straight overhead), in deg C. Half the planet is lit, so this is lower than it was when only a patch was.")]
+        [Range(0f, 200f)] public float sunGain = 65f;
 
         [Tooltip("Cooling per unit of terrain height (1 = highest peak), in deg C.")]
         [Range(0f, 80f)] public float altitudeLapse = 25f;

@@ -142,7 +142,7 @@ Shader "Terrarium/Leaves"
                 float3 dead = float3(0.38, 0.30, 0.20);
                 float3 albedo = lerp(lerp(summer, autumn, autumnTint), dead, decay);
 
-                float3 color = PainterlyShade(albedo, input.positionWS, normalize(input.normalWS), input.positionCS);
+                float3 color = PainterlyShadeSun(albedo, input.positionWS, normalize(input.normalWS), input.positionCS);
 
                 // A dark ink rim, fading with the shared outline switch.
                 float rim = smoothstep(0.55, 0.9, radius) * _PainterlyOutlinesEnabled;

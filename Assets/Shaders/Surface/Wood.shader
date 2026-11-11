@@ -91,7 +91,7 @@ Shader "Terrarium/Wood"
                 float3 bark = lerp(_BarkDark.rgb, _BarkLight.rgb, saturate(streak * 1.3));
                 float3 albedo = lerp(bark, _Ash.rgb, _Decay);
 
-                return half4(PainterlyShade(albedo, input.positionWS, normalize(input.normalWS), input.positionCS), 1.0);
+                return half4(PainterlyShadeSun(albedo, input.positionWS, normalize(input.normalWS), input.positionCS), 1.0);
             }
             ENDHLSL
         }

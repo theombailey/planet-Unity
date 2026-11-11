@@ -15,12 +15,14 @@
 //
 // Idea & equations (per texel; d = texel direction in the planet's own frame):
 //
-//   INSOLATION (how directly the lamp shines on the ground; a Lambert term)
+//   INSOLATION (how directly the sun shines on the ground; a Lambert term)
 //     n = R d                         R = planet rotation: local -> world
-//     p = centre + radius * n         the texel's world position
-//     insolation = max(0, n . normalize(lamp - p))
-//     The lamp's real position is used, the same one the renderer lights with,
-//     so the lit side you see is exactly the side that warms.
+//     S = normalize(lamp - centre)    the direction of the sun
+//     insolation = max(0, n . S)
+//     The sun is the lamp seen as if infinitely far away: parallel rays from the lamp's
+//     direction, so exactly half the planet is lit. The renderer lights the planet with
+//     the same direction (Painterly.hlsl, "Sun"), so the lit side you see is exactly
+//     the side that warms.
 //
 //   TEMPERATURE (relaxes toward a target, with inertia, plus diffusion)
 //     T_target = T_base + k_sun * insolation - k_alt * max(0, height) - k_lat * d.y^2
@@ -168,8 +170,8 @@ void ClimateStep(uint3 id : SV_DispatchThreadID)
 
     // ---- insolation -----------------------------------------------------------
     float3 normalWS = mul((float3x3)_PlanetRotation, direction);
-    float3 positionWS = _PlanetCentre + normalWS * _PlanetRadius;
-    float insolation = saturate(dot(normalWS, normalize(_LampPosition - positionWS)));
+    float3 towardSun = normalize(_LampPosition - _PlanetCentre);
+    float insolation = saturate(dot(normalWS, towardSun));
 
     // ---- temperature ----------------------------------------------------------
     float texelAngle = 1.57079633 / _Resolution;

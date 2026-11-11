@@ -52,6 +52,8 @@ namespace Terrarium.Rendering
 
         private static readonly int AtmoCentreId = Shader.PropertyToID("_AtmoCentre");
         private static readonly int LampPositionId = Shader.PropertyToID("_TerrariumLampPosition");
+        private static readonly int SunDirectionId = Shader.PropertyToID("_SunDirection");
+        private static readonly int SunColorId = Shader.PropertyToID("_SunColor");
         private static readonly int SkyUpId = Shader.PropertyToID("_SkyUp");
         private static readonly int SkyLampDirId = Shader.PropertyToID("_SkyLampDir");
         private static readonly int SkyBlendId = Shader.PropertyToID("_SkyBlend");
@@ -147,6 +149,12 @@ namespace Terrarium.Rendering
 
             Shader.SetGlobalVector(AtmoCentreId, new Vector4(centre.x, centre.y, centre.z, radius));
             Shader.SetGlobalVector(LampPositionId, lamp.position);
+
+            // The sun: the lamp seen from the planet's centre, as parallel light, so exactly half the planet is lit.
+            Vector3 towardSun = (lamp.position - centre).normalized;
+            Shader.SetGlobalVector(SunDirectionId, towardSun);
+            Color sunColour = config.lampColor.linear * config.sunIntensity;
+            Shader.SetGlobalVector(SunColorId, new Vector4(sunColour.r, sunColour.g, sunColour.b, 1f));
 
             // Sky.
             Shader.SetGlobalVector(SkyUpId, up);

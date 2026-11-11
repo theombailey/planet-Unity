@@ -150,7 +150,7 @@ Shader "Terrarium/Atmosphere"
                     float density = exp(-max(radius - planetRadius, 0.0) / scaleHeight);
 
                     float3 normal = fromCentre / radius;
-                    float sunDot = dot(normal, normalize(_TerrariumLampPosition.xyz - p));
+                    float sunDot = dot(normal, _SunDirection.xyz);
                     float lit = 0.10 + 0.90 * smoothstep(-0.30, 0.30, sunDot);
                     float twilight = exp(-(sunDot / 0.28) * (sunDot / 0.28));
 

@@ -56,7 +56,32 @@ namespace Terrarium.Tests
                 float day = MeanOf(world, climate, 0, (d, f, x, y) => climate[world.Index(f, x, y) + 2] > 0.5f);
                 float night = MeanOf(world, climate, 0, (d, f, x, y) => climate[world.Index(f, x, y) + 2] <= 0.001f);
 
-                Assert.Greater(day - night, 5f, $"Day side {day:0.0} C, night side {night:0.0} C.");
+                // Half the planet is lit and the ground has thermal inertia, so the contrast is a few degrees.
+                Assert.Greater(day - night, 3f, $"Day side {day:0.0} C, night side {night:0.0} C.");
+            }
+        }
+
+        [Test]
+        public void Climate_SunLightsExactlyHalfThePlanet()
+        {
+            using (var world = new WorldHarness(Resolution))
+            {
+                world.Generate(seed: 3, landFraction: LandFraction, spinUp: true);
+                float[] climate = world.Read(world.Climate.Current);
+
+                // Channel 2 is the insolation of the last step: positive on the sunlit hemisphere only.
+                int lit = 0;
+                int total = 0;
+                world.ForEachTexel((face, x, y, direction) =>
+                {
+                    total++;
+                    if (climate[world.Index(face, x, y) + 2] > 0f)
+                    {
+                        lit++;
+                    }
+                });
+
+                Assert.AreEqual(0.5f, lit / (float)total, 0.03f, "A distant sun lights half the planet, not a patch.");
             }
         }
 

@@ -32,6 +32,14 @@
 //
 //   Boil      seed = floor(time * rateHz)   added to every noise lookup.
 //
+//   Sun       Things on the planet are lit by a SUN, not the close desk lamp. The lamp is only
+//             about three planet radii away, so its light reaches barely a third of the planet.
+//             The sun is the same light as if the lamp were infinitely far: parallel rays from the
+//             lamp's direction, so exactly half the planet is lit and the day/night line is a
+//             great circle.   tone = saturate( exposure * I_sun * max(0, N.S) )
+//             (no cast shadows: the sun has no shadow map; the planet's own night side and the
+//             cloud shadows are worked out separately). Desk and props still use the real lamp.
+//
 // Parameters: all are global shader values set each frame by PainterlySettings.cs
 //             from SimConfig (group "Rendering: painterly look").
 //
@@ -42,6 +50,7 @@
 #define TERRARIUM_PAINTERLY_INCLUDED
 
 #include "Assets/Shaders/Include/Noise.hlsl"
+#include "Assets/Shaders/Include/AtmosphereGlobals.hlsl"
 
 // ---- Globals set by PainterlySettings.cs --------------------------------------
 float3 _PainterlyAmbient;        // dim fill light colour (keeps the night side readable)
@@ -172,18 +181,45 @@ float2 PainterlyPixel(float4 positionCS)
     return positionCS.xy * (720.0 / _ScreenParams.y);
 }
 
-// Full painterly shading of one surface point.
-//   albedo     - the surface's own colour
-//   positionCS - SV_POSITION of the fragment (pixel coordinates)
-float3 PainterlyShade(float3 albedo, float3 positionWS, float3 normalWS, float4 positionCS)
+// Bands, colour and hatching for a point whose light has already been worked out.
+float3 PainterlyFinish(float3 albedo, PainterlyLight light, float3 positionWS, float4 positionCS)
 {
-    PainterlyLight light = GatherLight(positionWS, normalWS, GetNormalizedScreenSpaceUV(positionCS));
     float banded = BandTone(light.tone, positionWS);
 
     float3 color = albedo * (_PainterlyAmbient + light.hue * banded);
 
     float ink = HatchInk(banded, PainterlyPixel(positionCS));
     return lerp(color, color * _PainterlyInkColor, ink * _PainterlyHatchStrength);
+}
+
+// Full painterly shading of one surface point, lit by the scene's real lights (the desk lamp).
+//   albedo     - the surface's own colour
+//   positionCS - SV_POSITION of the fragment (pixel coordinates)
+float3 PainterlyShade(float3 albedo, float3 positionWS, float3 normalWS, float4 positionCS)
+{
+    PainterlyLight light = GatherLight(positionWS, normalWS, GetNormalizedScreenSpaceUV(positionCS));
+    return PainterlyFinish(albedo, light, positionWS, positionCS);
+}
+
+// The planet's sun: parallel light from the lamp's direction (_SunDirection), the same strength
+// everywhere it shines. See "Sun" in the header.
+PainterlyLight SunLight(float3 normalWS)
+{
+    PainterlyLight result;
+    float brightness = max(_SunColor.r, max(_SunColor.g, _SunColor.b));
+    float received = brightness * saturate(dot(normalWS, _SunDirection.xyz));
+
+    result.hue = received > 1e-5 ? _SunColor.rgb / max(brightness, 1e-4) : float3(1.0, 1.0, 1.0);
+    result.tone = saturate(received * _PainterlyExposure);
+    result.direction = _SunDirection.xyz;
+    return result;
+}
+
+// Painterly shading of a point ON THE PLANET (ground, trees, leaves, birds), lit by the sun
+// instead of the close lamp, so exactly half the planet is lit.
+float3 PainterlyShadeSun(float3 albedo, float3 positionWS, float3 normalWS, float4 positionCS)
+{
+    return PainterlyFinish(albedo, SunLight(normalWS), positionWS, positionCS);
 }
 
 #endif

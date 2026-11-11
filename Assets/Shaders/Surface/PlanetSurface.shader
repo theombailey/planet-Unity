@@ -277,7 +277,7 @@ Shader "Terrarium/PlanetSurface"
                 // Cloud shadows: darken the ground where a cloud stands between it and the lamp.
                 if (n > 0 && _CloudLayer.w > 0.5 && _CloudLayer.z > 0.0)
                 {
-                    float3 towardLamp = normalize(_TerrariumLampPosition.xyz - input.positionWS);
+                    float3 towardLamp = _SunDirection.xyz;
                     float3 upWS = normalize(input.positionWS - _AtmoCentre.xyz);
                     float lampHeight = dot(upWS, towardLamp);
                     if (lampHeight > 0.02)
@@ -294,7 +294,7 @@ Shader "Terrarium/PlanetSurface"
                 float3 normalOS = height < 0.0 ? direction : TiltedNormal(direction);
                 float3 normalWS = TransformObjectToWorldNormal(normalOS);
 
-                return half4(PainterlyShade(albedo, input.positionWS, normalWS, input.positionCS), 1.0);
+                return half4(PainterlyShadeSun(albedo, input.positionWS, normalWS, input.positionCS), 1.0);
             }
             ENDHLSL
         }
