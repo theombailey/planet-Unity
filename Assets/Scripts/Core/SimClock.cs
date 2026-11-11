@@ -68,6 +68,7 @@ namespace Terrarium
         private const float MaxRealDeltaSeconds = 0.1f;
 
         private readonly SimConfig config;
+        private float scaleBeforePause = 1f;
         private double accumulatorSeconds;
         private double dayOffsetSeconds;
         private double yearOffsetSeconds;
@@ -130,6 +131,23 @@ namespace Terrarium
         {
             float yearPhase = Frac((simTimeSeconds + yearOffsetSeconds) / YearLengthSeconds);
             return config.axialTiltDegrees * Mathf.Deg2Rad * Mathf.Sin(2f * Mathf.PI * yearPhase);
+        }
+
+        /// <summary>True while the clock is stopped (time scale 0).</summary>
+        public bool IsPaused => TimeScale <= 0f;
+
+        /// <summary>Pauses, or resumes at the speed it had before the pause (1x if it was never running).</summary>
+        public void TogglePause()
+        {
+            if (IsPaused)
+            {
+                SetTimeScale(scaleBeforePause > 0f ? scaleBeforePause : 1f);
+            }
+            else
+            {
+                scaleBeforePause = TimeScale;
+                SetTimeScale(0f);
+            }
         }
 
         /// <summary>Sets the speed multiplier. Negative values are treated as 0 (paused).</summary>

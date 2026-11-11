@@ -68,11 +68,10 @@ namespace Terrarium
         [Tooltip("The automatic multi-seed health check (optional).")]
         [SerializeField] private StabilityRunner stability;
 
-        [Tooltip("Whether the panel is showing when Play starts.")]
-        [SerializeField] private bool visible = true;
+        [Tooltip("Shown at start. Off by default: the console's nixie tubes and paper roll are the readouts now; F1 brings this developer panel back.")]
+        [SerializeField] private bool visible;
 
         private Vector2 scrollPosition;
-        private float timeScaleBeforePause = 1f;
         private float smoothedFrameSeconds = 1f / 60f;
         private float readoutTimer;
         private string readoutText = string.Empty;
@@ -289,16 +288,7 @@ namespace Terrarium
 
         private void TogglePause()
         {
-            SimClock clock = simRoot.Clock;
-            if (clock.TimeScale == 0)
-            {
-                clock.SetTimeScale(timeScaleBeforePause);
-            }
-            else
-            {
-                timeScaleBeforePause = clock.TimeScale;
-                clock.SetTimeScale(0);
-            }
+            simRoot.Clock.TogglePause();
         }
 
         private string BuildReadout()

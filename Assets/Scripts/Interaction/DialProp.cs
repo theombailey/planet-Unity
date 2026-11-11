@@ -33,6 +33,9 @@ namespace Terrarium.Interaction
 
         /// <summary>Planet spin speed.</summary>
         Spin,
+
+        /// <summary>Sound volume.</summary>
+        Volume,
     }
 
     /// <summary>A grab-and-turn knob.</summary>
@@ -74,6 +77,18 @@ namespace Terrarium.Interaction
         public static int TimeStopForAngle(float angleDegrees)
         {
             return Mathf.Clamp(Mathf.RoundToInt((angleDegrees - TimeMinAngle) / TimeStopSpacingDegrees), 0, TimeLastStop);
+        }
+
+        /// <summary>Volume dial: the master volume (0..1) for an angle (-90 = silent, +90 = full).</summary>
+        public static float VolumeForAngle(float angleDegrees)
+        {
+            return Mathf.Clamp01((Mathf.Clamp(angleDegrees, -SpinMaxAngle, SpinMaxAngle) + SpinMaxAngle) / (2f * SpinMaxAngle));
+        }
+
+        /// <summary>Volume dial: the angle that gives a volume (the inverse of <see cref="VolumeForAngle"/>).</summary>
+        public static float VolumeAngle(float volume)
+        {
+            return Mathf.Clamp01(volume) * 2f * SpinMaxAngle - SpinMaxAngle;
         }
 
         /// <summary>Spin dial: speed multiplier for an angle, range^(angle/90).</summary>

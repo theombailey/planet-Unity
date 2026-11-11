@@ -66,6 +66,10 @@ namespace Terrarium.Interaction
         [SerializeField] private FieldDebugView fieldView;
         [SerializeField] private DialProp timeDial;
         [SerializeField] private DialProp spinDial;
+        [SerializeField] private DialProp volumeDial;
+
+        [Tooltip("The console: one-shot tool uses leave a line on its paper roll (optional).")]
+        [SerializeField] private Terrarium.Workshop.ConsoleReadouts console;
 
         [Tooltip("Material for the dust that flies up when a meteor strikes.")]
         [SerializeField] private Material splashMaterial;
@@ -77,6 +81,7 @@ namespace Terrarium.Interaction
 
         private ToolProp hovered;
         private DialProp hoveredDial;
+        private Terrarium.Workshop.ConsoleControl hoveredControl;
         private ToolProp held;
         private DialProp turning;
         private bool armed;
@@ -157,6 +162,9 @@ namespace Terrarium.Interaction
             BuildSplash();
         }
 
+        /// <summary>Number of frames the controller has run all the way through (for the editor bridge).</summary>
+        public int CompletedFrames { get; private set; }
+
         private void Update()
         {
             if (viewCamera == null)
@@ -191,6 +199,7 @@ namespace Terrarium.Interaction
             }
 
             cameraRig.LeftDragBlocked = held != null || turning != null || (fieldView != null && fieldView.Showing);
+            CompletedFrames++;
         }
 
         // --------------------------------------------------------------- picking
@@ -220,11 +229,24 @@ namespace Terrarium.Interaction
         {
             ToolProp newHover = null;
             DialProp newDial = null;
+            Terrarium.Workshop.ConsoleControl newControl = null;
 
             if (!overPanel && Physics.Raycast(ray, out RaycastHit hit, PickDistance))
             {
                 newHover = hit.collider.GetComponentInParent<ToolProp>();
                 newDial = hit.collider.GetComponentInParent<DialProp>();
+                newControl = hit.collider.GetComponentInParent<Terrarium.Workshop.ConsoleControl>();
+            }
+
+            if (hoveredControl != null && hoveredControl != newControl)
+            {
+                hoveredControl.SetHighlighted(false);
+            }
+
+            hoveredControl = newControl;
+            if (hoveredControl != null)
+            {
+                hoveredControl.SetHighlighted(true);
             }
 
             if (hovered != null && hovered != newHover)
@@ -252,6 +274,10 @@ namespace Terrarium.Interaction
             {
                 turning = hoveredDial;
                 turning.BeginDrag();
+            }
+            else if (hoveredControl != null)
+            {
+                hoveredControl.Press();
             }
         }
 
@@ -301,6 +327,13 @@ namespace Terrarium.Interaction
             {
                 clock.SetTimeScale(SimClock.TimeScaleSteps[dial.TimeStopIndex]);
             }
+            else if (dial.Kind == DialKind.Volume)
+            {
+                if (sound != null)
+                {
+                    sound.MasterVolume = DialProp.VolumeForAngle(dial.Angle);
+                }
+            }
             else
             {
                 float multiplier = DialProp.SpinMultiplier(dial.Angle, simRoot.Config.spinDialRange);
@@ -319,6 +352,11 @@ namespace Terrarium.Interaction
                 {
                     timeDial.SetAngle(DialProp.AngleForTimeStop(stop));
                 }
+            }
+
+            if (volumeDial != null && !volumeDial.IsDragging && sound != null)
+            {
+                volumeDial.SetAngle(DialProp.VolumeAngle(sound.MasterVolume));
             }
 
             if (spinDial != null && !spinDial.IsDragging)
@@ -412,6 +450,10 @@ namespace Terrarium.Interaction
             if (sound != null)
             {
                 sound.NotifyTool(kind);
+                if (console != null)
+                {
+                    console.NotifyTool(kind);
+                }
             }
 
             switch (kind)
@@ -653,7 +695,11 @@ namespace Terrarium.Interaction
             }
             else if (hoveredDial != null)
             {
-                text = hoveredDial.Kind == DialKind.Time ? "Time dial  -  drag sideways: pause, 0.25x, 1x, 4x, 16x" : "Spin dial  -  drag sideways: slower or faster days and years";
+                text = hoveredDial.Kind == DialKind.Time ? "Time dial  -  drag sideways: pause, 0.25x, 1x, 4x, 16x" : (hoveredDial.Kind == DialKind.Volume ? "Volume knob  -  drag sideways: quieter or louder" : "Spin dial  -  drag sideways: slower or faster days and years");
+            }
+            else if (hoveredControl != null)
+            {
+                text = hoveredControl.Hint;
             }
 
             if (Time.unscaledTime < messageUntil)

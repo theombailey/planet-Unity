@@ -80,6 +80,76 @@ namespace Terrarium.Rendering
         }
 
         /// <summary>
+        /// Builds a wedge: a box whose top slopes from a low front edge to a higher back edge (the console body).
+        /// It stands on y = 0, is centred in x and z, and has flat-shaded faces.
+        /// </summary>
+        /// <param name="width">Size along x.</param>
+        /// <param name="depth">Size along z (front is -z, back is +z).</param>
+        /// <param name="frontHeight">Height at the front (-z) edge.</param>
+        /// <param name="backHeight">Height at the back (+z) edge.</param>
+        public static Mesh BuildWedge(float width, float depth, float frontHeight, float backHeight)
+        {
+            float x = width * 0.5f;
+            float z = depth * 0.5f;
+            var frontBottomLeft = new Vector3(-x, 0f, -z);
+            var frontBottomRight = new Vector3(x, 0f, -z);
+            var frontTopLeft = new Vector3(-x, frontHeight, -z);
+            var frontTopRight = new Vector3(x, frontHeight, -z);
+            var backBottomLeft = new Vector3(-x, 0f, z);
+            var backBottomRight = new Vector3(x, 0f, z);
+            var backTopLeft = new Vector3(-x, backHeight, z);
+            var backTopRight = new Vector3(x, backHeight, z);
+
+            var vertices = new System.Collections.Generic.List<Vector3>();
+            var normals = new System.Collections.Generic.List<Vector3>();
+            var triangles = new System.Collections.Generic.List<int>();
+
+            // Each face is a quad given in any order round its edge; the winding is fixed so it faces `outward`.
+            void Face(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 outward)
+            {
+                Vector3 normal = Vector3.Cross(b - a, c - a);
+                if (Vector3.Dot(normal, outward) < 0f)
+                {
+                    (b, d) = (d, b);
+                    normal = Vector3.Cross(b - a, c - a);
+                }
+
+                normal.Normalize();
+                int first = vertices.Count;
+                vertices.Add(a);
+                vertices.Add(b);
+                vertices.Add(c);
+                vertices.Add(d);
+                for (int i = 0; i < 4; i++)
+                {
+                    normals.Add(normal);
+                }
+
+                triangles.AddRange(new[] { first, first + 1, first + 2, first, first + 2, first + 3 });
+            }
+
+            Vector3 slopeNormal = Vector3.Cross(backTopLeft - frontTopLeft, frontTopRight - frontTopLeft);
+            if (slopeNormal.y < 0f)
+            {
+                slopeNormal = -slopeNormal;
+            }
+
+            Face(frontTopLeft, frontTopRight, backTopRight, backTopLeft, slopeNormal);                  // the sloping top
+            Face(frontBottomLeft, frontBottomRight, frontTopRight, frontTopLeft, Vector3.back);         // front
+            Face(backBottomLeft, backBottomRight, backTopRight, backTopLeft, Vector3.forward);          // back
+            Face(frontBottomLeft, frontBottomRight, backBottomRight, backBottomLeft, Vector3.down);     // bottom
+            Face(frontBottomLeft, frontTopLeft, backTopLeft, backBottomLeft, Vector3.left);             // left side
+            Face(frontBottomRight, frontTopRight, backTopRight, backBottomRight, Vector3.right);        // right side
+
+            var mesh = new Mesh { name = "Wedge" };
+            mesh.SetVertices(vertices);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>
         /// Builds a smooth sphere of radius 1 (a latitude-longitude grid) with outward normals. Used for the sky
         /// dome, the atmosphere shell and the cloud layer, which are all drawn by their shaders, so only the
         /// outline of the mesh matters and it just has to be round.

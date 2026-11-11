@@ -34,7 +34,7 @@ using UnityEngine.SceneManagement;
 namespace Terrarium.EditorTools
 {
     /// <summary>Generates the Terrarium scene from SimConfig.</summary>
-    public static class SceneBuilder
+    public static partial class SceneBuilder
     {
         /// <summary>Asset path of the generated scene.</summary>
         public const string ScenePath = "Assets/Scenes/Terrarium.unity";
@@ -110,7 +110,7 @@ namespace Terrarium.EditorTools
             SimRoot simRoot = BuildSimulationRoot(config);
             GameObject planet = BuildPlanet(config, simRoot, lampLight);
             BuildFields(simRoot, planet);
-            BuildTools(config);
+            BuildWorkshop(config, simRoot);
             CameraRig cameraRig = BuildCamera(config, simRoot, planet);
             BuildInteraction(simRoot, planet, cameraRig);
             BuildAtmosphere(simRoot, planet, cameraRig, lampLight);
@@ -319,48 +319,6 @@ namespace Terrarium.EditorTools
             return asset;
         }
 
-        // ------------------------------------------------------------------- tools
-
-        private static void BuildTools(SimConfig config)
-        {
-            var tools = new GameObject("Tools").transform;
-            Material pointerMaterial = GetMaterial("DialPointer", new Color(0.85f, 0.25f, 0.15f));
-
-            // Spread the props evenly along the front arc of an ellipse centred under the planet.
-            // Angles are measured in the desk plane from +x; 270 degrees is straight toward the camera.
-            const float startDegrees = 224f;
-            const float endDegrees = 316f;
-
-            for (int i = 0; i < PropSpecs.Length; i++)
-            {
-                PropSpec spec = PropSpecs[i];
-                float angle = Mathf.Lerp(startDegrees, endDegrees, (float)i / (PropSpecs.Length - 1)) * Mathf.Deg2Rad;
-                var position = new Vector3(
-                    Mathf.Cos(angle) * config.toolArcRadii.x,
-                    RestHeight(spec.Shape, spec.Scale),
-                    Mathf.Sin(angle) * config.toolArcRadii.y);
-
-                GameObject prop = CreatePrimitive(spec.Name, spec.Shape, tools, position, Quaternion.identity, spec.Scale, GetMaterial(spec.Name, spec.Color));
-
-                // A collider lets the mouse ray find the prop. A box is cheap and close enough.
-                prop.AddComponent<BoxCollider>();
-
-                if (spec.Tool.HasValue)
-                {
-                    SetEnum(prop.AddComponent<ToolProp>(), "kind", (int)spec.Tool.Value);
-                }
-
-                if (spec.Dial.HasValue)
-                {
-                    SetEnum(prop.AddComponent<DialProp>(), "kind", (int)spec.Dial.Value);
-
-                    // A small peg near the rim, so the turn of the dial can be seen.
-                    Vector3 rim = position + Vector3.right * (spec.Scale.x * 0.38f) + Vector3.up * (spec.Scale.y + 0.012f);
-                    CreatePrimitive("Pointer", PrimitiveType.Cube, prop.transform, rim, Quaternion.identity, new Vector3(0.05f, 0.025f, 0.02f), pointerMaterial);
-                }
-            }
-        }
-
         /// <summary>Height of a primitive's centre when it rests on the desk (y = 0).</summary>
         private static float RestHeight(PrimitiveType shape, Vector3 scale)
         {
@@ -447,10 +405,11 @@ namespace Terrarium.EditorTools
             SetReference(controller, "panel", host.GetComponent<DebugPanel>());
             SetReference(controller, "fieldView", host.GetComponent<FieldDebugView>());
             SetReference(controller, "splashMaterial", GetSplashMaterial());
+            SetReference(controller, "console", GameObject.Find("Console").GetComponent<Terrarium.Workshop.ConsoleReadouts>());
 
             foreach (DialProp dial in Object.FindObjectsByType<DialProp>(FindObjectsSortMode.None))
             {
-                string field = dial.Kind == DialKind.Time ? "timeDial" : "spinDial";
+                string field = dial.Kind == DialKind.Time ? "timeDial" : (dial.Kind == DialKind.Volume ? "volumeDial" : "spinDial");
                 SetReference(controller, field, dial);
             }
 
@@ -487,6 +446,7 @@ namespace Terrarium.EditorTools
             SetReference(controller, "fieldSet", host.GetComponent<FieldSet>());
             SetReference(controller, "sound", UnityEngine.Object.FindFirstObjectByType<Terrarium.Audio.GenerativeAudio>());
             SetReference(host.GetComponent<DebugPanel>(), "atmosphere", controller);
+            BuildWorkshopVisibility(simRoot, controller);
         }
 
         /// <summary>A sphere object that only a shader draws: no shadows, no probes, no collider.</summary>

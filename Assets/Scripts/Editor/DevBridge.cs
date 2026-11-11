@@ -29,6 +29,8 @@
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
 //           probe <field> <face> <x> <y>      read one field texel back from the GPU
 //           facelamp height pitch             turn the surface camera to face the lamp (the sun, from the surface)
+//           press Button_Name                 press a console button directly (Play mode)
+//           pickup Tool_Name                  put a tool in the hand directly (Play mode)
 //           blend 0..1                        hold the camera between desk view (0) and the surface (1), to inspect the flight
 //           rain                              how much of the planet is being rained on, and where it rains hardest
 //           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
@@ -265,6 +267,14 @@ namespace Terrarium.EditorTools
 
                 case "rain":
                     WriteResult(RainReport());
+                    break;
+
+                case "press":
+                    WriteResult(PressButton(parts));
+                    break;
+
+                case "pickup":
+                    WriteResult(PickUpTool(parts));
                     break;
 
                 case "facelamp":
@@ -799,9 +809,62 @@ namespace Terrarium.EditorTools
             string mode = rig != null && rig.InSurfaceMode ? "SURFACE" : "desk";
             string clock = simRoot != null ? $"time scale {simRoot.Clock.TimeScale}x, day length {simRoot.Clock.DayLengthSeconds:0.0} s" : string.Empty;
 
-            return $"ok: hovering {hover}; holding {held}; mouse over planet: {hit}; camera: {mode}; {clock}";
+            return $"ok: hovering {hover}; holding {held}; mouse over planet: {hit}; camera: {mode}; {clock}; controller enabled {controller.enabled}, pointer {Terrarium.Interaction.InputReader.PointerPosition}, ray hits {RayHitName()}, controller frames {controller.CompletedFrames}, controllers {UnityEngine.Object.FindObjectsByType<Terrarium.Interaction.ToolController>(FindObjectsSortMode.None).Length}, planetHit {controller.HasPlanetHit}";
         }
 
+        /// <summary>"press Button_Name": presses a console button directly (Play mode), as a click on it would.</summary>
+        private static string PressButton(string[] parts)
+        {
+            if (parts.Length < 2 || !EditorApplication.isPlaying)
+            {
+                return "error: usage 'press Button_Name' in Play mode";
+            }
+
+            foreach (Terrarium.Workshop.ConsoleControl control in UnityEngine.Object.FindObjectsByType<Terrarium.Workshop.ConsoleControl>(FindObjectsSortMode.None))
+            {
+                if (control.name == parts[1])
+                {
+                    control.Press();
+                    return $"ok: pressed {control.name} ({control.Kind})";
+                }
+            }
+
+            return $"error: no button called {parts[1]}";
+        }
+        /// <summary>"pickup Tool_Name": puts a tool in the player's hand directly (Play mode), for testing what a held tool looks like.</summary>
+        private static string PickUpTool(string[] parts)
+        {
+            var controller = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.ToolController>();
+            if (controller == null || parts.Length < 2 || !EditorApplication.isPlaying)
+            {
+                return "error: usage 'pickup Tool_Name' in Play mode";
+            }
+
+            foreach (Terrarium.Interaction.ToolProp prop in UnityEngine.Object.FindObjectsByType<Terrarium.Interaction.ToolProp>(FindObjectsSortMode.None))
+            {
+                if (prop.name == parts[1])
+                {
+                    typeof(Terrarium.Interaction.ToolController)
+                        .GetMethod("PickUp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                        .Invoke(controller, new object[] { prop });
+                    return $"ok: holding {prop.name}";
+                }
+            }
+
+            return $"error: no tool called {parts[1]}";
+        }
+        // For 'hand': what a physics ray from the camera through the pointer hits first.
+        private static string RayHitName()
+        {
+            Camera camera = Camera.main;
+            if (camera == null)
+            {
+                return "no camera";
+            }
+
+            Ray ray = camera.ScreenPointToRay(Terrarium.Interaction.InputReader.PointerPosition);
+            return Physics.Raycast(ray, out RaycastHit hit, 60f) ? hit.collider.name : "nothing";
+        }
         /// <summary>"probe field face x y": reads one texel of a field back from the GPU (Play mode).</summary>
         private static string ProbeField(string[] parts)
         {

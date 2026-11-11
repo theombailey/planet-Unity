@@ -100,11 +100,12 @@ Nine tools sit on the desk. Hover one to highlight it (it gets a thick ink outli
 
 ## Dials
 
-Two dials sit on the desk. Hover one and **left-drag sideways** to turn it. Drag left or right; the simulation follows as you turn.
+Three dials sit on the console. Hover one and **left-drag sideways** to turn it. Drag left or right; the simulation follows as you turn.
 
 | Dial | Effect |
 |---|---|
 | **Time dial** | Sets simulation speed to one of five stops: **Pause**, **0.25x** (slow days), **1x**, **4x**, **16x**. |
+| **Volume knob** | Turns the sound down or up. |
 | **Spin dial** | Sets how fast days and years turn: turn it one way for slower days and years, the other way for faster. The camera and lamp follow. |
 
 The dials keep showing the real state, so pressing **Space** or re-seeding the world also moves them.
@@ -130,7 +131,7 @@ There are no gamepad bindings.
 
 ## The F1 debug panel
 
-Press **F1** to open the panel on the left side of the screen. It is for development and tuning, and it is visible by default. It shows:
+Press **F1** to open the panel on the left side of the screen. It is for development and tuning, and it is hidden by default (the console's nixie tubes and paper roll are the readouts now). It shows:
 
 - **Frame rate** and sim time.
 - **Time scale** toolbar: Pause, 0.25x, 1x, 4x, 16x (same as the time dial).
@@ -204,7 +205,7 @@ All sound is generated live from maths (no audio files) and follows the ecosyste
 ## Developer notes
 
 - **Requirements:** Unity 6000.1.14f1, URP 17.1, Forward+, new Input System only. No asset-store packages.
-- **Tests:** run them from the Unity Test Runner (EditMode); all 177 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
+- **Tests:** run them from the Unity Test Runner (EditMode); all 192 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
 - **Building the game:** in Unity choose **Terrarium > Build Windows Player**. It writes `Builds/Terrarium/Terrarium.exe` (about 94 MB). Press **F3** in the built game for demo mode.
 - **Editor bridge:** a file-based command bridge (`Assets/Scripts/Editor/DevBridge.cs`) lets scripts drive the open editor (play, capture screenshots, snap the camera, use tools). It is editor-only and is not part of the game.
 - **Scene and assets:** `SceneBuilder` (editor menu) rebuilds the desk, planet, tools, and dials from code.
@@ -218,6 +219,7 @@ All sound is generated live from maths (no audio files) and follows the ecosyste
 | `Assets/Scripts/Climate` | Lamp, temperature, moisture, terrain |
 | `Assets/Scripts/Physarum` | Fungal agents and nutrient transport |
 | `Assets/Scripts/Trees` | Space colonization, tree mesher, tree life, tree manager |
+| `Assets/Scripts/Workshop` | The console: nixie tubes, paper roll, bitmap font, buttons, name plates, and the code that hides the workshop on the surface |
 | `Assets/Scripts/Audio` | Generative sound (`OnAudioFilterRead`) |
 | `Assets/Scripts/Boids` | Boid simulation (GPU buffers, spatial hash grid) and the scene glue that draws them and carries seeds to the trees |
 | `Assets/Scripts/Interaction` | Input, camera rig, tools, dials, surface navigation |

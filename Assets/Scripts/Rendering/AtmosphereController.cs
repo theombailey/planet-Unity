@@ -128,6 +128,9 @@ namespace Terrarium.Rendering
         /// <summary>Draw the clouds (and their shadows).</summary>
         public bool CloudsEnabled { get; set; } = true;
 
+        /// <summary>How much of the planet's sky the camera is in: 1 on the surface, 0 once clear of the ground (fades with camera height).</summary>
+        public float PlanetSkyWeight { get; private set; }
+
         /// <summary>Draw the sky (off = plain dark background).</summary>
         public bool SkyEnabled { get; set; } = true;
 
@@ -152,6 +155,7 @@ namespace Terrarium.Rendering
 
             // Where "up" is for the sky: world up from the desk, the planet's local up from the surface.
             Vector3 surfaceUp = (cameraPosition - centre).normalized;
+            PlanetSkyWeight = skyWeight;
             Vector3 up = Vector3.Slerp(Vector3.up, surfaceUp, skyWeight);
             Vector3 lampDirection = (lamp.position - cameraPosition).normalized;
 
