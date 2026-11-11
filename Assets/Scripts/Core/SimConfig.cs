@@ -701,15 +701,15 @@ namespace Terrarium
         [Tooltip("Sky colour at night.")]
         public Color nightSkyColor = new Color(0.012f, 0.022f, 0.070f);
 
-        [Tooltip("How many stars show at night and, faintly, behind the desk (0 = none).")]
+        [Tooltip("How many stars show in the planet's night sky, seen from the surface (0 = none). The workshop behind the desk has none.")]
         [Range(0f, 1f)] public float starDensity = 0.35f;
 
-        [Tooltip("Strength of the faint coloured haze behind the planet in desk view (0 = plain dark room).")]
+        [Tooltip("Strength of the dim wall light and the warm lamp pool behind the planet in desk view (0 = plain black).")]
         [Range(0f, 3f)] public float deskHazeStrength = 1f;
 
         [Header("Clouds (see AtmosphereController and Clouds.hlsl)")]
         [Tooltip("Height of the cloud layer above the surface, in world units.")]
-        [Range(0.02f, 0.5f)] public float cloudHeight = 0.12f;
+        [Range(0.02f, 0.5f)] public float cloudHeight = 0.05f;
 
         [Tooltip("How cloudy it is on the whole (0 = clear, 1 = overcast). Where it is wet, clouds form more easily whatever this says.")]
         [Range(0f, 1f)] public float cloudCoverage = 0.06f;
@@ -720,8 +720,8 @@ namespace Terrarium
         [Tooltip("Size of the cloud pattern: bigger numbers give more, smaller clouds.")]
         [Range(0.5f, 8f)] public float cloudScale = 3.0f;
 
-        [Tooltip("How high the clouds you see overhead from the surface are, in world units above the ground. Must be higher than the camera can climb (surfaceHeightMax).")]
-        [Range(0.3f, 1.5f)] public float skyCloudHeight = 0.9f;
+        [Tooltip("How high the clouds you see overhead from the surface are, in world units above the ground. They are always kept a little above the camera, however high you zoom.")]
+        [Range(0.1f, 1.5f)] public float skyCloudHeight = 0.5f;
 
         [Tooltip("Size of the clouds seen overhead from the surface compared with the planet's cloud layer (2 = clouds half as wide, so there are more of them).")]
         [Range(0.5f, 6f)] public float skyCloudScaleMultiplier = 2.0f;

@@ -234,11 +234,11 @@ MonoBehaviour:
   nightSkyColor: {r: 0.012, g: 0.022, b: 0.07, a: 1}
   starDensity: 0.35
   deskHazeStrength: 1
-  cloudHeight: 0.12
+  cloudHeight: 0.05
   cloudCoverage: 0.06
   cloudMoistureInfluence: 0.7
   cloudScale: 3
-  skyCloudHeight: 0.9
+  skyCloudHeight: 0.5
   skyCloudScaleMultiplier: 2
   cloudDriftRadiansPerSecond: 0.05
   cloudMorphRate: 0.04

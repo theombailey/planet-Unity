@@ -1,14 +1,15 @@
 // =============================================================================
 // Terrarium/Sky
 // -----------------------------------------------------------------------------
-// Purpose : Paints everything behind the scene. In DESK VIEW it is a dark, slightly
-//           mysterious room: deep indigo toward the top, a slow violet-teal haze,
-//           a warm halo round the lamp, a few faint stars. In SURFACE MODE it is
-//           the planet's sky: blue by day, deepening overhead; a glowing orange
-//           band along the horizon on the lamp's side when the lamp is low
-//           (sunset); dark with stars at night. The two are mixed by _SkyBlend,
-//           the camera's own desk-to-surface blend, so the flight down turns the
-//           dark room into daylight smoothly.
+// Purpose : Paints everything behind the scene. In DESK VIEW it is a dark workshop
+//           wall: near-black, a little lighter low down, with a soft warm pool where
+//           the desk lamp lights it. In SURFACE MODE it is the planet's sky, and the
+//           desk lamp is its SUN: blue by day, deepening overhead; a glowing orange
+//           band along the horizon under the sun and a violet sky away from it when
+//           the sun is low (sunset); dark with stars once the sun has dropped behind
+//           the planet's edge. The two are mixed by _SkyBlend, the camera's own
+//           desk-to-surface blend, so the flight down turns the dark room into
+//           daylight smoothly.
 //
 // Idea    : A big sphere that follows the camera. It writes no depth, so it is
 //           always behind everything. For each pixel the colour depends only on
@@ -19,12 +20,14 @@
 //            dip = height of the planet's true horizon seen from the camera = -sqrt(1 - (R/r)^2), r = camera distance from the centre):
 //     s         = saturate((h - dip) / (1 - dip))          0 at the planet's horizon, 1 overhead
 //                 (the planet is small, so its horizon is far below level: 42 degrees at the default height)
-//     day       = smoothstep(-0.22, 0.28, e)               0 at night, 1 in full day
-//     twilight  = exp(-((e - 0.02) / 0.24)^2)              1 when the lamp is at the horizon
+//     x         = e - dip                                  the sun's height above the planet's TRUE horizon
+//                 (so the sun sets, and the sky darkens, exactly when it can no longer be seen)
+//     day       = smoothstep(-0.06, 0.30, x)               0 at night, 1 in full day
+//     twilight  = exp(-((x - 0.05) / 0.20)^2)              1 when the sun is at the horizon
 //     horizon   = (1 - s)^2.6                              1 along the horizon, 0 overhead
 //     sky       = lerp(night, lerp(zenith, horizonColour, horizon), day)
 //     side      = dot(flat(v), flat(L)) / 2 + 1/2          1 toward the lamp's compass direction
-//     sunset    : sky = lerp(sky, sunsetColour, twilight * (0.85 exp(-3 s) (0.2 + 0.8 side^2) + 0.75 dot(v, L)^3))
+//     sunset    : sky = lerp(sky, sunsetColour, twilight * (0.9 exp(-3 s) (0.08 + 0.92 side^4) + 0.8 dot(v, L)^6))
 //     stars     : jittered point per cell of a 3D grid, hashed, faded out by day
 //     clouds    : the view ray is followed to a cloud layer (a sphere SkyCloudHeight above the
 //                 surface); Clouds.hlsl gives the density there, shaded by CloudShade; they are
@@ -116,24 +119,18 @@ Shader "Terrarium/Sky"
                 return present * smoothstep(size, 0.0, distance(q, centre)) * twinkle * (0.35 + 0.65 * frac(rnd * 91.0));
             }
 
-            // The dark room behind the desk.
+            // The dark workshop behind the desk: a dim, warm-grey wall that is a little lighter low down (light
+            // bouncing off the bench) and fades to near-black toward the ceiling, with a soft warm pool where the
+            // desk lamp lights the wall. No stars: the room is a room.
             float3 DeskSky(float3 v, float3 lampDir)
             {
                 float3 colour = _SkyDeskBase.rgb;
 
-                // Cooler and deeper toward the top.
-                colour += _SkyNight.rgb * 3.0 * smoothstep(-0.2, 0.9, v.y) * _SkyDeskHaze;
+                float lowDown = 1.0 - smoothstep(-0.35, 0.75, v.y);
+                colour += float3(0.016, 0.014, 0.012) * lowDown * _SkyDeskHaze;
 
-                // A slow violet-teal wash drifting in the dark.
-                float wash = Fbm(v * 2.3 + float3(0.0, _Time.y * 0.004, 0.0), 4);
-                float3 tint = lerp(float3(0.20, 0.10, 0.34), float3(0.05, 0.28, 0.34), wash);
-                colour += tint * smoothstep(0.38, 0.80, wash) * 0.07 * _SkyDeskHaze;
-
-                // A faint warm halo round the lamp's side of the room.
-                colour += float3(0.30, 0.16, 0.08) * pow(saturate(dot(v, lampDir)), 7.0) * 0.035 * _SkyDeskHaze;
-
-                // A few faint stars.
-                colour += Stars(v, _SkyStars) * float3(0.55, 0.62, 0.80) * 0.3;
+                float pool = pow(saturate(dot(v, lampDir)), 6.0);
+                colour += float3(0.30, 0.17, 0.09) * pool * 0.05 * _SkyDeskHaze;
                 return colour;
             }
 
@@ -151,8 +148,11 @@ Shader "Terrarium/Sky"
                 }
 
                 float3 centre = _AtmoCentre.xyz;
-                float layerRadius = _AtmoCentre.w + _SkyCloudParams.x;
                 float3 toCamera = _WorldSpaceCameraPos - centre;
+
+                // The layer is a fixed height above the ground, but always at least a little above the camera,
+                // so there is always cloud overhead however high you zoom.
+                float layerRadius = max(_AtmoCentre.w + _SkyCloudParams.x, length(toCamera) + 0.25);
                 float b = dot(toCamera, v);
                 float disc = b * b - (dot(toCamera, toCamera) - layerRadius * layerRadius);
                 if (disc <= 0.0)
@@ -195,8 +195,12 @@ Shader "Terrarium/Sky"
                 // up to the zenith (1).
                 float s = saturate((h - _SkyHorizonDip) / (1.0 - _SkyHorizonDip));
 
-                float day = smoothstep(-0.22, 0.28, e);
-                float twilightOffset = (e - 0.02) / 0.24;
+                // The lamp is the sun, so day and night follow whether you can SEE it. x is the lamp's height
+                // above the planet's true horizon: the lamp sets (and the sky goes dark) when it drops behind
+                // the planet's edge, not when it drops below level, which from up here is long before.
+                float x = e - _SkyHorizonDip;
+                float day = smoothstep(-0.06, 0.30, x);
+                float twilightOffset = (x - 0.05) / 0.20;
                 float twilight = exp(-twilightOffset * twilightOffset);
                 float horizon = pow(1.0 - s, 2.6);
 
@@ -204,28 +208,29 @@ Shader "Terrarium/Sky"
                 float3 nightColour = lerp(_SkyNight.rgb, _SkyNight.rgb * 3.0 + 0.004, horizon);
                 float3 colour = lerp(nightColour, dayColour, day);
 
-                // Sunset: a warm band along the horizon on the lamp's side, and a broad glow round the lamp itself.
+                // Sunset: the glow is where the sun is. A warm band along the horizon under it (strongest
+                // straight below the lamp, fading round to the sides) and a glow round the lamp itself.
                 float3 vFlat = normalize(v - up * h + 1e-4);
                 float3 lFlat = normalize(lampDir - up * e + 1e-4);
                 float side = dot(vFlat, lFlat) * 0.5 + 0.5;
                 float band = exp(-s * 3.0);
-                float cap = pow(saturate(dot(v, lampDir)), 3.0);
-                float glow = twilight * (band * (0.2 + 0.8 * side * side) * 0.85 + cap * 0.75);
+                float cap = pow(saturate(dot(v, lampDir)), 6.0);
+                float glow = twilight * (band * (0.08 + 0.92 * pow(side, 4.0)) * 0.9 + cap * 0.8);
                 colour = lerp(colour, _SkySunset.rgb * 1.15, saturate(glow));
 
-                // Higher up the dusk sky goes rose and violet before it reaches the deep blue.
+                // Away from the sun the dusk sky goes rose and violet before it reaches the deep blue.
                 float3 dusk = float3(0.46, 0.24, 0.50);
-                colour = lerp(colour, dusk, twilight * smoothstep(0.15, 0.50, s) * (1.0 - smoothstep(0.55, 0.95, s)) * (0.25 + 0.55 * side));
+                colour = lerp(colour, dusk, twilight * smoothstep(0.15, 0.50, s) * (1.0 - smoothstep(0.55, 0.95, s)) * (0.25 + 0.5 * (1.0 - side)));
 
-                // Clouds in the sky.
+                // Clouds in the sky (lit by how high the sun is).
                 float3 cloudColour;
-                float cloudAlpha = SkyCloud(v, s, e, cloudColour);
+                float cloudAlpha = SkyCloud(v, s, x, cloudColour);
                 colour = lerp(colour, cloudColour, cloudAlpha);
 
-                // The lamp's glow: a wide soft halo and a tight bright core.
+                // The sun's own glow: a wide soft halo and a tight bright core, only while it is above the horizon.
                 float cosAngle = saturate(dot(v, lampDir));
                 float3 lampColour = lerp(float3(1.0, 0.92, 0.72), _SkySunset.rgb, saturate(twilight));
-                colour += lampColour * (pow(cosAngle, 24.0) * 0.35 + pow(cosAngle, 220.0) * 0.8) * smoothstep(-0.15, 0.05, e);
+                colour += lampColour * (pow(cosAngle, 24.0) * 0.35 + pow(cosAngle, 220.0) * 0.8) * smoothstep(-0.04, 0.03, x);
 
                 // In rain the whole sky greys and dims.
                 float rainGrey = dot(colour, float3(0.3, 0.55, 0.15));

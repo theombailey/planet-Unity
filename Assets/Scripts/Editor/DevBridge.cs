@@ -28,6 +28,7 @@
 //           timescale 0|0.25|1|4|16          set the sim speed (Play mode)
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
 //           probe <field> <face> <x> <y>      read one field texel back from the GPU
+//           facelamp height pitch             turn the surface camera to face the lamp (the sun, from the surface)
 //           rain                              how much of the planet is being rained on, and where it rains hardest
 //           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
 //           ink on|off      enable / disable the fullscreen ink + paper pass
@@ -263,6 +264,10 @@ namespace Terrarium.EditorTools
 
                 case "rain":
                     WriteResult(RainReport());
+                    break;
+
+                case "facelamp":
+                    WriteResult(FaceLamp(parts));
                     break;
 
                 case "camera":
@@ -814,6 +819,26 @@ namespace Terrarium.EditorTools
             }
 
             return text.ToString();
+        }
+
+        /// <summary>
+        /// "facelamp height pitch": keeps the surface camera where it stands and turns it to face the direction of the
+        /// lamp (the sun, from the surface). Used to check the sky against the sun's position (Play mode).
+        /// </summary>
+        private static string FaceLamp(string[] parts)
+        {
+            var rig = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.CameraRig>();
+            var motion = UnityEngine.Object.FindFirstObjectByType<Terrarium.Climate.PlanetMotion>();
+            GameObject lamp = GameObject.Find("LampLight");
+            if (rig == null || motion == null || lamp == null || parts.Length < 3 || !EditorApplication.isPlaying)
+            {
+                return "error: usage 'facelamp height pitch' in Play mode, after 'surface ...'";
+            }
+
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            Vector3 lampLocal = (Quaternion.Inverse(motion.transform.rotation) * (lamp.transform.position - motion.transform.position)).normalized;
+            rig.SnapToSurface(rig.SurfaceDirection, lampLocal, float.Parse(parts[1], culture), float.Parse(parts[2], culture));
+            return "ok: facing the lamp";
         }
 
         /// <summary>
