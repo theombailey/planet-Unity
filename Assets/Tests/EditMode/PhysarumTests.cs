@@ -282,7 +282,14 @@ namespace Terrarium.Tests
             // bust. The pool is deliberately larger than the overshoot, so reaching it would mean food is
             // not limiting.
             const int pool = 30_000;
-            using (var world = new WorldHarness(Resolution))
+
+            // This tests the fungus rules, not the terrain, so it keeps the large continents it was tuned on
+            // (the game's default continents are now smaller).
+            using (var world = new WorldHarness(Resolution, config =>
+            {
+                config.continentFrequency = 1.1f;
+                config.ridgeFrequency = 2.6f;
+            }))
             {
                 world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
                 var physarum = world.CreatePhysarum(pool);

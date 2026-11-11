@@ -16,6 +16,6 @@ MonoBehaviour:
   fieldResolution: 128
   physarumAgents: 100000
   boidCount: 4000
-  maxTrees: 150
+  maxTrees: 300
   maxSegmentsPerTree: 600
   meshRingSides: 5

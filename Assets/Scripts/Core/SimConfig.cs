@@ -26,7 +26,7 @@ namespace Terrarium
         [Tooltip("Seed for every random choice in the sim. Same seed + same config = same world.")]
         public int seed = 12345;
 
-        [Header("Scale (world units; the planet radius is the yardstick)")]
+        [Header("Scale (world units; the planet radius is the yardstick). Life is small on purpose: trees, birds, tools and the surface camera are about 0.4x what they would be on a 'cute' planet, so the planet feels big enough for separate biomes.")]
         [Tooltip("Radius of the planet at sea level, in world units.")]
         [Range(0.25f, 4f)] public float planetRadius = 1.0f;
 
@@ -40,16 +40,16 @@ namespace Terrarium
         [Range(1f, 30f)] public float bobPeriodSeconds = 6f;
 
         [Tooltip("Height of the smallest mature tree, in world units.")]
-        [Range(0.005f, 0.1f)] public float treeHeightMin = 0.02f;
+        [Range(0.005f, 0.1f)] public float treeHeightMin = 0.008f;
 
         [Tooltip("Height of the tallest mature tree, in world units.")]
-        [Range(0.01f, 0.2f)] public float treeHeightMax = 0.06f;
+        [Range(0.01f, 0.2f)] public float treeHeightMax = 0.024f;
 
         [Tooltip("Body length of one boid, in world units.")]
-        [Range(0.001f, 0.02f)] public float boidLength = 0.004f;
+        [Range(0.001f, 0.02f)] public float boidLength = 0.0016f;
 
         [Tooltip("Camera near clip plane, in world units. Small so the camera can get right down to the surface.")]
-        [Range(0.0005f, 0.05f)] public float cameraNearClip = 0.001f;
+        [Range(0.0005f, 0.05f)] public float cameraNearClip = 0.0005f;
 
         [Header("Desk scene (world units; the desk top is the plane y = 0)")]
         [Tooltip("Desk width (x), thickness (y) and depth (z), in world units.")]
@@ -87,13 +87,13 @@ namespace Terrarium
         [Range(0.1f, 0.8f)] public float landFraction = 0.38f;
 
         [Tooltip("Size of the continents: noise blobs per planet radius. Higher = more, smaller landmasses.")]
-        [Range(0.3f, 4f)] public float continentFrequency = 1.1f;
+        [Range(0.3f, 4f)] public float continentFrequency = 2.4f;
 
         [Tooltip("Layers of fractal noise in the continents. More = finer coastline detail.")]
         [Range(1, 8)] public int terrainOctaves = 5;
 
         [Tooltip("Size of mountain-range features: noise blobs per planet radius.")]
-        [Range(0.5f, 8f)] public float ridgeFrequency = 2.6f;
+        [Range(0.5f, 8f)] public float ridgeFrequency = 5.0f;
 
         [Tooltip("How much ridged noise is added to the high ground to make mountain chains (0 = none).")]
         [Range(0f, 1.5f)] public float ridgeAmount = 0.45f;
@@ -102,7 +102,7 @@ namespace Terrarium
         [Range(0.05f, 1f)] public float reliefSpan = 0.6f;
 
         [Tooltip("How far the highest mountain stands above sea level, as a fraction of the planet radius (visual only).")]
-        [Range(0f, 0.1f)] public float terrainHeightScale = 0.035f;
+        [Range(0f, 0.1f)] public float terrainHeightScale = 0.02f;
 
         [Header("Climate (see Climate.compute)")]
         [Tooltip("Temperature of ground that gets no lamp light, before altitude and latitude cooling, in deg C.")]
@@ -259,13 +259,13 @@ namespace Terrarium
         [Range(0f, 0.6f)] public float treeWobble = 0.15f;
 
         [Tooltip("Radius of a twig tip, in world units.")]
-        [Range(0.0001f, 0.003f)] public float treeTipRadius = 0.0005f;
+        [Range(0.0001f, 0.003f)] public float treeTipRadius = 0.0002f;
 
         [Tooltip("Pipe-model exponent: r_parent^e = sum of r_child^e. About 2.5 for real trees.")]
         [Range(2f, 3f)] public float treePipeExponent = 2.5f;
 
         [Tooltip("Size of one leaf, in world units.")]
-        [Range(0.001f, 0.02f)] public float treeLeafSize = 0.0036f;
+        [Range(0.001f, 0.02f)] public float treeLeafSize = 0.0015f;
 
         [Tooltip("Most leaves one tree can show. The shader draws this many per tree slot.")]
         [Range(50, 2000)] public int treeLeavesPerTree = 700;
@@ -347,10 +347,10 @@ namespace Terrarium
         [Range(0f, 1f)] public float treeGerminationChance = 0.25f;
 
         [Tooltip("Nearest a seed falls from its tree, in radians of arc.")]
-        [Range(0.002f, 0.1f)] public float treeSeedDispersalMin = 0.012f;
+        [Range(0.002f, 0.1f)] public float treeSeedDispersalMin = 0.005f;
 
         [Tooltip("Furthest a seed falls from its tree, in radians of arc.")]
-        [Range(0.01f, 0.4f)] public float treeSeedDispersalMax = 0.09f;
+        [Range(0.01f, 0.4f)] public float treeSeedDispersalMax = 0.036f;
 
         [Tooltip("Shortest tree lifespan, in sim seconds.")]
         [Range(100f, 20000f)] public float treeLifespanMin = 1600f;
@@ -387,10 +387,10 @@ namespace Terrarium
         [Range(1, 200)] public int boidStartClusters = 24;
 
         [Tooltip("How far a boid sees its neighbours. Also the cell size of the spatial hash grid.")]
-        [Range(0.01f, 0.2f)] public float boidPerception = 0.04f;
+        [Range(0.01f, 0.2f)] public float boidPerception = 0.024f;
 
         [Tooltip("Neighbours closer than this are pushed away from.")]
-        [Range(0.002f, 0.1f)] public float boidSeparationRadius = 0.012f;
+        [Range(0.002f, 0.1f)] public float boidSeparationRadius = 0.006f;
 
         [Tooltip("Strength of the push away from crowding neighbours.")]
         [Range(0f, 10f)] public float boidSeparationWeight = 3f;
@@ -402,16 +402,16 @@ namespace Terrarium
         [Range(0f, 10f)] public float boidCohesionWeight = 0.8f;
 
         [Tooltip("Fastest a boid flies, in planet radii per sim second.")]
-        [Range(0.005f, 0.3f)] public float boidMaxSpeed = 0.06f;
+        [Range(0.005f, 0.3f)] public float boidMaxSpeed = 0.03f;
 
         [Tooltip("Slowest a boid flies (birds do not hover).")]
-        [Range(0f, 0.2f)] public float boidMinSpeed = 0.025f;
+        [Range(0f, 0.2f)] public float boidMinSpeed = 0.0125f;
 
         [Tooltip("Strongest sideways steering acceleration.")]
-        [Range(0.01f, 2f)] public float boidMaxForce = 0.25f;
+        [Range(0.01f, 2f)] public float boidMaxForce = 0.12f;
 
         [Tooltip("Height boids fly above the ground, in planet radii.")]
-        [Range(0.002f, 0.1f)] public float boidHoverHeight = 0.025f;
+        [Range(0.002f, 0.1f)] public float boidHoverHeight = 0.012f;
 
         [Tooltip("Spring pulling a boid back to its hover height (acceleration per planet radius of error).")]
         [Range(1f, 100f)] public float boidAltitudeSpring = 20f;
@@ -423,7 +423,7 @@ namespace Terrarium
         [Range(0f, 10f)] public float boidFoodWeight = 1.5f;
 
         [Tooltip("How far ahead a boid samples the canopy and temperature to find their gradients, in planet radii.")]
-        [Range(0.005f, 0.2f)] public float boidSenseReach = 0.04f;
+        [Range(0.005f, 0.2f)] public float boidSenseReach = 0.024f;
 
         [Tooltip("Temperature boids are happiest at, deg C. They drift toward ground at this temperature; nothing tells them where that is.")]
         [Range(0f, 40f)] public float boidPreferredTemp = 20f;
@@ -438,7 +438,7 @@ namespace Terrarium
         [Range(0f, 10f)] public float boidScentWeight = 1.2f;
 
         [Tooltip("How far apart the scent samples are when finding its slope, in planet radii.")]
-        [Range(0.02f, 0.5f)] public float boidScentReach = 0.12f;
+        [Range(0.02f, 0.5f)] public float boidScentReach = 0.08f;
 
         [Tooltip("How fast the scent spreads sideways: the share of each scent cell mixed with its neighbours per sim second. More = a wider glow.")]
         [Range(0f, 20f)] public float boidScentSpread = 3f;
@@ -497,7 +497,7 @@ namespace Terrarium
 
         [Header("Boids: drawing")]
         [Tooltip("Wing span of a boid, in world units.")]
-        [Range(0.001f, 0.02f)] public float boidSize = 0.004f;
+        [Range(0.001f, 0.02f)] public float boidSize = 0.0016f;
 
         [Tooltip("Smallest size a boid is drawn at on screen, in pixels, so distant flocks read as drifting ink smudges.")]
         [Range(0f, 8f)] public float boidMinPixels = 2.5f;
@@ -513,13 +513,13 @@ namespace Terrarium
         [Range(0.01f, 0.3f)] public float toolRadiusPerDistance = 0.07f;
 
         [Tooltip("Smallest brush radius, in world units (reached close to the surface).")]
-        [Range(0.002f, 0.1f)] public float toolRadiusMin = 0.01f;
+        [Range(0.002f, 0.1f)] public float toolRadiusMin = 0.004f;
 
         [Tooltip("Largest brush radius, in world units (reached in desk view).")]
         [Range(0.05f, 1f)] public float toolRadiusMax = 0.3f;
 
         [Tooltip("How high above the ground a held tool floats, in world units.")]
-        [Range(0f, 0.5f)] public float toolHoverHeight = 0.12f;
+        [Range(0f, 0.5f)] public float toolHoverHeight = 0.05f;
 
         [Tooltip("Moisture the watering can adds per second at the brush centre (moisture runs 0..1).")]
         [Range(0.05f, 5f)] public float wateringRate = 0.8f;
@@ -540,7 +540,7 @@ namespace Terrarium
         [Range(10, 5000)] public int sporeCount = 400;
 
         [Tooltip("Radius of a meteor crater, in world units.")]
-        [Range(0.03f, 0.6f)] public float meteorRadius = 0.16f;
+        [Range(0.03f, 0.6f)] public float meteorRadius = 0.10f;
 
         [Tooltip("How far a meteor digs the centre of its crater down, in height units (the terrain height runs -1..1). Deep enough on lowland to leave a crater lake.")]
         [Range(0.05f, 1f)] public float meteorDepth = 0.4f;
@@ -556,13 +556,13 @@ namespace Terrarium
 
         [Header("Camera: surface mode (see CameraRig, SurfaceNavigation)")]
         [Tooltip("Lowest camera height above the planet radius in surface mode, in world units. Must clear the highest mountain (terrainHeightScale).")]
-        [Range(0.04f, 0.3f)] public float surfaceHeightMin = 0.05f;
+        [Range(0.01f, 0.3f)] public float surfaceHeightMin = 0.03f;
 
         [Tooltip("Highest camera height in surface mode; zooming out past it returns to desk view.")]
-        [Range(0.2f, 2f)] public float surfaceHeightMax = 0.7f;
+        [Range(0.1f, 2f)] public float surfaceHeightMax = 0.32f;
 
         [Tooltip("Camera height when surface mode is entered.")]
-        [Range(0.05f, 1f)] public float surfaceHeightDefault = 0.35f;
+        [Range(0.05f, 1f)] public float surfaceHeightDefault = 0.14f;
 
         [Tooltip("How far the camera looks down from the horizon in surface mode when entered, in degrees.")]
         [Range(5f, 89f)] public float surfacePitchDefaultDegrees = 62f;
@@ -721,10 +721,10 @@ namespace Terrarium
         [Range(0f, 1f)] public float cloudMoistureInfluence = 0.7f;
 
         [Tooltip("Size of the cloud pattern: bigger numbers give more, smaller clouds.")]
-        [Range(0.5f, 8f)] public float cloudScale = 3.0f;
+        [Range(0.5f, 8f)] public float cloudScale = 4.5f;
 
         [Tooltip("How high the clouds you see overhead from the surface are, in world units above the ground. They are always kept a little above the camera, however high you zoom.")]
-        [Range(0.1f, 1.5f)] public float skyCloudHeight = 0.5f;
+        [Range(0.1f, 1.5f)] public float skyCloudHeight = 0.4f;
 
         [Tooltip("Size of the clouds seen overhead from the surface compared with the planet's cloud layer (2 = clouds half as wide, so there are more of them).")]
         [Range(0.5f, 6f)] public float skyCloudScaleMultiplier = 2.0f;

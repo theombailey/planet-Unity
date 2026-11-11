@@ -17,10 +17,10 @@ MonoBehaviour:
   planetHoverHeight: 0.4
   bobAmplitude: 0.02
   bobPeriodSeconds: 6
-  treeHeightMin: 0.02
-  treeHeightMax: 0.06
-  boidLength: 0.004
-  cameraNearClip: 0.001
+  treeHeightMin: 0.008
+  treeHeightMax: 0.024
+  boidLength: 0.0016
+  cameraNearClip: 0.0005
   deskSize: {x: 6.4, y: 0.12, z: 3.8}
   lampLightPosition: {x: -1.75, y: 2.55, z: -0.45}
   lampColor: {r: 1, g: 0.82, b: 0.58, a: 1}
@@ -32,12 +32,12 @@ MonoBehaviour:
   toolArcRadii: {x: 2.2, y: 1.35}
   levitationRingRadius: 0.8
   landFraction: 0.38
-  continentFrequency: 1.1
+  continentFrequency: 2.4
   terrainOctaves: 5
-  ridgeFrequency: 2.6
+  ridgeFrequency: 5
   ridgeAmount: 0.45
   reliefSpan: 0.6
-  terrainHeightScale: 0.035
+  terrainHeightScale: 0.02
   baseTemperature: 12
   sunGain: 65
   altitudeLapse: 25
@@ -88,9 +88,9 @@ MonoBehaviour:
   treeGravitropism: 0.12
   treePhototropism: 0.45
   treeWobble: 0.15
-  treeTipRadius: 0.0005
+  treeTipRadius: 0.0002
   treePipeExponent: 2.5
-  treeLeafSize: 0.0036
+  treeLeafSize: 0.0015
   treeLeavesPerTree: 700
   treeTwigRadiusMultiple: 2.5
   treeGrowSecondsPerStep: 2.5
@@ -117,8 +117,8 @@ MonoBehaviour:
   treeLeafRate: 0.04
   treeSeedInterval: 22
   treeGerminationChance: 0.25
-  treeSeedDispersalMin: 0.012
-  treeSeedDispersalMax: 0.09
+  treeSeedDispersalMin: 0.005
+  treeSeedDispersalMax: 0.036
   treeLifespanMin: 1600
   treeLifespanMax: 3600
   treeDeadSeconds: 45
@@ -130,24 +130,24 @@ MonoBehaviour:
   treeStepsPerFrame: 8
   boidStartCount: 800
   boidStartClusters: 24
-  boidPerception: 0.04
-  boidSeparationRadius: 0.012
+  boidPerception: 0.024
+  boidSeparationRadius: 0.006
   boidSeparationWeight: 3
   boidAlignmentWeight: 1.2
   boidCohesionWeight: 0.8
-  boidMaxSpeed: 0.06
-  boidMinSpeed: 0.025
-  boidMaxForce: 0.25
-  boidHoverHeight: 0.025
+  boidMaxSpeed: 0.03
+  boidMinSpeed: 0.0125
+  boidMaxForce: 0.12
+  boidHoverHeight: 0.012
   boidAltitudeSpring: 20
   boidAltitudeDamping: 6
   boidFoodWeight: 1.5
-  boidSenseReach: 0.04
+  boidSenseReach: 0.024
   boidPreferredTemp: 20
   boidWarmWeight: 0.8
   boidWander: 0.15
   boidScentWeight: 1.2
-  boidScentReach: 0.12
+  boidScentReach: 0.08
   boidScentSpread: 3
   boidScentDecay: 0.05
   boidEatRate: 0.035
@@ -166,28 +166,28 @@ MonoBehaviour:
   boidSeedCooldown: 15
   boidDeathOrganic: 0.05
   boidCageCount: 120
-  boidSize: 0.004
+  boidSize: 0.0016
   boidMinPixels: 2.5
   boidFlapRate: 9
   boidReadbackRealSeconds: 0.25
   toolRadiusPerDistance: 0.07
-  toolRadiusMin: 0.01
+  toolRadiusMin: 0.004
   toolRadiusMax: 0.3
-  toolHoverHeight: 0.12
+  toolHoverHeight: 0.05
   wateringRate: 0.8
   compostRate: 1.2
   compostOrganicRate: 0.6
   heatRate: 60
   frostRate: 60
   sporeCount: 400
-  meteorRadius: 0.16
+  meteorRadius: 0.1
   meteorDepth: 0.4
   meteorRimHeight: 0.12
   meteorOrganic: 2
   meteorCooldownSeconds: 1.5
-  surfaceHeightMin: 0.05
-  surfaceHeightMax: 0.7
-  surfaceHeightDefault: 0.35
+  surfaceHeightMin: 0.03
+  surfaceHeightMax: 0.32
+  surfaceHeightDefault: 0.14
   surfacePitchDefaultDegrees: 62
   surfaceMoveSpeed: 1.5
   surfaceDragSpeed: 0.0012
@@ -238,8 +238,8 @@ MonoBehaviour:
   cloudHeight: 0.05
   cloudCoverage: 0.06
   cloudMoistureInfluence: 0.7
-  cloudScale: 3
-  skyCloudHeight: 0.5
+  cloudScale: 4.5
+  skyCloudHeight: 0.4
   skyCloudScaleMultiplier: 2
   cloudDriftRadiansPerSecond: 0.05
   cloudMorphRate: 0.04
