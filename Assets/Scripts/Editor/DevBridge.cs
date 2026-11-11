@@ -11,6 +11,7 @@
 //           nothing in the file is ever executed as code.
 // Commands: refresh          re-import changed files and recompile scripts
 //           rebuild-scene    run SceneBuilder.RebuildScene
+//           build            make the standalone Windows player (Builds/Terrarium)
 //           reset-config     overwrite the SimConfig asset with the code defaults
 //           view on|off [field] [channel] [edges on|off] [grid on|off] [range min max]   field debug view
 //           paint corner|edge radius amount   paint at the cube corner/edge facing the camera
@@ -293,6 +294,10 @@ namespace Terrarium.EditorTools
                 case "play":
                     EditorApplication.isPlaying = true;
                     WriteResult("ok: entering play mode");
+                    break;
+
+                case "build":
+                    WriteResult(BuildTool.BuildWindows());
                     break;
 
                 case "stop":

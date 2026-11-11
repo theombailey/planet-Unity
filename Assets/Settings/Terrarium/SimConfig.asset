@@ -63,13 +63,14 @@ MonoBehaviour:
   physarumNutrientWeight: 3
   physarumEatRate: 0.005
   physarumEnergyPerNutrient: 40
-  physarumUpkeep: 0.1
+  physarumUpkeep: 0.13
   physarumStartEnergy: 1
   physarumReproduceEnergy: 2
   physarumBirthCost: 0.5
   physarumOceanPenalty: 2
   physarumColdLimit: -10
   physarumColdPenalty: 0.4
+  physarumSporeRain: 6
   nutrientDiffusion: 0.00002
   nutrientNetworkDiffusion: 0.0002
   nutrientTrailSaturation: 2
@@ -126,8 +127,8 @@ MonoBehaviour:
   treeTickRealSeconds: 0.15
   treeMeshesPerFrame: 2
   treeStepsPerFrame: 8
-  boidStartCount: 1500
-  boidStartClusters: 40
+  boidStartCount: 800
+  boidStartClusters: 24
   boidPerception: 0.04
   boidSeparationRadius: 0.012
   boidSeparationWeight: 3
@@ -144,10 +145,14 @@ MonoBehaviour:
   boidPreferredTemp: 20
   boidWarmWeight: 0.8
   boidWander: 0.15
-  boidEatRate: 0.05
-  boidUpkeep: 0.003
+  boidScentWeight: 1.2
+  boidScentReach: 0.12
+  boidScentSpread: 3
+  boidScentDecay: 0.05
+  boidEatRate: 0.035
+  boidUpkeep: 0.004
   boidFlightCost: 0.5
-  boidCrowdCost: 0.00015
+  boidCrowdCost: 0.0002
   boidColdLimit: -10
   boidColdCost: 0.005
   boidStartEnergy: 14

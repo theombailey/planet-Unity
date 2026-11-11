@@ -182,7 +182,7 @@ namespace Terrarium
         [Range(1f, 500f)] public float physarumEnergyPerNutrient = 40f;
 
         [Tooltip("Energy an agent burns per sim second just to stay alive.")]
-        [Range(0f, 2f)] public float physarumUpkeep = 0.1f;
+        [Range(0f, 2f)] public float physarumUpkeep = 0.13f;
 
         [Tooltip("Energy a new agent starts with, and that scattered start agents are given.")]
         [Range(0.1f, 5f)] public float physarumStartEnergy = 1f;

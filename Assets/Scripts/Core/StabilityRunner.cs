@@ -10,8 +10,8 @@
 //           shows) and never touches the simulation except to change the world
 //           seed and the clock speed, so what it proves is true of the real game.
 // Judging : After a short settling period (SettleYears), every sample must have
-//           fungus > 0, trees alive > 0 and birds > 0, and birds must stay below
-//           MaxBirdPoolFraction of the pool. The seasonal cycle is reported as
+//           fungus > 0, trees alive > 0 and birds > 0, and birds and fungus must stay below
+//           MaxBirdPoolFraction of their pools. The seasonal cycle is reported as
 //           the spread of the mean leaf cover (max - min) over each run.
 // Parameters: seeds, yearsPerSeed, settleYears, MaxBirdPoolFraction (inspector).
 // =============================================================================
@@ -37,6 +37,9 @@ namespace Terrarium
         [Tooltip("To know how big the bird pool is.")]
         [SerializeField] private BoidSystem boids;
 
+        [Tooltip("To know how big the fungus pool is.")]
+        [SerializeField] private PhysarumSystem physarum;
+
         [Tooltip("Seeds to try.")]
         [SerializeField] private int[] seeds = { 12345, 1, 2, 3, 4 };
 
@@ -51,7 +54,8 @@ namespace Terrarium
 
         private readonly StringBuilder report = new StringBuilder(2048);
         private int seedIndex;
-        private int startYear;
+        private double startTime;
+    private int framesToWait;
         private int lastSampleNumber;
         private bool running;
         private bool waitingForFirstStats;
@@ -107,6 +111,7 @@ namespace Terrarium
             simRoot.Reseed(seeds[seedIndex]);
             simRoot.Clock.SetTimeScale(16);
             waitingForFirstStats = true;
+            framesToWait = 3;
             seedFailed = false;
             leafMin = float.MaxValue;
             leafMax = float.MinValue;
@@ -129,14 +134,20 @@ namespace Terrarium
 
             if (waitingForFirstStats)
             {
-                // The first readings after a reseed can still belong to the old world: wait one sample's worth.
-                startYear = s.Year;
-                lastSampleNumber = SampleNumber(s, startYear);
-                waitingForFirstStats = false;
+                // Let the reseed take effect, then time the run from the clock itself (it restarts on a reseed).
+                framesToWait--;
+                if (framesToWait <= 0)
+                {
+                    startTime = simRoot.Clock.SimTimeSeconds;
+                    lastSampleNumber = 0;
+                    waitingForFirstStats = false;
+                }
+
                 return;
             }
 
-            int number = SampleNumber(s, startYear);
+            double elapsedYears = (simRoot.Clock.SimTimeSeconds - startTime) / simRoot.Clock.YearLengthSeconds;
+            int number = (int)(elapsedYears * SamplesPerYear);
             if (number == lastSampleNumber)
             {
                 return;
@@ -145,15 +156,10 @@ namespace Terrarium
             lastSampleNumber = number;
             Judge(s, number);
 
-            if (s.Year - startYear >= yearsPerSeed)
+            if (elapsedYears >= yearsPerSeed)
             {
                 FinishSeed();
             }
-        }
-
-        private static int SampleNumber(EcosystemStats s, int fromYear)
-        {
-            return (s.Year - fromYear) * SamplesPerYear + Mathf.FloorToInt(s.YearPhase * SamplesPerYear);
         }
 
         private void Judge(EcosystemStats s, int number)
@@ -167,7 +173,9 @@ namespace Terrarium
             {
                 int pool = boids != null ? boids.PoolSize : 0;
                 bool extinct = s.PhysarumAlive <= 0 || s.TreesAlive <= 0 || s.BoidsAlive <= 0;
-                bool exploded = pool > 0 && s.BoidsAlive > maxBirdPoolFraction * pool;
+                int fungusPool = physarum != null ? physarum.PoolSize : 0;
+                bool exploded = (pool > 0 && s.BoidsAlive > maxBirdPoolFraction * pool)
+                             || (fungusPool > 0 && s.PhysarumAlive > maxBirdPoolFraction * fungusPool);
                 if (extinct || exploded)
                 {
                     seedFailed = true;

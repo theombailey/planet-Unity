@@ -42,3 +42,6 @@ sysinfo.txt
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Local player builds
+/Builds/
