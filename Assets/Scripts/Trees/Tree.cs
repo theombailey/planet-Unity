@@ -20,6 +20,10 @@
 //           iteration of the space colonization algorithm. The tree is "mature" when
 //           it has had all the attractors it will get and nothing is left to reach.
 //
+// Genes   : each tree carries TreeGenes (see that file): its temperature optimum, crown shape (dome to
+//           cone), height, leaf size and evergreen-ness. They come from the parent seed. The crown below is
+//           an ellipsoid for a dome and a stack of narrowing slices for a cone.
+//
 // Crown   : an ellipsoid above the trunk. Its size scales with `Richness` (a slow
 //           average of how good the soil and water have been), so the same species
 //           grows into a fuller crown on good ground and a scraggly one on bad.
@@ -33,6 +37,7 @@ namespace Terrarium.Trees
     public sealed class Tree
     {
         private const int IdleStepsToMature = 3;
+        private static readonly float[] SliceWeights = new float[4];   // scratch for AddCrownSlices (single-threaded, so shared)
 
         private readonly SimConfig config;
         private int attractorsAdded;
@@ -47,25 +52,32 @@ namespace Terrarium.Trees
         /// <param name="settings">Space colonization settings for this tree.</param>
         /// <param name="simConfig">Tuning parameters.</param>
         /// <param name="rng">Random source for the tree's spin and lifespan.</param>
-        public Tree(int slot, int seed, Vector3 direction, float rootRadius, float matureHeight, SpaceColonization.Settings settings, SimConfig simConfig, ref Rng rng)
+        /// <param name="genes">The tree's inherited traits; leave unset for the plain tree.</param>
+        /// <param name="plantedAt">Sim time of planting, stamped on the trunk so it can be animated growing.</param>
+        public Tree(int slot, int seed, Vector3 direction, float rootRadius, float matureHeight, SpaceColonization.Settings settings, SimConfig simConfig, ref Rng rng, TreeGenes genes = default, float plantedAt = 0f)
         {
             config = simConfig;
             Slot = slot;
             Direction = direction.normalized;
             RootRadius = rootRadius;
             MatureHeight = matureHeight;
+            Genes = genes.Valid ? genes : TreeGenes.Default(simConfig);
             Lifespan = rng.Range(simConfig.treeLifespanMin, simConfig.treeLifespanMax);
 
             Quaternion toUp = Quaternion.FromToRotation(Vector3.up, Direction);
             Frame = toUp * Quaternion.AngleAxis(rng.Range(0f, 360f), Vector3.up);
 
             Colony = new SpaceColonization(seed, settings);
-            Colony.AddTrunk(matureHeight * simConfig.treeTrunkFraction);
+            Colony.CurrentTime = plantedAt;
+            Colony.AddTrunk(matureHeight * simConfig.treeTrunkFraction * Genes.TrunkScale);
 
             Mesh = new Mesh { name = "Tree" };
             LeafCount = 0;
             MeshDirty = true;
         }
+
+        /// <summary>The tree's inherited traits (see <see cref="TreeGenes"/>).</summary>
+        public TreeGenes Genes { get; }
 
         /// <summary>Index of this tree in the manager's slot arrays.</summary>
         public int Slot { get; }
@@ -149,7 +161,7 @@ namespace Terrarium.Trees
         public float Decay => Dead ? Mathf.Clamp01(DeadTime / config.treeDeadSeconds) : 0f;
 
         /// <summary>Crown half-width in planet units now (it grows with the tree and with richness).</summary>
-        public float CrownRadius => Mathf.Max(0.004f, config.treeCrownWidthFraction * MatureHeight * (0.55f + 0.45f * Richness) * Mathf.Max(0.25f, SizeFraction));
+        public float CrownRadius => Mathf.Max(0.004f, config.treeCrownWidthFraction * Genes.CrownWidthScale * MatureHeight * (0.55f + 0.45f * Richness) * Mathf.Max(0.25f, SizeFraction));
 
         /// <summary>Tree space to planet frame.</summary>
         public Matrix4x4 LocalToPlanet => Matrix4x4.TRS(Direction * RootRadius, Frame, Vector3.one);
@@ -159,13 +171,14 @@ namespace Terrarium.Trees
         /// of the algorithm. Returns true if the tree grew.
         /// </summary>
         /// <param name="toLightTreeSpace">Direction toward the lamp in tree space, already weighted by how high the lamp is (zero at night).</param>
-        public bool GrowStep(Vector3 toLightTreeSpace)
+        public bool GrowStep(Vector3 toLightTreeSpace, float simTime = 0f)
         {
             if (Mature || Dead)
             {
                 return false;
             }
 
+            Colony.CurrentTime = simTime;
             float scale = 0.55f + 0.45f * Richness;
             int budget = Mathf.RoundToInt(config.treeAttractorsMax * (0.15f + 0.85f * Richness));
 
@@ -173,14 +186,25 @@ namespace Terrarium.Trees
             {
                 int count = Mathf.Min(budget - attractorsAdded, Mathf.Max(3, Mathf.RoundToInt(config.treeAttractorsPerStep * (0.3f + 0.7f * Richness))));
                 float height = MatureHeight;
-                float radiusX = config.treeCrownWidthFraction * height * scale;
-                float radiusY = config.treeCrownHeightFraction * height * scale;
+                float radiusX = config.treeCrownWidthFraction * Genes.CrownWidthScale * height * scale;
+                float radiusY = config.treeCrownHeightFraction * Genes.CrownHeightScale * height * scale;
                 // The crown shifts toward the light (toLight is zero at night, so only daytime light counts). The
                 // branch-bending force alone cannot do this: every attractor is eventually reached, so a symmetric
                 // cloud always fills the same shape. Moving the cloud is what makes a tree lean.
                 Vector3 lean = toLightTreeSpace * (radiusX * 0.5f * config.treePhototropism);
-                var centre = new Vector3(lean.x, height * config.treeTrunkFraction + radiusY * 0.85f, lean.z);
-                Colony.AddAttractors(centre, new Vector3(radiusX, radiusY, radiusX), count);
+                float crownBottom = height * config.treeTrunkFraction * Genes.TrunkScale;
+
+                if (Genes.Cone < 0.001f)
+                {
+                    // A dome: one ellipsoid of attractors.
+                    var centre = new Vector3(lean.x, crownBottom + radiusY * 0.85f, lean.z);
+                    Colony.AddAttractors(centre, new Vector3(radiusX, radiusY, radiusX), count);
+                }
+                else
+                {
+                    AddCrownSlices(count, crownBottom, radiusX, radiusY, lean);
+                }
+
                 attractorsAdded += count;
             }
 
@@ -200,6 +224,43 @@ namespace Terrarium.Trees
             }
 
             return false;
+        }
+
+        // Fills the crown with attractors in a few stacked slices whose width follows the crown profile of the
+        // tree's genes: a dome at Cone 0, a cone at Cone 1. Each slice gets attractors in proportion to its
+        // volume (the square of its radius), so the cloud is evenly thick.
+        private void AddCrownSlices(int count, float crownBottom, float radiusX, float radiusY, Vector3 lean)
+        {
+            const int slices = 4;
+            float fullHeight = radiusY * 2f * 0.85f + radiusY * 0.15f;
+            float sliceHeight = fullHeight / slices;
+
+            float[] weights = SliceWeights;
+            float total = 0f;
+            for (int s = 0; s < slices; s++)
+            {
+                float profile = Genes.CrownProfile((s + 0.5f) / slices);
+                weights[s] = profile * profile;
+                total += weights[s];
+            }
+
+            int given = 0;
+            for (int s = 0; s < slices; s++)
+            {
+                int inSlice = s == slices - 1 ? count - given : Mathf.RoundToInt(count * weights[s] / total);
+                inSlice = Mathf.Max(0, Mathf.Min(inSlice, count - given));
+                given += inSlice;
+                if (inSlice == 0)
+                {
+                    continue;
+                }
+
+                float t = (s + 0.5f) / slices;
+                float width = radiusX * Genes.CrownProfile(t);
+                float slope = 1f - t;   // the lean fades toward the tip so a cone stays upright
+                var centre = new Vector3(lean.x * slope, crownBottom + sliceHeight * (s + 0.5f), lean.z * slope);
+                Colony.AddAttractors(centre, new Vector3(width, sliceHeight * 0.65f, width), inSlice);
+            }
         }
 
         /// <summary>Releases the mesh.</summary>

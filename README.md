@@ -167,7 +167,9 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 - **Fungus (physarum).** Fungal agents follow the soil's nutrients and moisture, make trails, and carry nutrients along those trails. Spores from the spore dish start new agents.
 - **Trees.** A seed takes root where the soil and temperature allow. A tree grows a branch network from the space colonization method. Its trunk and branches thicken as it grows, and its crown leans toward the lamp.
   - Trees grow faster in warm, moist, nutrient-rich soil, and slower in shade from other trees.
-  - Their leaves turn green in summer, orange and yellow in autumn, and fall in winter.
+  - **Genes and kinds.** Every tree carries six inherited traits: the temperature it grows best at, crown shape (broad dome to narrow cone), height, leaf size, how evergreen it is, and a leaf-colour drift. A seed inherits its parent's traits with a small random change, and each trait has a cost (cold-adapted trees grow slower, evergreens grow slower, tall trees need wetter ground), so no tree wins everywhere. Climate then selects: cold ground ends up with cold-adapted conifers and warm wet ground with broad leafy trees, with nobody assigning a species to a place. The F1 panel shows how many kinds exist.
+  - **Visible growth.** A new tree's trunk shoots up and each new branch grows out from its parent over a few seconds, with leaves unfurling after it, so you can watch a sapling develop (slower at 0.25x).
+  - Their leaves turn green in summer, orange and yellow in autumn, and fall in winter (evergreens keep theirs).
   - Mature trees drop seeds that may germinate nearby. Trees that starve, dry out, freeze, or overheat die, turn grey, and rot back into soil nutrients.
   - Meteors kill trees inside their blast.
 - **Birds (boids).** Flocks of tiny birds fly just above the ground. Each bird follows three local rules (stay apart from close neighbours, match its neighbours' heading, drift toward their centre) plus two appetites: it climbs toward denser tree canopy, which is its food, and it drifts toward ground at a comfortable temperature. Nobody tells a flock to visit a forest or to leave for the warm side of the planet; they follow those slopes.
@@ -200,7 +202,7 @@ All sound is generated live from maths (no audio files) and follows the ecosyste
 ## Developer notes
 
 - **Requirements:** Unity 6000.1.14f1, URP 17.1, Forward+, new Input System only. No asset-store packages.
-- **Tests:** run them from the Unity Test Runner (EditMode); all 169 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
+- **Tests:** run them from the Unity Test Runner (EditMode); all 177 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
 - **Building the game:** in Unity choose **Terrarium > Build Windows Player**. It writes `Builds/Terrarium/Terrarium.exe` (about 94 MB). Press **F3** in the built game for demo mode.
 - **Editor bridge:** a file-based command bridge (`Assets/Scripts/Editor/DevBridge.cs`) lets scripts drive the open editor (play, capture screenshots, snap the camera, use tools). It is editor-only and is not part of the game.
 - **Scene and assets:** `SceneBuilder` (editor menu) rebuilds the desk, planet, tools, and dials from code.

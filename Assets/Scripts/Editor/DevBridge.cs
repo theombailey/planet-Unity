@@ -658,6 +658,8 @@ namespace Terrarium.EditorTools
             }
 
             var report = new StringBuilder($"ok: trees {manager.TreeCount} standing, {manager.LiveCount} alive, capacity {manager.Capacity}\\n");
+            Terrarium.Trees.TreeDiversity diversity = manager.MeasureDiversity();
+            report.AppendLine($"  kinds of tree {diversity.Groups}: optimum {diversity.MinOptimum:0}..{diversity.MaxOptimum:0} C (mean {diversity.MeanOptimum:0}), cones {100f * diversity.ConeShare:0}%, evergreen {100f * diversity.EvergreenShare:0}%, optimum vs latitude r {diversity.OptimumVsLatitude:0.00}");
             int shown = 0;
             for (int slot = 0; slot < manager.Capacity && shown < 8; slot++)
             {

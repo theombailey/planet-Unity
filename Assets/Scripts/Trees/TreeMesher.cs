@@ -20,6 +20,11 @@
 //               vertex = node position + offset * radius
 //           Two triangles join each pair of neighbouring ring vertices (see Winding).
 //
+// Growth animation: every vertex also carries when its segment was born, how long it takes to
+//           grow, and where the segment starts. The wood shader uses them to slide the child-end
+//           ring out from the parent end over that time, so the mesh itself never changes
+//           between growth steps and branches visibly grow instead of popping in.
+//
 // Rebuilding, not growing: a new tip changes the radius of every branch below it
 //           (the pipe model), so the whole mesh is rebuilt after a growth step, from
 //           scratch, into shared scratch arrays and then copied into the tree's Mesh.
@@ -42,10 +47,13 @@ using UnityEngine;
 
 namespace Terrarium.Trees
 {
-    /// <summary>One leaf, in the layout the leaf shader reads (32 bytes).</summary>
+    /// <summary>One leaf, in the layout the leaf shader reads (40 bytes).</summary>
     [StructLayout(LayoutKind.Sequential)]
     public struct LeafData
     {
+        /// <summary>Size in bytes of one LeafData, for creating the GPU buffer.</summary>
+        public const int Stride = 40;
+
         /// <summary>Position in the planet's local space.</summary>
         public Vector3 Position;
 
@@ -57,6 +65,12 @@ namespace Terrarium.Trees
 
         /// <summary>A random number in [0,1) giving this leaf its own shade and drop time.</summary>
         public float Phase;
+
+        /// <summary>Sim time at which the leaf starts to unfurl (when its branch segment has finished growing).</summary>
+        public float Birth;
+
+        /// <summary>Unused; keeps the struct a multiple of 8 bytes.</summary>
+        public float Reserved;
     }
 
     /// <summary>Builds branch meshes and leaf lists from a branch skeleton, using shared scratch memory.</summary>
@@ -65,6 +79,8 @@ namespace Terrarium.Trees
         private Vector3[] vertices = new Vector3[4096];
         private Vector3[] normals = new Vector3[4096];
         private int[] triangles = new int[8192];
+        private Vector3[] growthA = new Vector3[4096];   // uv0: x = birth time, y = grow seconds, z = 1 for a vertex that grows
+        private Vector3[] growthB = new Vector3[4096];   // uv1: where the segment starts (the parent end), so a growing vertex can slide out from it
 
         /// <summary>
         /// Rebuilds a mesh from the current skeleton. Returns the number of vertices (0 for a tree with no branches yet).
@@ -97,6 +113,9 @@ namespace Terrarium.Trees
                 // off a thick limb must not start as wide as the limb, so it is capped near its own radius.
                 float startRadius = Mathf.Min(colony.RadiusOf(colony.ParentOf(node)), endRadius * 1.25f);
 
+                float birth = colony.BirthOf(node);
+                float growSeconds = colony.GrowSecondsOf(node);
+
                 Vector3 direction = (end - start).normalized;
                 Vector3 reference = Mathf.Abs(direction.y) < 0.95f ? Vector3.up : Vector3.right;
                 Vector3 u = Vector3.Cross(direction, reference).normalized;
@@ -112,6 +131,13 @@ namespace Terrarium.Trees
                     normals[v] = offset;
                     vertices[v + sides] = end + offset * endRadius;
                     normals[v + sides] = offset;
+
+                    // Growth animation data (see Wood.shader): the ring at the parent end stays put; the ring at
+                    // the child end slides out from `start` (and fattens) as the segment grows.
+                    growthA[v] = new Vector3(birth, growSeconds, 0f);
+                    growthA[v + sides] = new Vector3(birth, growSeconds, 1f);
+                    growthB[v] = start;
+                    growthB[v + sides] = start;
                     v++;
                 }
 
@@ -137,6 +163,8 @@ namespace Terrarium.Trees
             mesh.indexFormat = vertexCount > 60_000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;
             mesh.SetVertices(vertices, 0, vertexCount);
             mesh.SetNormals(normals, 0, vertexCount);
+            mesh.SetUVs(0, growthA, 0, vertexCount);
+            mesh.SetUVs(1, growthB, 0, vertexCount);
             mesh.SetTriangles(triangles, 0, indexCount, 0, true);
             return vertexCount;
         }
@@ -195,6 +223,7 @@ namespace Terrarium.Trees
                         Size = leafSize * rng.Range(0.7f, 1.3f),
                         Normal = surfaceNormal,
                         Phase = rng.NextFloat(),
+                        Birth = colony.BirthOf(i) + colony.GrowSecondsOf(i),
                     };
                     written++;
                 }
@@ -210,6 +239,8 @@ namespace Terrarium.Trees
                 int size = Mathf.NextPowerOfTwo(vertexCount);
                 Array.Resize(ref vertices, size);
                 Array.Resize(ref normals, size);
+                Array.Resize(ref growthA, size);
+                Array.Resize(ref growthB, size);
             }
 
             if (indexCount > triangles.Length)

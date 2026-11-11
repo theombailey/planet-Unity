@@ -58,6 +58,11 @@ namespace Terrarium.Trees
         private const int ThreadGroupSize = 8;
         private const float MinRootHeight = 0.015f;   // seeds do not germinate on beaches or in water
 
+        private static readonly Color BarkLightDome = new Color(0.42f, 0.29f, 0.18f);
+        private static readonly Color BarkDarkDome = new Color(0.20f, 0.13f, 0.09f);
+        private static readonly Color BarkLightCone = new Color(0.34f, 0.27f, 0.23f);
+        private static readonly Color BarkDarkCone = new Color(0.14f, 0.11f, 0.10f);
+
         [SerializeField] private SimRoot simRoot;
         [SerializeField] private FieldSet fieldSet;
         [SerializeField] private Transform planet;
@@ -84,11 +89,13 @@ namespace Terrarium.Trees
         private ComputeBuffer sampleBuffer;
         private ComputeBuffer leafBuffer;
         private ComputeBuffer stateBuffer;
+        private ComputeBuffer traitBuffer;
         private TreeGpu[] treeScratch;
         private Vector4[] sampleDirScratch;
         private LeafData[] leafScratch;
         private LeafData[] zeroLeaves;
         private Vector4[] stateScratch;
+        private Vector4[] traitScratch;
         private Mesh leafQuad;
         private MaterialPropertyBlock woodBlock;
         private MaterialPropertyBlock leafBlock;
@@ -100,14 +107,22 @@ namespace Terrarium.Trees
         private int snapshotTreeCount;
         private Vector3[] candidateDirs;
         private bool[] candidatePioneer;
+        private TreeGenes[] candidateGenes;
         private int candidateCount;
         private float snapshotSeconds;
         private float accumulatedSeconds;
         private float lastTickTime;
         private bool readbackPending;
         private bool canopyDirty;
-        private readonly Queue<Vector3> seedQueue = new Queue<Vector3>();
+        private readonly Queue<SeedPacket> seedQueue = new Queue<SeedPacket>();
         private int pioneerSeedsLeft;
+
+        /// <summary>A seed in flight: where it lands and the genes it carries.</summary>
+        private struct SeedPacket
+        {
+            public Vector3 Direction;
+            public TreeGenes Genes;
+        }
 
         /// <summary>Layout of one tree in the GPU buffer (32 bytes, matches Trees.compute).</summary>
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -239,7 +254,7 @@ namespace Terrarium.Trees
                 return "The planet is as full of trees as this quality setting allows.";
             }
 
-            Plant(localDirection.normalized, height);
+            Plant(localDirection.normalized, height, 0.5f, GenesForSeedAt(localDirection.normalized));
             return null;
         }
 
@@ -252,7 +267,7 @@ namespace Terrarium.Trees
         {
             if (seedQueue.Count < MaxSeedQueue)
             {
-                seedQueue.Enqueue(localDirection.normalized);
+                seedQueue.Enqueue(new SeedPacket { Direction = localDirection.normalized, Genes = GenesForSeedAt(localDirection.normalized) });
             }
         }
 
@@ -335,7 +350,7 @@ namespace Terrarium.Trees
                 {
                     tree.PendingSteps--;
                     budget--;
-                    if (tree.GrowStep(toLight))
+                    if (tree.GrowStep(toLight, (float)simRoot.Clock.SimTimeSeconds))
                     {
                         Enqueue(tree);
                     }
@@ -378,7 +393,7 @@ namespace Terrarium.Trees
                 mesher.Build(tree.Colony, simRoot.ActivePreset.meshRingSides, tree.Mesh);
 
                 float twig = config.treeTipRadius * unit * config.treeTwigRadiusMultiple;
-                int count = mesher.BuildLeaves(tree.Colony, tree.LocalToPlanet, tree.Direction, config.treeLeafSize * unit, twig, tree.Slot * 7919 + 13, leafScratch);
+                int count = mesher.BuildLeaves(tree.Colony, tree.LocalToPlanet, tree.Direction, config.treeLeafSize * unit * tree.Genes.LeafSize, twig, tree.Slot * 7919 + 13, leafScratch);
                 leafBuffer.SetData(leafScratch, 0, tree.Slot * config.treeLeavesPerTree, count);
 
                 // If the tree used to have more leaves than now, blank the rest of its block.
@@ -400,21 +415,31 @@ namespace Terrarium.Trees
             {
                 Tree tree = slots[i];
                 stateScratch[i] = tree == null ? Vector4.zero : new Vector4(tree.LeafAmount, tree.Autumn, tree.Health, tree.Decay);
+                traitScratch[i] = tree == null ? Vector4.zero : new Vector4(tree.Genes.LeafSize, tree.Genes.Evergreen, Mathf.InverseLerp(TreeGenes.OptimumMin, TreeGenes.OptimumMax, tree.Genes.OptimumTemperature), tree.Genes.Hue);
                 if (tree == null || tree.Mesh.vertexCount == 0)
                 {
                     continue;
                 }
 
+                // Bark: warm brown on a broad tree, greyer and darker on a conifer.
+                float cone = tree.Genes.Cone;
+                woodBlock.SetColor("_BarkLight", Color.Lerp(BarkLightDome, BarkLightCone, cone));
+                woodBlock.SetColor("_BarkDark", Color.Lerp(BarkDarkDome, BarkDarkCone, cone));
                 woodBlock.SetFloat("_Decay", tree.Decay);
                 Graphics.DrawMesh(tree.Mesh, planetToWorld * tree.LocalToPlanet, woodMaterial, 0, null, 0, woodBlock);
             }
 
             stateBuffer.SetData(stateScratch);
+            traitBuffer.SetData(traitScratch);
+
+            // Growth animation clock for the wood and leaf shaders: x = sim time, y = seconds a leaf takes to unfurl.
+            Shader.SetGlobalVector("_TreeGrowth", new Vector4((float)simRoot.Clock.SimTimeSeconds, config.treeLeafUnfurlSeconds, 0f, 0f));
 
             if (treeCount > 0)
             {
                 leafBlock.SetBuffer("_Leaves", leafBuffer);
                 leafBlock.SetBuffer("_TreeState", stateBuffer);
+                leafBlock.SetBuffer("_TreeTraits", traitBuffer);
                 leafBlock.SetMatrix("_PlanetLocalToWorld", planetToWorld);
                 leafBlock.SetInt("_LeavesPerTree", config.treeLeavesPerTree);
                 Graphics.DrawMeshInstancedProcedural(leafQuad, 0, leafMaterial, new Bounds(planet.position, Vector3.one * 8f),
@@ -476,7 +501,8 @@ namespace Terrarium.Trees
             while (candidateCount < MaxSeedCandidatesPerTick && (seedQueue.Count > 0 || pioneerSeedsLeft > 0))
             {
                 bool pioneer = seedQueue.Count == 0;
-                Vector3 direction = pioneer ? RandomDirection() : seedQueue.Dequeue();
+                SeedPacket packet = pioneer ? new SeedPacket { Direction = RandomDirection(), Genes = TreeGenes.Random(ref rng, config) } : seedQueue.Dequeue();
+                Vector3 direction = packet.Direction;
                 if (pioneer)
                 {
                     pioneerSeedsLeft--;
@@ -484,6 +510,7 @@ namespace Terrarium.Trees
 
                 candidateDirs[candidateCount] = direction;
                 candidatePioneer[candidateCount] = pioneer;
+                candidateGenes[candidateCount] = packet.Genes;
                 sampleDirScratch[n + candidateCount] = direction;
                 candidateCount++;
             }
@@ -567,7 +594,7 @@ namespace Terrarium.Trees
             for (int j = 0; j < candidateCount; j++)
             {
                 int index = (snapshotTreeCount + j) * 2;
-                TryGerminate(candidateDirs[j], candidatePioneer[j], data[index], data[index + 1], config);
+                TryGerminate(candidateDirs[j], candidatePioneer[j], candidateGenes[j], data[index], data[index + 1], config);
             }
         }
 
@@ -592,7 +619,7 @@ namespace Terrarium.Trees
                 tree.DeadTime += deltaSeconds;
                 float noLeaves = tree.LeafAmount;
                 float noTint = tree.Autumn;
-                TreeLife.UpdateLeaves(ref noLeaves, ref noTint, -50f, deltaSeconds, config);
+                TreeLife.UpdateLeaves(ref noLeaves, ref noTint, -50f, deltaSeconds, tree.Genes, config);
                 tree.LeafAmount = noLeaves;
                 if (tree.DeadTime >= config.treeDeadSeconds)
                 {
@@ -602,17 +629,17 @@ namespace Terrarium.Trees
                 return;
             }
 
-            float growth = TreeLife.GrowthRate(environment, config);
+            float growth = TreeLife.GrowthRate(environment, tree.Genes, config);
             tree.GrowthRate = growth;
 
-            float quality = TreeLife.NutrientFactor(environment.Nutrients, environment.Trail, config) * TreeLife.MoistureFactor(environment.Moisture, config);
+            float quality = TreeLife.NutrientFactor(environment.Nutrients, environment.Trail, config) * TreeLife.MoistureFactor(environment.Moisture, tree.Genes, config);
             tree.Richness = Mathf.Clamp01(Mathf.Lerp(tree.Richness, quality, Mathf.Clamp01(deltaSeconds / 40f)));
 
-            tree.Health = Mathf.Clamp01(tree.Health + TreeLife.HealthChange(environment, growth, deltaSeconds, config));
+            tree.Health = Mathf.Clamp01(tree.Health + TreeLife.HealthChange(environment, tree.Genes, growth, deltaSeconds, config));
 
             float leaf = tree.LeafAmount;
             float autumn = tree.Autumn;
-            TreeLife.UpdateLeaves(ref leaf, ref autumn, environment.Temperature, deltaSeconds, config);
+            TreeLife.UpdateLeaves(ref leaf, ref autumn, environment.Temperature, deltaSeconds, tree.Genes, config);
             tree.LeafAmount = leaf;
             tree.Autumn = autumn;
 
@@ -637,7 +664,7 @@ namespace Terrarium.Trees
             int seeds = TreeLife.SeedsDue(ref tree.SeedClock, tree.Mature, tree.Health, tree.LeafAmount, growth, deltaSeconds, config);
             for (int s = 0; s < seeds && seedQueue.Count < MaxSeedQueue; s++)
             {
-                seedQueue.Enqueue(SeedLandingPoint(tree, config));
+                seedQueue.Enqueue(new SeedPacket { Direction = SeedLandingPoint(tree, config), Genes = tree.Genes.Child(ref rng, config) });
             }
         }
 
@@ -655,7 +682,7 @@ namespace Terrarium.Trees
             return (up * Mathf.Cos(distance) + outward * Mathf.Sin(distance)).normalized;
         }
 
-        private void TryGerminate(Vector3 direction, bool pioneer, Vector4 a, Vector4 b, SimConfig config)
+        private void TryGerminate(Vector3 direction, bool pioneer, TreeGenes genes, Vector4 a, Vector4 b, SimConfig config)
         {
             if (b.z < MinRootHeight || treeCount >= capacity)
             {
@@ -672,13 +699,109 @@ namespace Terrarium.Trees
             };
 
             // Pioneer seeds (the first rain of seed on a new world) have better odds, so a forest can start.
-            float chance = TreeLife.GerminationChance(environment, config) * (pioneer ? 3f : 1f);
+            float chance = TreeLife.GerminationChance(environment, genes, config) * (pioneer ? 3f : 1f);
             if (rng.NextFloat() < chance)
             {
                 // The seedling starts out as rich as the spot it landed on, so its crown reflects the soil from the first branch.
-                float quality = TreeLife.NutrientFactor(environment.Nutrients, environment.Trail, config) * TreeLife.MoistureFactor(environment.Moisture, config);
-                Plant(direction, b.z, quality);
+                float quality = TreeLife.NutrientFactor(environment.Nutrients, environment.Trail, config) * TreeLife.MoistureFactor(environment.Moisture, genes, config);
+                Plant(direction, b.z, quality, genes);
             }
+        }
+
+        // The genes for a seed that did not come from a known tree (the seed jar, a bird): the genes of the
+        // nearest tree, with a small mutation, since a bird picks its seed up in a forest. A world with no trees
+        // yet gets fresh random genes.
+        private TreeGenes GenesForSeedAt(Vector3 direction)
+        {
+            SimConfig config = simRoot.Config;
+            Tree nearest = null;
+            float best = -2f;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                Tree tree = slots[i];
+                if (tree == null || tree.Dead)
+                {
+                    continue;
+                }
+
+                float closeness = Vector3.Dot(tree.Direction, direction);
+                if (closeness > best)
+                {
+                    best = closeness;
+                    nearest = tree;
+                }
+            }
+
+            return nearest != null ? nearest.Genes.Child(ref rng, config) : TreeGenes.Random(ref rng, config);
+        }
+
+        /// <summary>
+        /// How varied the living forest is: the spread of temperature optimums, the share of cones and evergreens, and
+        /// how many distinct kinds (temperature band x dome-or-cone x deciduous-or-evergreen) each hold at least 3% of the trees.
+        /// </summary>
+        public TreeDiversity MeasureDiversity()
+        {
+            var result = new TreeDiversity { MinOptimum = float.MaxValue, MaxOptimum = float.MinValue };
+            Span<int> kinds = stackalloc int[16];
+            double optimumSum = 0.0;
+            double latitudeSum = 0.0;
+            double optimumLatitudeSum = 0.0;
+            double optimumSquareSum = 0.0;
+            double latitudeSquareSum = 0.0;
+
+            for (int i = 0; i < slots.Length; i++)
+            {
+                Tree tree = slots[i];
+                if (tree == null || tree.Dead)
+                {
+                    continue;
+                }
+
+                TreeGenes g = tree.Genes;
+                result.Trees++;
+                optimumSum += g.OptimumTemperature;
+                float latitude = Mathf.Abs(tree.Direction.y);
+                latitudeSum += latitude;
+                optimumLatitudeSum += g.OptimumTemperature * latitude;
+                optimumSquareSum += g.OptimumTemperature * g.OptimumTemperature;
+                latitudeSquareSum += latitude * latitude;
+                result.MinOptimum = Mathf.Min(result.MinOptimum, g.OptimumTemperature);
+                result.MaxOptimum = Mathf.Max(result.MaxOptimum, g.OptimumTemperature);
+                bool cone = g.Cone > 0.5f;
+                bool evergreen = g.Evergreen > 0.5f;
+                result.ConeShare += cone ? 1f : 0f;
+                result.EvergreenShare += evergreen ? 1f : 0f;
+
+                int band = Mathf.Clamp(Mathf.FloorToInt((g.OptimumTemperature - TreeGenes.OptimumMin) / (TreeGenes.OptimumMax - TreeGenes.OptimumMin) * 4f), 0, 3);
+                kinds[band * 4 + (cone ? 2 : 0) + (evergreen ? 1 : 0)]++;
+            }
+
+            if (result.Trees == 0)
+            {
+                result.MinOptimum = 0f;
+                result.MaxOptimum = 0f;
+                return result;
+            }
+
+            result.MeanOptimum = (float)(optimumSum / result.Trees);
+
+            // Pearson correlation of optimum with |latitude|.
+            double n = result.Trees;
+            double covariance = optimumLatitudeSum / n - (optimumSum / n) * (latitudeSum / n);
+            double varianceOptimum = optimumSquareSum / n - (optimumSum / n) * (optimumSum / n);
+            double varianceLatitude = latitudeSquareSum / n - (latitudeSum / n) * (latitudeSum / n);
+            result.OptimumVsLatitude = varianceOptimum > 1e-6 && varianceLatitude > 1e-6 ? (float)(covariance / System.Math.Sqrt(varianceOptimum * varianceLatitude)) : 0f;
+            result.ConeShare /= result.Trees;
+            result.EvergreenShare /= result.Trees;
+            for (int k = 0; k < 16; k++)
+            {
+                if (kinds[k] >= 0.03f * result.Trees)
+                {
+                    result.Groups++;
+                }
+            }
+
+            return result;
         }
 
         private Vector3 RandomDirection()
@@ -692,28 +815,30 @@ namespace Terrarium.Trees
 
         // ================================================================= create / remove
 
-        private void Plant(Vector3 direction, float height, float richness = 0.5f)
+        private void Plant(Vector3 direction, float height, float richness, TreeGenes genes)
         {
             SimConfig config = simRoot.Config;
             float unit = 1f / config.planetRadius;
             int slot = freeSlots.Pop();
 
-            float matureHeight = rng.Range(config.treeHeightMin, config.treeHeightMax) * unit;
+            float matureHeight = rng.Range(config.treeHeightMin, config.treeHeightMax) * unit * genes.Height;
             var settings = new SpaceColonization.Settings
             {
                 SegmentLength = config.treeSegmentFraction * matureHeight,
                 InfluenceRadius = config.treeInfluenceFraction * matureHeight,
                 KillRadius = config.treeKillFraction * matureHeight,
-                Gravitropism = config.treeGravitropism,
+                Gravitropism = config.treeGravitropism + genes.GravitropismAdd,
                 Phototropism = config.treePhototropism,
                 Wobble = config.treeWobble,
                 MaxNodes = simRoot.ActivePreset.maxSegmentsPerTree,
                 TipRadius = config.treeTipRadius * unit,
                 PipeExponent = config.treePipeExponent,
+                SegmentGrowSeconds = config.treeSegmentGrowSeconds,
+                TrunkGrowSeconds = config.treeTrunkGrowSeconds,
             };
 
             float rootRadius = 1f + config.terrainHeightScale * Mathf.Max(height, 0f);
-            var tree = new Tree(slot, simRoot.ActiveSeed * 31 + treeCounter++, direction, rootRadius, matureHeight, settings, config, ref rng);
+            var tree = new Tree(slot, simRoot.ActiveSeed * 31 + treeCounter++, direction, rootRadius, matureHeight, settings, config, ref rng, genes, (float)simRoot.Clock.SimTimeSeconds);
             tree.PendingSteps = 1;
             tree.Richness = Mathf.Clamp01(richness);
             slots[slot] = tree;
@@ -841,7 +966,8 @@ namespace Terrarium.Trees
             treeBuffer = new ComputeBuffer(capacity, 32);
             sampleDirBuffer = new ComputeBuffer(capacity + MaxSeedCandidatesPerTick, 16);
             sampleBuffer = new ComputeBuffer((capacity + MaxSeedCandidatesPerTick) * 2, 16);
-            leafBuffer = new ComputeBuffer(capacity * leaves, 32);
+            leafBuffer = new ComputeBuffer(capacity * leaves, LeafData.Stride);
+            traitBuffer = new ComputeBuffer(capacity, 16);
             stateBuffer = new ComputeBuffer(capacity, 16);
             leafBuffer.SetData(new LeafData[capacity * leaves]);
 
@@ -853,6 +979,8 @@ namespace Terrarium.Trees
             leafScratch = new LeafData[leaves];
             zeroLeaves = new LeafData[leaves];
             stateScratch = new Vector4[capacity];
+            traitScratch = new Vector4[capacity];
+            candidateGenes = new TreeGenes[MaxSeedCandidatesPerTick];
 
             for (int i = 0; i < capacity; i++)
             {
@@ -876,6 +1004,7 @@ namespace Terrarium.Trees
             ReleaseBuffer(ref sampleBuffer);
             ReleaseBuffer(ref leafBuffer);
             ReleaseBuffer(ref stateBuffer);
+            ReleaseBuffer(ref traitBuffer);
             readbackPending = false;
         }
 
@@ -904,6 +1033,8 @@ namespace Terrarium.Trees
         {
             GUILayout.Label($"Trees: {LiveCount} alive, {TreeCount - LiveCount} dead (room for {Capacity})");
             GUILayout.Label($"  seeds waiting: {seedQueue.Count + pioneerSeedsLeft}");
+            TreeDiversity d = MeasureDiversity();
+            GUILayout.Label($"  kinds of tree: {d.Groups}  (optimum {d.MinOptimum:0}..{d.MaxOptimum:0} C, mean {d.MeanOptimum:0}; cones {100f * d.ConeShare:0}%, evergreen {100f * d.EvergreenShare:0}%, optimum vs latitude r = {d.OptimumVsLatitude:0.00})");
         }
     }
 }

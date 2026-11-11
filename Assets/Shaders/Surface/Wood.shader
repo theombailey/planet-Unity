@@ -18,7 +18,12 @@
 //     bark   = lerp( dark, light, saturate( streak * 1.3 ) )
 //     colour = lerp( bark, ash, _Decay )
 //
-// Parameters: _BarkLight, _BarkDark, _Ash, _Decay (per tree), _OutlineScale.
+// Growth  : every pass moves the child-end ring of each new branch segment out from its parent end
+//           over the segment's grow time (PainterlyPasses.hlsl, GrownPosition), driven by the
+//           global _TreeGrowth.x (sim time), so branches visibly grow and the ink outline and
+//           depth follow the animated shape.
+//
+// Parameters: _BarkLight, _BarkDark (set per tree: broad trees warm brown, conifers grey-dark), _Ash, _Decay (per tree), _OutlineScale.
 // Passes  : Forward, Outline, ShadowCaster, DepthOnly, DepthNormals (as Props.shader).
 // =============================================================================
 
@@ -38,6 +43,7 @@ Shader "Terrarium/Wood"
         Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalPipeline" "Queue" = "Geometry" }
 
         HLSLINCLUDE
+        #define TERRARIUM_GROWTH   // the branch mesh carries growth-animation data (see PainterlyPasses.hlsl)
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
@@ -77,8 +83,9 @@ Shader "Terrarium/Wood"
             ForwardVaryings ForwardVertex(PassAttributes input)
             {
                 ForwardVaryings output;
-                output.positionOS = input.positionOS.xyz;
-                output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
+                float3 grownOS = GrownPosition(input);
+                output.positionOS = grownOS;
+                output.positionWS = TransformObjectToWorld(grownOS);
                 output.positionCS = TransformWorldToHClip(output.positionWS);
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 return output;

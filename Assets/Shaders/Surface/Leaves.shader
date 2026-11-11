@@ -28,7 +28,11 @@
 //     rim          = smoothstep(0.55, 0.9, radius)
 //
 // Parameters (globals set by TreeManager each frame): _PlanetLocalToWorld, _LeavesPerTree.
-// Buffers:   _Leaves   StructuredBuffer<LeafData>   32 bytes each (see LeafData in TreeMesher.cs)
+// Genes   : _TreeTraits (per tree: leaf size, evergreen, warmth, hue) sizes the leaf, makes an evergreen's leaf a
+//           narrow needle, and tints the summer green (see TreeGenes.cs). A new leaf unfurls over _TreeGrowth.y
+//           seconds after its branch has grown (_TreeGrowth.x is the sim time).
+//
+// Buffers:   _Leaves   StructuredBuffer<LeafData>   40 bytes each (see LeafData in TreeMesher.cs)
 //            _TreeState StructuredBuffer<float4>    x leaf amount, y autumn tint, z health, w decay
 // Passes   : Forward draws; DepthOnly and DepthNormals write the leaf shapes into the depth / normals
 //            textures so the fullscreen ink edges see them. (Leaves cast no shadows.)
@@ -52,12 +56,16 @@ Shader "Terrarium/Leaves"
             float size;
             float3 normal;
             float phase;
+            float birth;      // sim time the leaf starts to unfurl
+            float reserved;
         };
 
         float _PainterlyOutlinesEnabled;   // the shared outline switch (also declared in PainterlyPasses.hlsl, which leaves do not use)
 
         StructuredBuffer<LeafData> _Leaves;
         StructuredBuffer<float4> _TreeState;
+        StructuredBuffer<float4> _TreeTraits;   // x leaf size, y evergreen, z warmth (temperature optimum, 0..1), w hue
+        float4 _TreeGrowth;                      // x sim time, y seconds a leaf takes to unfurl
         float4x4 _PlanetLocalToWorld;
         uint _LeavesPerTree;
 
@@ -74,18 +82,24 @@ Shader "Terrarium/Leaves"
             float3 positionWS : TEXCOORD0;
             float3 normalWS : TEXCOORD1;
             float2 card : TEXCOORD2;          // -1..1 across the card
-            nointerpolation float4 tint : TEXCOORD3;   // x phase, y autumn, z decay, w unused
+            nointerpolation float4 tint : TEXCOORD3;   // x phase, y autumn, z decay, w needle amount (evergreen)
+            nointerpolation float4 trait : TEXCOORD4;  // x warmth, y hue, z evergreen
         };
 
         LeafVaryings LeafVertex(LeafAttributes input)
         {
             LeafVaryings output;
             LeafData leaf = _Leaves[input.instanceID];
-            float4 state = _TreeState[input.instanceID / _LeavesPerTree];
+            uint tree = input.instanceID / _LeavesPerTree;
+            float4 state = _TreeState[tree];
+            float4 traits = _TreeTraits[tree];
 
             // Leaves fall one by one as the tree's leaf amount drops past each leaf's own phase.
             float present = smoothstep(leaf.phase, leaf.phase + 0.15, state.x);
-            float size = leaf.size * present;
+
+            // A new leaf unfurls over a few seconds once its branch has grown.
+            float unfurl = smoothstep(0.0, 1.0, saturate((_TreeGrowth.x - leaf.birth) / max(_TreeGrowth.y, 0.01)));
+            float size = leaf.size * present * unfurl * traits.x;
 
             float3 centre = mul(_PlanetLocalToWorld, float4(leaf.position, 1.0)).xyz;
             float3 cameraRight = UNITY_MATRIX_V[0].xyz;
@@ -102,14 +116,17 @@ Shader "Terrarium/Leaves"
             output.positionCS = TransformWorldToHClip(output.positionWS);
             output.normalWS = normalize(mul((float3x3)_PlanetLocalToWorld, leaf.normal));
             output.card = corner;
-            output.tint = float4(leaf.phase, state.y, state.w, 0.0);
+            output.tint = float4(leaf.phase, state.y, state.w, traits.y);
+            output.trait = float4(traits.z, traits.w, traits.y, 0.0);
             return output;
         }
 
-        // The leaf shape: an ellipse, narrower than the card is tall. Returns the "radius" (<1 inside).
-        float LeafRadius(float2 card)
+        // The leaf shape: an ellipse, narrower than the card is tall (much narrower for a needle-leaved evergreen).
+        // Returns the "radius" (<1 inside).
+        float LeafRadius(float2 card, float needle)
         {
-            return sqrt(card.x * card.x / (0.62 * 0.62) + card.y * card.y);
+            float width = lerp(0.62, 0.20, needle);
+            return sqrt(card.x * card.x / (width * width) + card.y * card.y);
         }
         ENDHLSL
 
@@ -129,7 +146,7 @@ Shader "Terrarium/Leaves"
 
             half4 LeafFragment(LeafVaryings input) : SV_Target
             {
-                float radius = LeafRadius(input.card);
+                float radius = LeafRadius(input.card, input.tint.w);
                 clip(1.0 - radius);
 
                 float phase = input.tint.x;
@@ -138,6 +155,15 @@ Shader "Terrarium/Leaves"
 
                 float shade = frac(phase * 7.31);
                 float3 summer = lerp(float3(0.17, 0.42, 0.13), float3(0.40, 0.60, 0.20), shade);
+
+                // The tree's genes colour its leaves: cold-adapted trees are cool blue-greens, warm-adapted are
+                // lush yellow-greens, evergreens are darker, and a free hue gene gives each family its own tint.
+                float warmth = input.trait.x;
+                float evergreen = input.trait.z;
+                summer *= lerp(float3(0.78, 0.95, 1.15), float3(1.15, 1.1, 0.7), warmth);
+                summer *= lerp(1.0, 0.62, evergreen);
+                summer += (input.trait.y - 0.5) * float3(0.16, 0.04, -0.10);
+                summer = saturate(summer);
                 float3 autumn = lerp(float3(0.88, 0.58, 0.12), float3(0.66, 0.20, 0.10), shade);
                 float3 dead = float3(0.38, 0.30, 0.20);
                 float3 albedo = lerp(lerp(summer, autumn, autumnTint), dead, decay);
@@ -165,7 +191,7 @@ Shader "Terrarium/Leaves"
 
             half4 DepthFragment(LeafVaryings input) : SV_Target
             {
-                clip(1.0 - LeafRadius(input.card));
+                clip(1.0 - LeafRadius(input.card, input.tint.w));
                 return 0;
             }
             ENDHLSL
@@ -183,7 +209,7 @@ Shader "Terrarium/Leaves"
 
             half4 DepthNormalsFragment(LeafVaryings input) : SV_Target
             {
-                clip(1.0 - LeafRadius(input.card));
+                clip(1.0 - LeafRadius(input.card, input.tint.w));
                 return half4(normalize(input.normalWS), 0.0);
             }
             ENDHLSL

@@ -379,6 +379,22 @@ namespace Terrarium
         [Tooltip("Most growth steps run in one frame, across all trees.")]
         [Range(1, 50)] public int treeStepsPerFrame = 8;
 
+        [Header("Trees: genes and growth animation (see TreeGenes, Wood.shader, Leaves.shader)")]
+        [Tooltip("How much a seed's traits differ from its parent's (fraction of each trait's range, per generation). 0 = every tree is the same species; higher = faster change.")]
+        [Range(0f, 0.4f)] public float treeMutation = 0.06f;
+
+        [Tooltip("How varied the first trees on a new world are (0 = all the same default tree, 1 = traits spread over their whole range).")]
+        [Range(0f, 1f)] public float treeStartVariety = 1f;
+
+        [Tooltip("Sim seconds a new branch segment takes to grow out to its full length, so you can watch trees grow.")]
+        [Range(0.5f, 60f)] public float treeSegmentGrowSeconds = 5f;
+
+        [Tooltip("Sim seconds a new leaf takes to unfurl after its branch has grown.")]
+        [Range(0.5f, 60f)] public float treeLeafUnfurlSeconds = 4f;
+
+        [Tooltip("Sim seconds a newly planted tree's trunk takes to shoot up.")]
+        [Range(1f, 120f)] public float treeTrunkGrowSeconds = 12f;
+
         [Header("Boids: flocking (see Boids.compute). Lengths are in planet radii, speeds per sim second")]
         [Tooltip("Boids alive when a world starts, scattered in small clusters on land. The population then finds its own level.")]
         [Range(0, 20000)] public int boidStartCount = 800;

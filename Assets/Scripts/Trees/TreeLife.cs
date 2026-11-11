@@ -34,6 +34,11 @@
 // Seeds: a mature, healthy, leafy, growing tree makes one seed every seedInterval seconds
 //   (a clock that only runs under those conditions).
 //
+// Genes   : every rule also has a version that takes the tree's TreeGenes (see TreeGenes.cs). The genes
+//           move the tolerable temperature range, change how much water a tree needs, how cold-hardy
+//           it is, whether it keeps its leaves in winter, and its overall vigor. The versions without
+//           genes are the plain tree and behave exactly as the game did before genes existed.
+//
 // Parameters: all from SimConfig "Trees". Units: temperature deg C, rates per sim second.
 // =============================================================================
 
@@ -63,18 +68,36 @@ namespace Terrarium.Trees
     /// <summary>Growth, health, leaf and seed rules for one tree, as pure functions.</summary>
     public static class TreeLife
     {
-        /// <summary>Temperature factor in [0,1]: 0 outside the tolerable range, 1 at the optimum.</summary>
+        /// <summary>Temperature factor in [0,1] for the plain (default) tree: 0 outside the tolerable range, 1 at the optimum.</summary>
         public static float TemperatureFactor(float temperature, SimConfig config)
         {
-            float rising = Smoothstep(config.treeTempMin, config.treeTempOptimum, temperature);
-            float falling = 1f - Smoothstep(config.treeTempOptimum, config.treeTempMax, temperature);
+            return TemperatureFactor(temperature, TreeGenes.Default(config), config);
+        }
+
+        /// <summary>
+        /// Temperature factor in [0,1] for a tree with these genes: its whole tolerable range moves with its
+        /// optimum temperature, keeping the config's width below and above the optimum.
+        /// </summary>
+        public static float TemperatureFactor(float temperature, TreeGenes genes, SimConfig config)
+        {
+            float optimum = genes.OptimumTemperature;
+            float minimum = optimum - (config.treeTempOptimum - config.treeTempMin);
+            float maximum = optimum + (config.treeTempMax - config.treeTempOptimum);
+            float rising = Smoothstep(minimum, optimum, temperature);
+            float falling = 1f - Smoothstep(optimum, maximum, temperature);
             return rising * falling;
         }
 
-        /// <summary>Moisture factor in [0,1].</summary>
+        /// <summary>Moisture factor in [0,1] for the plain tree.</summary>
         public static float MoistureFactor(float moisture, SimConfig config)
         {
             return Mathf.Clamp01((moisture - config.treeMoistureMin) / config.treeMoistureSpan);
+        }
+
+        /// <summary>Moisture factor in [0,1] for a tree with these genes: tall trees need wetter ground, cones less.</summary>
+        public static float MoistureFactor(float moisture, TreeGenes genes, SimConfig config)
+        {
+            return Mathf.Clamp01((moisture - (config.treeMoistureMin + genes.MoistureShift)) / config.treeMoistureSpan);
         }
 
         /// <summary>Nutrient factor in [0,1], with the fungal network making uptake more efficient.</summary>
@@ -90,17 +113,30 @@ namespace Terrarium.Trees
             return 1f / (1f + config.treeShadeStrength * Mathf.Max(0f, crowding));
         }
 
-        /// <summary>Growth rate g in [0,1]: the product of the four factors.</summary>
+        /// <summary>Growth rate g in [0,1] for the plain tree: the product of the four factors.</summary>
         public static float GrowthRate(TreeEnvironment environment, SimConfig config)
         {
-            return TemperatureFactor(environment.Temperature, config)
-                 * MoistureFactor(environment.Moisture, config)
+            return GrowthRate(environment, TreeGenes.Default(config), config);
+        }
+
+        /// <summary>Growth rate g for a tree with these genes: the four factors, times its vigor.</summary>
+        public static float GrowthRate(TreeEnvironment environment, TreeGenes genes, SimConfig config)
+        {
+            return TemperatureFactor(environment.Temperature, genes, config)
+                 * MoistureFactor(environment.Moisture, genes, config)
                  * NutrientFactor(environment.Nutrients, environment.Trail, config)
-                 * LightFactor(environment.Crowding, config);
+                 * LightFactor(environment.Crowding, config)
+                 * genes.Vigor(config);
+        }
+
+        /// <summary>The change of health for the plain tree over <paramref name="deltaSeconds"/>.</summary>
+        public static float HealthChange(TreeEnvironment environment, float growthRate, float deltaSeconds, SimConfig config)
+        {
+            return HealthChange(environment, TreeGenes.Default(config), growthRate, deltaSeconds, config);
         }
 
         /// <summary>The change of health over <paramref name="deltaSeconds"/>: negative under stress, positive when thriving.</summary>
-        public static float HealthChange(TreeEnvironment environment, float growthRate, float deltaSeconds, SimConfig config)
+        public static float HealthChange(TreeEnvironment environment, TreeGenes genes, float growthRate, float deltaSeconds, SimConfig config)
         {
             float stress = 0f;
             if (growthRate < config.treeStarveBelow)
@@ -113,7 +149,7 @@ namespace Terrarium.Trees
                 stress += config.treeDroughtRate;
             }
 
-            if (environment.Temperature < config.treeFreezeTemp)
+            if (environment.Temperature < config.treeFreezeTemp + genes.FreezeShift)
             {
                 stress += config.treeFreezeRate;
             }
@@ -127,10 +163,21 @@ namespace Terrarium.Trees
             return (recovery - stress) * deltaSeconds;
         }
 
-        /// <summary>Moves the leaf amount and autumn tint one step.</summary>
+        /// <summary>Moves the leaf amount and autumn tint one step, for the plain (deciduous) tree.</summary>
         public static void UpdateLeaves(ref float leafAmount, ref float autumn, float temperature, float deltaSeconds, SimConfig config)
         {
-            float target = Smoothstep(config.treeLeafDropTemp, config.treeBudTemp, temperature);
+            UpdateLeaves(ref leafAmount, ref autumn, temperature, deltaSeconds, TreeGenes.Default(config), config);
+        }
+
+        /// <summary>
+        /// Moves the leaf amount and autumn tint one step. An evergreen keeps its leaves down to a much colder
+        /// temperature (its drop and bud temperatures are lowered by up to 12 deg C) and barely turns colour.
+        /// </summary>
+        public static void UpdateLeaves(ref float leafAmount, ref float autumn, float temperature, float deltaSeconds, TreeGenes genes, SimConfig config)
+        {
+            float dropTemp = config.treeLeafDropTemp - 12f * genes.Evergreen;
+            float budTemp = config.treeBudTemp - 12f * genes.Evergreen;
+            float target = Smoothstep(dropTemp, budTemp, temperature);
             float delta = target - leafAmount;
             float step = config.treeLeafRate * deltaSeconds;
             leafAmount = Mathf.Clamp01(leafAmount + Mathf.Clamp(delta, -step, step));
@@ -142,7 +189,7 @@ namespace Terrarium.Trees
             }
             else
             {
-                float tint = 1f - Smoothstep(config.treeBudTemp, config.treeAutumnTemp, temperature);
+                float tint = (1f - Smoothstep(budTemp, config.treeAutumnTemp - 12f * genes.Evergreen, temperature)) * (1f - genes.Evergreen);
                 autumn = Mathf.Max(autumn, Mathf.Clamp01(tint));
             }
         }
@@ -169,10 +216,20 @@ namespace Terrarium.Trees
             return seeds;
         }
 
-        /// <summary>Chance that a seed landing in these conditions germinates: low, and proportional to how good the spot is.</summary>
+        /// <summary>Chance that a plain seed landing in these conditions germinates: low, and proportional to how good the spot is.</summary>
         public static float GerminationChance(TreeEnvironment environment, SimConfig config)
         {
             return config.treeGerminationChance * GrowthRate(environment, config);
+        }
+
+        /// <summary>
+        /// Chance that a seed with these genes germinates where it landed. This is where selection happens first:
+        /// a seed whose genes do not suit the place (too hot or cold for its temperature optimum, too dry for its
+        /// height) rarely takes root.
+        /// </summary>
+        public static float GerminationChance(TreeEnvironment environment, TreeGenes genes, SimConfig config)
+        {
+            return config.treeGerminationChance * GrowthRate(environment, genes, config);
         }
 
         private static float Smoothstep(float edge0, float edge1, float x)

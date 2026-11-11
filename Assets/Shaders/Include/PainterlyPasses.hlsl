@@ -42,11 +42,37 @@ float _PainterlyOutlinesEnabled;
 float3 _LightDirection;
 float3 _LightPosition;
 
+// Growth animation (only for shaders that define TERRARIUM_GROWTH before including this file, i.e. the tree wood).
+// The mesh carries, per vertex: uv0 = (birth time, grow seconds, 1 if this vertex grows), uv1 = where its segment starts.
+// The ring at the child end of a branch segment slides out from the segment's start (and fattens) over the grow
+// time, so branches visibly grow; everything else stays put.
+#ifdef TERRARIUM_GROWTH
+float4 _TreeGrowth;   // x = sim time (set by TreeManager)
+#endif
+
 struct PassAttributes
 {
     float4 positionOS : POSITION;
     float3 normalOS : NORMAL;
+#ifdef TERRARIUM_GROWTH
+    float3 growthA : TEXCOORD0;
+    float3 growthB : TEXCOORD1;
+#endif
 };
+
+// Object-space position of a vertex, with the growth animation applied where there is one.
+float3 GrownPosition(PassAttributes input)
+{
+#ifdef TERRARIUM_GROWTH
+    float grown = input.growthA.y <= 0.0 ? 1.0 : saturate((_TreeGrowth.x - input.growthA.x) / input.growthA.y);
+    grown = grown * grown * (3.0 - 2.0 * grown);
+    float3 start = input.growthB;
+    float3 slid = start + grown * (input.positionOS.xyz - start);
+    return lerp(input.positionOS.xyz, slid, input.growthA.z);
+#else
+    return input.positionOS.xyz;
+#endif
+}
 
 struct PassVaryings
 {
@@ -59,7 +85,7 @@ struct PassVaryings
 PassVaryings ShadowVertex(PassAttributes input)
 {
     PassVaryings output;
-    float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
+    float3 positionWS = TransformObjectToWorld(GrownPosition(input));
     float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
 
     // A point or spot light shines in a different direction at every vertex; a sun does not.
@@ -85,7 +111,7 @@ half4 ShadowFragment(PassVaryings input) : SV_Target
 PassVaryings DepthVertex(PassAttributes input)
 {
     PassVaryings output;
-    output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+    output.positionCS = TransformObjectToHClip(GrownPosition(input));
     output.normalWS = TransformObjectToWorldNormal(input.normalOS);
     return output;
 }
@@ -105,7 +131,7 @@ half4 DepthNormalsFragment(PassVaryings input) : SV_Target
 PassVaryings OutlineVertex(PassAttributes input)
 {
     PassVaryings output;
-    float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
+    float3 positionWS = TransformObjectToWorld(GrownPosition(input));
     float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
     float4 positionCS = TransformWorldToHClip(positionWS);
 

@@ -128,6 +128,11 @@ MonoBehaviour:
   treeTickRealSeconds: 0.15
   treeMeshesPerFrame: 2
   treeStepsPerFrame: 8
+  treeMutation: 0.06
+  treeStartVariety: 1
+  treeSegmentGrowSeconds: 5
+  treeLeafUnfurlSeconds: 4
+  treeTrunkGrowSeconds: 12
   boidStartCount: 800
   boidStartClusters: 24
   boidPerception: 0.024

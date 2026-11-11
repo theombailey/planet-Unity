@@ -86,6 +86,12 @@ namespace Terrarium.Trees
 
             /// <summary>The pipe-model exponent (about 2.5).</summary>
             public float PipeExponent;
+
+            /// <summary>Sim seconds a new branch segment takes to grow to full length (0 = it appears at once). Only used for drawing.</summary>
+            public float SegmentGrowSeconds;
+
+            /// <summary>Sim seconds the trunk takes to grow when the tree starts (0 = at once). Only used for drawing.</summary>
+            public float TrunkGrowSeconds;
         }
 
         private readonly Settings settings;
@@ -95,6 +101,9 @@ namespace Terrarium.Trees
         private readonly int[] parents;
         private readonly int[] childCounts;
         private readonly float[] radii;
+        private readonly float[] births;
+        private readonly float[] growSeconds;
+        private float nodeGrowSeconds;
 
         private readonly int[] cellHead = new int[GridSlots];
         private readonly int[] nodeNext;
@@ -109,12 +118,15 @@ namespace Terrarium.Trees
         public SpaceColonization(int seed, Settings treeSettings)
         {
             settings = treeSettings;
+            nodeGrowSeconds = treeSettings.SegmentGrowSeconds;
             rng = new Rng(seed);
 
             positions = new Vector3[settings.MaxNodes];
             parents = new int[settings.MaxNodes];
             childCounts = new int[settings.MaxNodes];
             radii = new float[settings.MaxNodes];
+            births = new float[settings.MaxNodes];
+            growSeconds = new float[settings.MaxNodes];
             nodeNext = new int[settings.MaxNodes];
             pull = new Vector3[settings.MaxNodes];
             pullCounts = new int[settings.MaxNodes];
@@ -146,6 +158,15 @@ namespace Terrarium.Trees
         /// <summary>Branch radius at a node (valid after <see cref="ComputeRadii"/>).</summary>
         public float RadiusOf(int node) => radii[node];
 
+        /// <summary>Sim time at which a node was added (set from <see cref="CurrentTime"/>); used to animate growth.</summary>
+        public float BirthOf(int node) => births[node];
+
+        /// <summary>Sim seconds the segment ending at a node takes to grow out to full length.</summary>
+        public float GrowSecondsOf(int node) => growSeconds[node];
+
+        /// <summary>The sim time stamped on nodes as they are added. The tree's owner sets it before each growth step.</summary>
+        public float CurrentTime { get; set; }
+
         /// <summary>Position of an attractor still waiting (for tests and debugging).</summary>
         public Vector3 AttractorAt(int index) => attractors[index];
 
@@ -161,12 +182,15 @@ namespace Terrarium.Trees
         /// </summary>
         public void AddTrunk(float height)
         {
+            nodeGrowSeconds = settings.TrunkGrowSeconds;
             AddRoot();
             int segments = Mathf.Max(1, Mathf.RoundToInt(height / settings.SegmentLength));
             for (int i = 1; i <= segments && !IsFull; i++)
             {
                 AddNode(new Vector3(0f, i * settings.SegmentLength, 0f), NodeCount - 1);
             }
+
+            nodeGrowSeconds = settings.SegmentGrowSeconds;
         }
 
         /// <summary>
@@ -298,6 +322,8 @@ namespace Terrarium.Trees
             int index = NodeCount++;
             positions[index] = position;
             parents[index] = parent;
+            births[index] = CurrentTime;
+            growSeconds[index] = nodeGrowSeconds;
             childCounts[index] = 0;
             if (parent >= 0)
             {
