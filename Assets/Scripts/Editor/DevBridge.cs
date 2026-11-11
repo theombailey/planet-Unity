@@ -28,6 +28,7 @@
 //           timescale 0|0.25|1|4|16          set the sim speed (Play mode)
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
 //           probe <field> <face> <x> <y>      read one field texel back from the GPU
+//           rain                              how much of the planet is being rained on, and where it rains hardest
 //           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
 //           ink on|off      enable / disable the fullscreen ink + paper pass
 //           shader-errors    list compile errors / warnings of every shader in Assets/Shaders
@@ -258,6 +259,10 @@ namespace Terrarium.EditorTools
 
                 case "probe":
                     WriteResult(ProbeField(parts));
+                    break;
+
+                case "rain":
+                    WriteResult(RainReport());
                     break;
 
                 case "camera":
@@ -809,6 +814,74 @@ namespace Terrarium.EditorTools
             }
 
             return text.ToString();
+        }
+
+        /// <summary>
+        /// "rain": reads the whole climate field back and reports how much of the planet is being rained on,
+        /// the mean moisture of the land, and the direction of the wettest rain (usable with 'surface x y z ...').
+        /// </summary>
+        private static string RainReport()
+        {
+            var fieldSet = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldSet>();
+            if (fieldSet == null || !EditorApplication.isPlaying)
+            {
+                return "error: usage 'rain' in Play mode";
+            }
+
+            RenderTexture texture = fieldSet.Get(Terrarium.Sphere.FieldId.Climate).Current;
+            RenderTexture terrain = fieldSet.Get(Terrarium.Sphere.FieldId.Terrain).Current;
+            var request = AsyncGPUReadback.Request(texture, 0);
+            var terrainRequest = AsyncGPUReadback.Request(terrain, 0);
+            request.WaitForCompletion();
+            terrainRequest.WaitForCompletion();
+            if (request.hasError || terrainRequest.hasError)
+            {
+                return "error: readback failed";
+            }
+
+            int n = texture.width;
+            int rainy = 0;
+            int total = 0;
+            double rainSum = 0.0;
+            double landMoisture = 0.0;
+            int landTexels = 0;
+            float best = -1f;
+            Vector3 bestDirection = Vector3.up;
+
+            for (int face = 0; face < 6; face++)
+            {
+                Unity.Collections.NativeArray<float> climate = request.GetData<float>(face);
+                Unity.Collections.NativeArray<float> ground = terrainRequest.GetData<float>(face);
+                for (int y = 0; y < n; y++)
+                {
+                    for (int x = 0; x < n; x++)
+                    {
+                        int index = (y * n + x) * 4;
+                        float rain = climate[index + 3];
+                        total++;
+                        rainSum += rain;
+                        if (rain > 0.05f)
+                        {
+                            rainy++;
+                        }
+
+                        if (ground[index] >= 0f)
+                        {
+                            landTexels++;
+                            landMoisture += climate[index + 1];
+                            if (rain > best)
+                            {
+                                best = rain;
+                                bestDirection = Terrarium.Sphere.CubeSphere.TexelCentreDir(face, x, y, n);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return $"ok: raining on {100.0 * rainy / total:0.0}% of the planet, mean rain {rainSum / total:0.000}, "
+                 + $"land moisture {landMoisture / Math.Max(landTexels, 1):0.000}, heaviest land rain {best:0.00} at "
+                 + $"{bestDirection.x:0.000} {bestDirection.y:0.000} {bestDirection.z:0.000}";
         }
 
         /// <summary>"camera yaw pitch distance": jumps the desk camera to a pose (Play mode).</summary>

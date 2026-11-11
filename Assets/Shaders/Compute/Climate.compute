@@ -40,6 +40,13 @@
 //     Balance of the two gives wet coasts fading to dry interiors over a
 //     distance of about sqrt(D_M / evaporation) radians.
 //
+//   RAIN (the sky feeds the ground)
+//     rain = CloudRainAmount(density, thickness)     the same cloud function the renderer draws
+//     land:   M += rainRate * rain * (1 - M) * dt    only the thick heart of a cloud rains
+//     alpha channel = rain (0..1), read by the planet shader (wet ground), the rain streaks and the sound.
+//     Because clouds form more easily over wet ground, rain feeds the wet ground that makes more
+//     cloud; evaporation and the (1 - M) factor keep that loop from running away.
+//
 //   WEATHERING (the planet's base energy input to life: rock -> nutrients)
 //     nutrients += weatherRate * M * saturate(T / 30) * (1 - nutrients / cap) * dt
 //     Warm wet rock weathers fastest; the (1 - n/cap) factor makes it level off.
@@ -54,12 +61,13 @@
 //   _SunGain (k_sun), _AltitudeLapse (k_alt), _LatitudeCooling (k_lat),
 //   _LandResponse, _OceanResponse (1/s), _HeatDiffusion (D_T, rad^2/s),
 //   _MoistureDiffusion (D_M, rad^2/s), _Evaporation (1/s), _WeatherRate (1/s),
-//   _NutrientCap. Plus _DeltaTime (sim seconds), _Resolution, _PlanetRotation,
+//   _NutrientCap, and the cloud numbers (_CloudTime, _CloudParams, _CloudWeather; see Clouds.hlsl,
+//   where w of _CloudWeather is the rain rate). Plus _DeltaTime (sim seconds), _Resolution, _PlanetRotation,
 //   _PlanetCentre, _PlanetRadius, _LampPosition.
 //
 // Buffers & textures (6-slice arrays, slice = cube face):
 //   _Terrain       read   R height (0 = shoreline), G hardness
-//   _ClimateRead   read   R temperature, G moisture, B insolation
+//   _ClimateRead   read   R temperature, G moisture, B insolation, A rain
 //   _ClimateWrite  write  same layout (ping-pong: neighbours are read, so the
 //                         result must go to a different texture)
 //   _Soil          read+write in place, R nutrients (each thread touches only
@@ -70,6 +78,7 @@
 #pragma kernel ClimateStep
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
+#include "Assets/Shaders/Include/Clouds.hlsl"
 
 Texture2DArray<float4> _Terrain;
 Texture2DArray<float4> _ClimateRead;
@@ -195,9 +204,21 @@ void ClimateStep(uint3 id : SV_DispatchThreadID)
     }
     // else: frozen land keeps its moisture as ice.
 
+    // ---- rain -----------------------------------------------------------------
+    // The same cloud function the renderer draws (Clouds.hlsl). Where the heart of a cloud hangs over the
+    // ground it rains: land gains water (snow on frozen land is held as ice, like all frozen moisture) and
+    // the strength is left in the alpha channel for the renderer and the sound.
+    float thickness;
+    float density = CloudDensity(direction, float4(temperature, moisture, 0.0, 0.0), 1.0, thickness);
+    float rain = CloudRainAmount(density, thickness);
+    if (!ocean)
+    {
+        moisture += _CloudWeather.w * rain * (1.0 - moisture) * _DeltaTime;
+    }
+
     moisture = saturate(moisture == moisture ? moisture : 0.0);
 
-    _ClimateWrite[id] = float4(temperature, moisture, insolation, 0.0);
+    _ClimateWrite[id] = float4(temperature, moisture, insolation, rain);
 
     // ---- weathering -----------------------------------------------------------
     if (!ocean)

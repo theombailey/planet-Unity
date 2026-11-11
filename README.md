@@ -176,7 +176,8 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
   - Dead birds feed the soil, and a meteor kills the birds in its blast.
 - **Life stops at a cap.** The forest is capped (about 300 trees) so the frame rate stays steady.
 - **Sky, air and clouds.** From the desk the room is dark and faintly starry, and the planet has a thin glowing rim of air (blue on the lamp's side, orange where day meets night). Dive to the surface and the room fades into the planet's own sky: blue by day, a sunset glow (orange toward the lamp, violet away from it) when the lamp is low, and stars at night.
-  - **Clouds** form where the ground is wet, so they gather over seas and rainy land and thin out over deserts, and the wind carries them round the planet. They are lit by the lamp, turn orange at sunset, and cast shadows on the ground. From the desk they are a layer round the planet; from the surface you see them in the sky.
+  - **Clouds** form where the ground is wet and the air is warm, so they gather over seas and rainy land and thin out over deserts and ice. The wind carries them round the planet while they slowly change shape, growing, merging and fading. They are lit by the lamp, turn orange at sunset, and cast shadows on the ground. From the desk they are a layer round the planet; from the surface you see them in the sky.
+  - **Rain** falls from the thick heart of a cloud (which goes dark grey). The rain waters the land under it, so wet ground makes cloud, cloud makes rain, and rain wets the ground; evaporation keeps that loop from running away. Rain is stored as a field (the climate field's alpha channel), so everything uses the same truth: wet, darker ground under a raining cloud; pen-ink rain strokes and a greyer, dimmer picture when you stand in it on the surface; and a rain hiss in the sound.
   - The sky and clouds are drawn by shaders only (nothing is painted by hand), and every colour and amount is in SimConfig under *Atmosphere and sky* and *Clouds*.
 
 ---
@@ -192,14 +193,14 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 
 ## Sound
 
-All sound is generated live from maths (no audio files) and follows the ecosystem: wind (stronger when trees are bare, whistlier when cold), a fungus drone, pentatonic bird notes (busier with more birds, an octave lower at night), leaf rustle, and a sound for each tool. The F1 panel has a volume slider.
+All sound is generated live from maths (no audio files) and follows the ecosystem: wind (stronger when trees are bare, whistlier when cold), a fungus drone, pentatonic bird notes (busier with more birds, an octave lower at night), leaf rustle, a rain hiss when you stand in rain on the surface, and a sound for each tool. The F1 panel has a volume slider.
 
 ---
 
 ## Developer notes
 
 - **Requirements:** Unity 6000.1.14f1, URP 17.1, Forward+, new Input System only. No asset-store packages.
-- **Tests:** run them from the Unity Test Runner (EditMode); all 167 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
+- **Tests:** run them from the Unity Test Runner (EditMode); all 168 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
 - **Building the game:** in Unity choose **Terrarium > Build Windows Player**. It writes `Builds/Terrarium/Terrarium.exe` (about 94 MB). Press **F3** in the built game for demo mode.
 - **Editor bridge:** a file-based command bridge (`Assets/Scripts/Editor/DevBridge.cs`) lets scripts drive the open editor (play, capture screenshots, snap the camera, use tools). It is editor-only and is not part of the game.
 - **Scene and assets:** `SceneBuilder` (editor menu) rebuilds the desk, planet, tools, and dials from code.

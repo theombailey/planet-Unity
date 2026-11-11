@@ -65,6 +65,12 @@ namespace Terrarium.Climate
         private static readonly int EvaporationId = Shader.PropertyToID("_Evaporation");
         private static readonly int WeatherRateId = Shader.PropertyToID("_WeatherRate");
         private static readonly int NutrientCapId = Shader.PropertyToID("_NutrientCap");
+        private static readonly int CloudTimeId = Shader.PropertyToID("_CloudTime");
+        private static readonly int CloudParamsId = Shader.PropertyToID("_CloudParams");
+        private static readonly int CloudWeatherId = Shader.PropertyToID("_CloudWeather");
+
+        // Sim time of the step being run: the rain uses the same moving cloud pattern the renderer draws at that moment.
+        private double stepTimeSeconds;
 
         private readonly ComputeShader shader;
         private readonly SimConfig config;
@@ -137,6 +143,7 @@ namespace Terrarium.Climate
         /// <param name="simTimeSeconds">Sim time of this step. Each step of a multi-step frame passes its own time.</param>
         public void StepAtTime(RenderTexture terrain, Field climate, RenderTexture soil, SimClock clock, Vector3 lampPosition, float deltaSeconds, double simTimeSeconds)
         {
+            stepTimeSeconds = simTimeSeconds;
             Vector3 centre = config.PlanetRestCentre;
             Quaternion rotation = PlanetOrientation.Compute(
                 clock.SpinAngleRadiansAt(simTimeSeconds),
@@ -190,6 +197,11 @@ namespace Terrarium.Climate
             shader.SetFloat(EvaporationId, config.evaporation);
             shader.SetFloat(WeatherRateId, config.weatherRate);
             shader.SetFloat(NutrientCapId, config.nutrientCap);
+
+            // The cloud pattern, identical to what AtmosphereController hands the renderer (see Clouds.hlsl).
+            shader.SetFloat(CloudTimeId, (float)(stepTimeSeconds % 100000.0));
+            shader.SetVector(CloudParamsId, new Vector4(config.cloudScale, config.cloudDriftRadiansPerSecond, config.cloudCoverage, config.cloudMoistureInfluence));
+            shader.SetVector(CloudWeatherId, new Vector4(config.cloudMorphRate, config.cloudTemperatureInfluence, config.stormCloudBrightness, config.rainRate));
         }
 
         private void Dispatch(int kernel, int resolution)

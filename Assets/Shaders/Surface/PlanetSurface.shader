@@ -25,6 +25,8 @@
 //                      a wash:  pool = 1 - 0.18 * 4 w (1 - w).
 //   OCEAN    A flat wash that deepens with depth, a few drifting ink wave
 //            strokes, and a broken white foam line at the shoreline.
+//   WET      Where it is raining the land is darkened and cooled (rain strength is the climate
+//   GROUND   field's alpha channel, written by Climate.compute).
 //   CLOUD    A cloud between a ground point and the lamp darkens the ground: the cloud
 //   SHADOWS  that shades a point is found by following the lamp ray up to the cloud
 //            layer, and its density comes from the same function as the clouds you
@@ -265,6 +267,13 @@ Shader "Terrarium/PlanetSurface"
                     albedo = lerp(albedo, _Mycelium.rgb, thread * 0.8);
                 }
 
+                // Wet ground: where it is raining (the climate field's alpha channel), land goes darker and cooler.
+                if (n > 0 && height >= 0.0)
+                {
+                    float rain = saturate(climate.a);
+                    albedo = lerp(albedo, albedo * float3(0.62, 0.70, 0.82), rain);
+                }
+
                 // Cloud shadows: darken the ground where a cloud stands between it and the lamp.
                 if (n > 0 && _CloudLayer.w > 0.5 && _CloudLayer.z > 0.0)
                 {
@@ -275,9 +284,9 @@ Shader "Terrarium/PlanetSurface"
                     {
                         float3 cloudWS = CloudAboveAlongLamp(input.positionWS, _AtmoCentre.xyz, towardLamp, _AtmoCentre.w * _CloudLayer.x);
                         float3 cloudDirection = normalize(TransformWorldToObject(cloudWS));
-                        float cloudMoisture = CS_SampleField4(_ClimateField, cloudDirection, n).g;
+                        float4 cloudClimate = CS_SampleField4(_ClimateField, cloudDirection, n);
                         float cloudThickness;
-                        float shade = CloudDensity(cloudDirection, cloudMoisture, 1.0, cloudThickness);
+                        float shade = CloudDensity(cloudDirection, cloudClimate, 1.0, cloudThickness);
                         albedo *= 1.0 - _CloudLayer.z * shade * smoothstep(0.02, 0.25, lampHeight);
                     }
                 }

@@ -235,12 +235,17 @@ MonoBehaviour:
   starDensity: 0.35
   deskHazeStrength: 1
   cloudHeight: 0.12
-  cloudCoverage: 0.22
+  cloudCoverage: 0.06
   cloudMoistureInfluence: 0.7
   cloudScale: 3
   skyCloudHeight: 0.9
   skyCloudScaleMultiplier: 2
-  cloudDriftRadiansPerSecond: 0.02
+  cloudDriftRadiansPerSecond: 0.05
+  cloudMorphRate: 0.04
+  cloudTemperatureInfluence: 0.4
+  stormCloudBrightness: 0.55
+  rainRate: 0.015
+  rainStreakStrength: 0.8
   cloudOpacity: 0.85
   cloudShadowStrength: 0.35
   dayLengthSeconds: 24

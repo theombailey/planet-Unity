@@ -13,6 +13,11 @@
 //             ATMOSPHERE hugs the planet and glows at its edge (desk view).
 //             CLOUDS     a layer a little above the ground, thicker over wet
 //                        land and sea, carried round by the wind.
+//           RAIN       the climate simulation leaves the rain strength in the alpha
+//                      channel of the climate field. This controller reads it under
+//                      the surface camera a few times a second (async, one texel),
+//                      eases toward it, and hands it to the screen-space rain
+//                      strokes (InkPaper.shader) and to the sound.
 //           The sky and the glow trade places through the camera's own
 //           desk-to-surface blend, so flying down turns the dark room into day.
 //
@@ -32,8 +37,10 @@
 //     cloud* (see the two headers in SimConfig).
 // =============================================================================
 
+using System;
 using UnityEngine;
 using Terrarium.Interaction;
+using Terrarium.Sphere;
 
 namespace Terrarium.Rendering
 {
@@ -61,6 +68,8 @@ namespace Terrarium.Rendering
         private static readonly int CloudTimeId = Shader.PropertyToID("_CloudTime");
         private static readonly int CloudParamsId = Shader.PropertyToID("_CloudParams");
         private static readonly int CloudLayerId = Shader.PropertyToID("_CloudLayer");
+        private static readonly int CloudWeatherId = Shader.PropertyToID("_CloudWeather");
+        private static readonly int RainAmountId = Shader.PropertyToID("_RainAmount");
         private static readonly int CloudShellFadeId = Shader.PropertyToID("_CloudShellFade");
         private static readonly int SkyCloudParamsId = Shader.PropertyToID("_SkyCloudParams");
         private static readonly int PlanetWorldToLocalId = Shader.PropertyToID("_PlanetWorldToLocal");
@@ -85,6 +94,29 @@ namespace Terrarium.Rendering
 
         [Tooltip("Cloud shell: a sphere, child of the planet, a little above the ground.")]
         [SerializeField] private Transform cloudShell;
+
+        [Tooltip("The simulation's fields; the rain under the surface camera is read from the climate field (optional).")]
+        [SerializeField] private FieldSet fieldSet;
+
+        [Tooltip("The sound, told how hard it is raining so it can hiss (optional).")]
+        [SerializeField] private Terrarium.Audio.GenerativeAudio sound;
+
+        private const float RainProbeSeconds = 0.25f;
+        private const float RainFadePerSecond = 0.8f;
+
+        private Action<Vector4> onRainValue;
+        private float rainTarget;
+        private float rainShown;
+        private float rainProbeTimer;
+
+        /// <summary>How hard it is raining where the surface camera stands, 0..1 (0 in desk view).</summary>
+        public float RainHere => rainShown;
+
+        private void Awake()
+        {
+            // Made once, so asking for the rain a few times a second allocates nothing.
+            onRainValue = value => rainTarget = Mathf.Clamp01(value.w);
+        }
 
         /// <summary>Draw the glowing air round the planet.</summary>
         public bool AtmosphereEnabled { get; set; } = true;
@@ -154,6 +186,9 @@ namespace Terrarium.Rendering
             Shader.SetGlobalFloat(CloudTimeId, (float)(simRoot.Clock.SimTimeSeconds % CloudTimeWrapSeconds));
             Shader.SetGlobalVector(CloudParamsId, new Vector4(config.cloudScale, config.cloudDriftRadiansPerSecond, config.cloudCoverage, config.cloudMoistureInfluence));
             Shader.SetGlobalVector(CloudLayerId, new Vector4(shellScale, config.cloudOpacity, config.cloudShadowStrength, CloudsEnabled ? 1f : 0f));
+            Shader.SetGlobalVector(CloudWeatherId, new Vector4(config.cloudMorphRate, config.cloudTemperatureInfluence, config.stormCloudBrightness, config.rainRate));
+
+            UpdateRain(config, blend);
 
             // The planet's cloud layer fades out as the camera dives; the sky then draws its own clouds from the
             // same weather. Both use the planet's own frame, so the sky shader is given a rotation to get there.
@@ -165,6 +200,34 @@ namespace Terrarium.Rendering
             {
                 cloudShell.localScale = Vector3.one * shellScale;
                 cloudShell.gameObject.SetActive(CloudsEnabled && shellFade > 0.01f);
+            }
+        }
+
+        // Reads the rain value (alpha channel of the climate field) under the surface camera a few times a second,
+        // eases toward it, and hands it to the screen-space rain streaks and to the sound.
+        private void UpdateRain(SimConfig config, float blend)
+        {
+            bool onSurface = blend > 0.5f && fieldSet != null && fieldSet.Resolution > 0;
+            if (onSurface)
+            {
+                rainProbeTimer -= Time.unscaledDeltaTime;
+                if (rainProbeTimer <= 0f)
+                {
+                    rainProbeTimer = RainProbeSeconds;
+                    Texel texel = CubeSphere.DirToTexel(cameraRig.SurfaceDirection, fieldSet.Resolution);
+                    FieldProbe.Request(fieldSet.Get(FieldId.Climate).Current, texel, onRainValue);
+                }
+            }
+            else
+            {
+                rainTarget = 0f;
+            }
+
+            rainShown = Mathf.MoveTowards(rainShown, rainTarget, RainFadePerSecond * Time.unscaledDeltaTime);
+            Shader.SetGlobalFloat(RainAmountId, rainShown * config.rainStreakStrength * Mathf.Clamp01(blend));
+            if (sound != null)
+            {
+                sound.SetRain(rainShown * Mathf.Clamp01(blend));
             }
         }
 

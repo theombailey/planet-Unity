@@ -9,6 +9,8 @@
 //           to fill, thousands of times a second. We add up a few simple layers:
 //             wind     white noise through two one-pole low-pass filters, with a
 //                      slow "gust" wobble. Colder planets whistle (brighter noise).
+//             rain     bright noise (white noise minus its own low-pass), louder the
+//                      harder it rains where the camera stands.
 //             drone    three slightly detuned sine waves (A1, A1+, E2) whose
 //                      loudness follows the fungus count and whose slow tremolo
 //                      follows the network's trail density.
@@ -76,7 +78,11 @@ namespace Terrarium.Audio
         [Tooltip("How loud the leaf rustle is.")]
         [Range(0f, 0.3f)] [SerializeField] private float leafLevel = 0.05f;
 
+        [Tooltip("How loud the rain hiss is.")]
+        [Range(0f, 0.3f)] [SerializeField] private float rainLevel = 0.1f;
+
         // ---- Written by the main thread, read by the audio thread --------------------------------------------
+        private float targetRain;
         private float targetWind;
         private float targetBright;
         private float targetDrone;
@@ -90,6 +96,8 @@ namespace Terrarium.Audio
         private float heldTimer;
 
         // ---- Owned by the audio thread ------------------------------------------------------------------------
+        private float rainGain;
+        private float rainSmooth;
         private float sampleRate = 48000f;
         private uint rngState = 2463534242u;
         private float wind1;
@@ -138,6 +146,12 @@ namespace Terrarium.Audio
             sampleRate = AudioSettings.outputSampleRate;
             targetNight = 0f;
             targetWind = 0.5f;
+        }
+
+        /// <summary>Tells the sound how hard it is raining where the camera stands (0 = dry, 1 = downpour).</summary>
+        public void SetRain(float amount)
+        {
+            targetRain = Mathf.Clamp01(amount);
         }
 
         /// <summary>Called by the tool controller whenever a tool is used.</summary>
@@ -229,6 +243,17 @@ namespace Terrarium.Audio
                 float windSample = wind2 * windGain * windLevel * gust * 14f;
                 left += windSample;
                 right += windSample;
+
+                // ---- Rain: bright noise (white noise minus its own low-pass = a hiss), swelling with the downpour ----
+                rainGain += (targetRain - rainGain) * slew;
+                if (rainGain > 0.001f)
+                {
+                    float rainNoise = Noise();
+                    rainSmooth += 0.3f * (rainNoise - rainSmooth);
+                    float rainSample = (rainNoise - rainSmooth) * rainGain * rainLevel;
+                    left += rainSample;
+                    right += Noise() * rainGain * rainLevel * 0.5f + rainSample * 0.5f;
+                }
 
                 // ---- Fungus drone: three detuned sines with a slow tremolo ----
                 tremPhase += TwoPi * 0.17f * invRate;

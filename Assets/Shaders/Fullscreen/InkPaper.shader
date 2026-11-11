@@ -30,6 +30,9 @@
 //
 //   Paper   color *= 1 - grainStrength * (1 - grain)
 //           grain = blotchy noise * fine fibres (noise stretched along x)
+//   Rain    in rain (global _RainAmount) the picture greys and dims a little and slanted pen strokes
+//           fall down the screen: columns 8 px wide, each with its own speed, rhythm and dash length,
+//           and a random chance per repeat (up to 55% in a downpour) of drawing a dash
 //   Vignette color *= 1 - vignetteStrength * smoothstep(0.35, 1.0, r)^2
 //           r = distance from the screen centre (0 centre, ~1 corners)
 //
@@ -75,6 +78,7 @@ Shader "Hidden/Terrarium/InkPaper"
             float _PainterlyVignette;
             float _PainterlyPaperEnabled;
             float _PainterlyBoilSeed;
+            float _RainAmount;   // 0..1: how hard it rains where the surface camera stands (AtmosphereController)
 
             // Distance from the camera, in world units, at a screen position.
             float EyeDepthAt(float2 uv)
@@ -107,6 +111,28 @@ Shader "Hidden/Terrarium/InkPaper"
                 return max(depthEdge, normalEdge) * _PainterlyOutlinesEnabled;
             }
 
+            // Pen-stroke rain: thin slanted dashes that fall down the screen. The screen is cut into narrow
+            // columns; each column has its own fall speed and rhythm, and in each repeat of its rhythm a random
+            // chance (higher in heavier rain) decides whether a dash is drawn. 0 = no stroke, 1 = full stroke.
+            float RainStrokes(float2 pixel)
+            {
+                float2 p = float2(pixel.x + pixel.y * 0.20, pixel.y);     // slanted
+                float column = floor(p.x / 8.0);
+                float across = frac(p.x / 8.0) - 0.5;                     // -0.5 .. 0.5 across the column
+                float rnd = Hash3(int3(column, 7, 3));
+
+                float fall = p.y + _Time.y * (500.0 + 500.0 * rnd) + rnd * 977.0;
+                float cycle = 140.0 + 120.0 * frac(rnd * 13.0);
+                float cell = floor(fall / cycle);
+                float along = frac(fall / cycle) * cycle;                 // pixels into this repeat
+                float dashLength = 14.0 + 20.0 * frac(rnd * 7.0);
+
+                float dash = smoothstep(0.0, 3.0, along) * (1.0 - smoothstep(dashLength, dashLength + 3.0, along));
+                float thin = 1.0 - smoothstep(0.10, 0.20, abs(across));
+                float present = step(1.0 - _RainAmount * 0.55, Hash3(int3(column, cell, 11)));
+                return dash * thin * present;
+            }
+
             // Paper brightness multiplier, slightly below 1 where there is a fibre or blotch.
             float PaperGrain(float2 pixel)
             {
@@ -125,6 +151,14 @@ Shader "Hidden/Terrarium/InkPaper"
                 float3 color = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv).rgb;
 
                 color = lerp(color, _PainterlyInkColor, EdgeAmount(uv, pixel));
+
+                // Rain: the whole picture greys and dims a little, and pen strokes fall through it.
+                if (_RainAmount > 0.001)
+                {
+                    float grey = dot(color, float3(0.3, 0.55, 0.15));
+                    color = lerp(color, float3(grey, grey, grey) * 0.85, saturate(_RainAmount) * 0.45);
+                    color = lerp(color, _PainterlyInkColor, RainStrokes(pixel) * 0.5);
+                }
 
                 // Paper and vignette (skipped entirely when the debug toggle is off).
                 float2 fromCentre = (uv - 0.5) * 2.0;

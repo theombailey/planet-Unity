@@ -80,6 +80,9 @@ namespace Terrarium.Interaction
         /// <summary>How far the camera is from desk view (0) to surface mode (1), smoothed. The sky uses it to mix the dark room into daylight.</summary>
         public float SurfaceBlend => Mathf.Clamp01(blend.Value);
 
+        /// <summary>Where the surface camera stands, as a unit direction in the planet's own frame (meaningful in surface mode).</summary>
+        public Vector3 SurfaceDirection => surfacePosition;
+
         /// <summary>When true, left-drag does not pan the surface (a tool or the debug brush is using the button).</summary>
         public bool LeftDragBlocked { get; set; }
 

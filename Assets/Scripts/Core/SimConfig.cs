@@ -712,7 +712,7 @@ namespace Terrarium
         [Range(0.02f, 0.5f)] public float cloudHeight = 0.12f;
 
         [Tooltip("How cloudy it is on the whole (0 = clear, 1 = overcast). Where it is wet, clouds form more easily whatever this says.")]
-        [Range(0f, 1f)] public float cloudCoverage = 0.22f;
+        [Range(0f, 1f)] public float cloudCoverage = 0.06f;
 
         [Tooltip("How much the ground's moisture decides where clouds form (0 = clouds ignore the ground, 1 = clouds sit over wet places).")]
         [Range(0f, 1f)] public float cloudMoistureInfluence = 0.7f;
@@ -727,7 +727,22 @@ namespace Terrarium
         [Range(0.5f, 6f)] public float skyCloudScaleMultiplier = 2.0f;
 
         [Tooltip("How fast the wind carries the clouds round the planet, in radians per sim second.")]
-        [Range(0f, 0.2f)] public float cloudDriftRadiansPerSecond = 0.02f;
+        [Range(0f, 0.2f)] public float cloudDriftRadiansPerSecond = 0.05f;
+
+        [Tooltip("How fast clouds change shape as they travel (they grow, merge and fade), in noise cells per sim second. 0 = clouds keep their shape.")]
+        [Range(0f, 0.3f)] public float cloudMorphRate = 0.04f;
+
+        [Tooltip("How much warm air makes more cloud and cold air less (0 = temperature does not matter).")]
+        [Range(0f, 1f)] public float cloudTemperatureInfluence = 0.4f;
+
+        [Tooltip("How dark the heart of a raining cloud is (1 = same as other cloud, lower = darker storm cloud).")]
+        [Range(0.2f, 1f)] public float stormCloudBrightness = 0.55f;
+
+        [Tooltip("How fast rain adds water to the ground under a raining cloud, in moisture per sim second at full rain. 0 = it never rains water.")]
+        [Range(0f, 0.05f)] public float rainRate = 0.015f;
+
+        [Tooltip("How many rain streaks you see on the surface in heavy rain (0 = none).")]
+        [Range(0f, 1f)] public float rainStreakStrength = 0.8f;
 
         [Tooltip("How solid the clouds look (1 = opaque white).")]
         [Range(0f, 1f)] public float cloudOpacity = 0.85f;

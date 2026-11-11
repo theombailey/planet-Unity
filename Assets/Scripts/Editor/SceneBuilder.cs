@@ -484,6 +484,8 @@ namespace Terrarium.EditorTools
             SetReference(controller, "skyDome", dome.transform);
             SetReference(controller, "atmosphereShell", glow.transform);
             SetReference(controller, "cloudShell", clouds.transform);
+            SetReference(controller, "fieldSet", host.GetComponent<FieldSet>());
+            SetReference(controller, "sound", UnityEngine.Object.FindFirstObjectByType<Terrarium.Audio.GenerativeAudio>());
             SetReference(host.GetComponent<DebugPanel>(), "atmosphere", controller);
         }
 

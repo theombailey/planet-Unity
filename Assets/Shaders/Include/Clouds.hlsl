@@ -20,12 +20,22 @@
 //             3. EDGE    a smooth step above the threshold, so a cloud has a
 //                        soft rim instead of a hard cut.
 //
-// Equations (d = direction, m = moisture 0..1, c = coverage, w = moisture influence):
+//             4. RAIN    the thick heart of a cloud rains. The climate simulation (Climate.compute)
+//                        uses this same function to add water to the ground under a raining
+//                        cloud, so rain feeds the wet ground that makes more cloud. The renderer
+//                        shows it (storm-dark cloud, wet ground, rain streaks) from the rain
+//                        value the simulation leaves in the climate field's alpha channel.
+//
+// Equations (d = direction, m = moisture 0..1, T = temperature deg C, c = coverage, w = moisture influence,
+//            k = temperature influence):
 //     angle      = driftRadiansPerSecond * simTime
 //     p          = rotateAboutY(d, angle)
-//     field      = fbm(p * scale) + 0.30 * (fbm(p * scale * 4) - 0.5)
-//     threshold  = 0.70 - 0.40 c - 0.40 w (m - 0.5)
+//     evolve     = (0.31, 0.17, 0.23) * simTime * morphRate        (the pattern slides through the noise)
+//     field      = fbm(p * scale + evolve) + 0.30 * (fbm(p * scale * 4 + 2.5 evolve) - 0.5)
+//     threshold  = 0.70 - 0.40 c - 0.40 w (m - 0.5) - 0.30 k (saturate(T / 30) - 0.4)
 //     density    = smoothstep(threshold, threshold + 0.12, field)
+//     thickness  = saturate((field - threshold) / 0.30)
+//     rain       = density * smoothstep(0.55, 0.95, thickness)
 //   Shading (CloudShade): 3 flat bands of L * 0.85 + 0.15 + bias - 0.18 * thickness, warm at sunset, dark at night
 //   Shadow: the cloud that shades a ground point P from a lamp in direction L is where the ray
 //     P + L t crosses the cloud shell of radius Rc (centre at the origin):
@@ -36,6 +46,8 @@
 //     _CloudParams  x = scale, y = drift (rad per sim second), z = coverage, w = moisture influence
 //     _CloudLayer   x = shell radius (planet-local units, 1 = surface), y = opacity,
 //                   z = shadow strength, w = 1 when clouds are switched on
+//     _CloudWeather x = morph rate (noise cells per sim second), y = temperature influence,
+//                   z = storm darkness (brightness multiplier of a raining cloud), w = rain rate (used by Climate.compute)
 //     _CloudShellFade  1 in desk view, 0 on the surface (the shell fades out; the sky draws its own clouds)
 // =============================================================================
 
@@ -48,26 +60,40 @@
 float _CloudTime;
 float4 _CloudParams;
 float4 _CloudLayer;
+float4 _CloudWeather;
 float _CloudShellFade;
 
-// Cloud density in [0,1] at a planet-local direction over ground with the given moisture.
+// Cloud density in [0,1] at a planet-local direction. `climate` is the climate field's value there
+// (x = temperature in deg C, y = moisture 0..1), so clouds follow the real weather underneath.
 // `scaleMultiplier` makes the pattern finer (the sky uses it so its clouds are smaller than the shell's).
 // `thickness` returns how far into the cloud this point is (0 at the rim, 1 deep inside).
-float CloudDensity(float3 direction, float moisture, float scaleMultiplier, out float thickness)
+float CloudDensity(float3 direction, float4 climate, float scaleMultiplier, out float thickness)
 {
     float angle = _CloudTime * _CloudParams.y;
     float s, c;
     sincos(angle, s, c);
     float3 p = float3(c * direction.x + s * direction.z, direction.y, -s * direction.x + c * direction.z);
 
+    // The pattern also slides slowly through the noise, so clouds grow, merge and fade while they travel.
+    float3 evolve = float3(0.31, 0.17, 0.23) * (_CloudTime * _CloudWeather.x);
     float scale = _CloudParams.x * scaleMultiplier;
-    float shape = Fbm(p * scale + float3(3.1, 0.0, 7.7), 5);
-    float detail = Fbm(p * (scale * 4.0) + float3(11.0, 5.0, 2.0), 3);
+    float shape = Fbm(p * scale + float3(3.1, 0.0, 7.7) + evolve, 5);
+    float detail = Fbm(p * (scale * 4.0) + float3(11.0, 5.0, 2.0) + evolve * 2.5, 3);
     float field = shape + (detail - 0.5) * 0.30;
 
-    float threshold = 0.70 - 0.40 * _CloudParams.z - 0.40 * _CloudParams.w * (moisture - 0.5);
+    // Wet ground and warm air make cloud easier to form.
+    float warmth = saturate(climate.x / 30.0) - 0.4;
+    float threshold = 0.70 - 0.40 * _CloudParams.z
+                    - 0.40 * _CloudParams.w * (climate.y - 0.5)
+                    - 0.30 * _CloudWeather.y * warmth;
     thickness = saturate((field - threshold) / 0.30);
     return smoothstep(threshold, threshold + 0.12, field);
+}
+
+// How hard it rains from a cloud, 0..1: only the thick heart of a cloud rains.
+float CloudRainAmount(float density, float thickness)
+{
+    return density * smoothstep(0.55, 0.95, thickness);
 }
 
 // Three flat tones with soft steps between them (the painterly banding, for clouds).
@@ -93,6 +119,9 @@ float3 CloudShade(float L, float thickness, float lightBias)
     float sunsetOffset = (L - 0.05) / 0.18;
     float sunset = exp(-sunsetOffset * sunsetOffset) * 0.7;
     colour = lerp(colour, float3(1.0, 0.52, 0.30) * (0.55 + 0.6 * lightness), sunset);
+    // Storm clouds: the thick heart of a cloud (where it rains) goes dark grey.
+    colour *= lerp(1.0, _CloudWeather.z, smoothstep(0.55, 0.95, thickness));
+
     float day = smoothstep(-0.20, 0.15, L);
     return lerp(float3(0.045, 0.06, 0.12), colour, day);
 }

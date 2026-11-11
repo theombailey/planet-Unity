@@ -70,7 +70,8 @@ Shader "Terrarium/Sky"
             float3 _SkyUp;
             float3 _SkyLampDir;
             float _SkyBlend;
-            float _SkyHorizonDip;           // height (dot with up) of the planet's horizon as the camera sees it; negative
+            float _RainAmount;              // 0..1, how hard it rains where the surface camera stands (AtmosphereController)
+            float _SkyHorizonDip;          // height (dot with up) of the planet's horizon as the camera sees it; negative
             float4 _SkyZenith;
             float4 _SkyHorizon;
             float4 _SkySunset;
@@ -164,18 +165,22 @@ Shader "Terrarium/Sky"
                 float3 hitDirection = normalize(hit);
                 float3 localDirection = normalize(mul((float3x3)_PlanetWorldToLocal, hitDirection));
 
-                float moisture = CS_SampleField4(_ClimateField, localDirection, (int)_FieldResolution).g;
+                float4 climate = CS_SampleField4(_ClimateField, localDirection, (int)_FieldResolution);
                 float thickness;
-                float density = CloudDensity(localDirection, moisture, _SkyCloudParams.y, thickness);
+                float density = CloudDensity(localDirection, climate, _SkyCloudParams.y, thickness);
 
                 // Fewer, thinner clouds toward the planet's horizon, where the layer is seen edge-on.
                 float alpha = density * _CloudLayer.y * smoothstep(0.0, 0.25, s) * _CloudLayer.w;
+
+                // In rain the sky clouds over you thicken and darken.
+                alpha = saturate(alpha * (1.0 + 1.2 * _RainAmount));
 
                 float3 toLamp = normalize(_TerrariumLampPosition.xyz - (centre + hit));
                 // Lit by how high the lamp is in THIS sky (mostly), so the clouds are sunlit whenever the sky is
                 // blue, whichever way you look; a little of the true angle keeps them shaded on the far side.
                 float trueLight = dot(hitDirection, toLamp);
                 colour = CloudShade(lerp(trueLight, lampHeight, 0.8), thickness, 0.70);
+                colour *= lerp(1.0, 0.65, saturate(_RainAmount));
                 return alpha;
             }
 
@@ -221,6 +226,10 @@ Shader "Terrarium/Sky"
                 float cosAngle = saturate(dot(v, lampDir));
                 float3 lampColour = lerp(float3(1.0, 0.92, 0.72), _SkySunset.rgb, saturate(twilight));
                 colour += lampColour * (pow(cosAngle, 24.0) * 0.35 + pow(cosAngle, 220.0) * 0.8) * smoothstep(-0.15, 0.05, e);
+
+                // In rain the whole sky greys and dims.
+                float rainGrey = dot(colour, float3(0.3, 0.55, 0.15));
+                colour = lerp(colour, float3(rainGrey, rainGrey, rainGrey) * 0.8, saturate(_RainAmount) * 0.5);
 
                 // Below the planet's horizon the view is of dim haze.
                 colour *= lerp(1.0, 0.55, saturate((_SkyHorizonDip - h) * 4.0));

@@ -91,8 +91,8 @@ Shader "Terrarium/Clouds"
 
             float3 direction = normalize(input.directionOS);
             int n = (int)_FieldResolution;
-            float moisture = n > 0 ? CS_SampleField4(_ClimateField, direction, n).g : 0.5;
-            float density = CloudDensity(direction, moisture, 1.0, thickness);
+            float4 climate = n > 0 ? CS_SampleField4(_ClimateField, direction, n) : float4(15.0, 0.5, 0.0, 0.0);
+            float density = CloudDensity(direction, climate, 1.0, thickness);
 
             // Fade clouds that are right next to the camera; wider when the camera is above the layer.
             float cameraRadius = distance(_WorldSpaceCameraPos, _AtmoCentre.xyz);

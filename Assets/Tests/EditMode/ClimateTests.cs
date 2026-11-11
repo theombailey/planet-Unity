@@ -7,6 +7,7 @@
 //           - over a year the warm and cold hemispheres swap (the seasons),
 //           - ocean is saturated and wet coasts fade to drier inland,
 //           - warm wet land weathers into nutrients; ocean does not,
+//           - rain falls under clouds only and leaves the land wetter,
 //           - every value stays in range and finite,
 //           - the result does not depend on the field resolution.
 //           The climate is run through the same code paths the game uses.
@@ -200,8 +201,57 @@ namespace Terrarium.Tests
                     Assert.That(climate[i], Is.InRange(-80f, 90f), $"Temperature at face {face} ({x},{y}).");
                     Assert.That(climate[i + 1], Is.InRange(0f, 1f), $"Moisture at face {face} ({x},{y}).");
                     Assert.That(climate[i + 2], Is.InRange(0f, 1f), $"Insolation at face {face} ({x},{y}).");
+                    Assert.That(climate[i + 3], Is.InRange(0f, 1f), $"Rain at face {face} ({x},{y}).");
                     Assert.That(soil[i], Is.InRange(0f, world.Config.nutrientCap + 1e-4f), $"Nutrients at face {face} ({x},{y}).");
                 });
+            }
+        }
+
+        [Test]
+        public void Climate_RainFallsOnlyUnderCloud_AndWatersTheLand()
+        {
+            // Two identical worlds, one where rain waters the ground and one where it does not. The rain rate is
+            // exaggerated on purpose: in the real game clouds already sit over wet ground, so the real rate only
+            // tops up land that is nearly full, which is too small a difference to measure reliably here.
+            float[] wet = RunHalfAYear(rainRate: 0.5f, out float[] wetTerrain);
+            float[] dry = RunHalfAYear(rainRate: 0f, out _);
+
+            double wetMoisture = 0.0;
+            double dryMoisture = 0.0;
+            int rainyLand = 0;
+            int rainy = 0;
+            int total = wet.Length / 4;
+            for (int i = 0; i < wet.Length; i += 4)
+            {
+                if (wet[i + 3] > 0.05f)
+                {
+                    rainy++;
+                }
+
+                // Land that is being rained on right now: how wet is it with rain, and without?
+                if (wet[i + 3] > 0.3f && wetTerrain[i] >= 0f)
+                {
+                    wetMoisture += wet[i + 1];
+                    dryMoisture += dry[i + 1];
+                    rainyLand++;
+                }
+            }
+
+            Assert.Greater(rainy / (float)total, 0.005f, "Some of the planet should be under a raining cloud.");
+            Assert.Less(rainy / (float)total, 0.6f, "It should not rain everywhere at once.");
+            Assert.Greater(rainyLand, 10, "There should be raining land to look at.");
+            Assert.Greater(wetMoisture / rainyLand, dryMoisture / rainyLand + 0.01,
+                "Land under a raining cloud should be wetter than the same land in a world without rain water.");
+        }
+
+        private static float[] RunHalfAYear(float rainRate, out float[] terrain)
+        {
+            using (var world = new WorldHarness(Resolution, config => config.rainRate = rainRate))
+            {
+                world.Generate(seed: 5, landFraction: LandFraction, spinUp: true);
+                world.Run(0.0, world.Clock.YearLengthSeconds * 0.5, 0.1f);
+                terrain = world.Read(world.Terrain.Current);
+                return world.Read(world.Climate.Current);
             }
         }
 
