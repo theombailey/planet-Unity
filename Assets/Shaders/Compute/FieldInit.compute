@@ -28,17 +28,22 @@
 //        shoreline, land runs 0..1 and sea floor 0..-1.
 //
 // Equations:
-//   raw    = Fbm(d * f + offset) + ridgeAmount * RidgedFbm(d * fr + offset) * smoothstep(0.45, 0.65, Fbm)
+//   raw    = Fbm(d * f + offset) + ridgeAmount * RidgedFbm(d * fr + offset)^ridgeSharpness * smoothstep(0.45, 0.65, Fbm)
+//            (the power narrows the crests, so mountain chains are sharp ridges, not broad swells)
 //   bin    = floor( raw / HISTOGRAM_RANGE * 1024 )
 //   sea    = raw value of the bin where the top-down running count reaches landFraction * total
-//   height = clamp( (raw - sea) / reliefSpan, -1, 1 )
+//   s      = (raw - sea) / reliefSpan
+//   height = max(s, -1)                                                  for the sea floor
+//   height = saturate(s)^(1 + mountainSharpness) + cragAmount * (ridged(d * cragFrequency) - 0.45) * smoothstep(0.25, 0.65, .)
+//            for land: lowlands stay flat and low, peaks stay high, and the high ground is roughened into crags
 //   hardness (G channel) = separate low-frequency noise, 0..1 (how rock-like the ground is)
 //
 // Parameters:
 //   _Resolution        texels along one face edge
 //   _SourceResolution  (Resample) resolution of the field being copied from
 //   _SeedOffset        shifts the noise; derived from the world seed on the CPU
-//   _ContinentFrequency (f), _TerrainOctaves, _RidgeFrequency (fr), _RidgeAmount
+//   _ContinentFrequency (f), _TerrainOctaves, _RidgeFrequency (fr), _RidgeAmount, _RidgeSharpness,
+//   _MountainSharpness, _CragAmount, _CragFrequency
 //   _LandFraction      0..1, share of the surface above sea level
 //   _ReliefSpan        raw-noise distance that maps to a height of 1
 //
@@ -77,6 +82,10 @@ float _ContinentFrequency;
 int _TerrainOctaves;
 float _RidgeFrequency;
 float _RidgeAmount;
+float _RidgeSharpness;
+float _MountainSharpness;
+float _CragAmount;
+float _CragFrequency;
 float _LandFraction;
 float _ReliefSpan;
 
@@ -142,7 +151,7 @@ void TerrainRaw(uint3 id : SV_DispatchThreadID)
     float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
 
     float continents = Fbm(direction * _ContinentFrequency + _SeedOffset, _TerrainOctaves);
-    float ridges = RidgedFbm(direction * _RidgeFrequency + _SeedOffset.zxy, 4);
+    float ridges = pow(RidgedFbm(direction * _RidgeFrequency + _SeedOffset.zxy, 5), _RidgeSharpness);
     float raw = continents + _RidgeAmount * ridges * smoothstep(0.45, 0.65, continents);
 
     float hardness = Fbm(direction * (_ContinentFrequency * 2.3) + _SeedOffset.yzx, 3);
@@ -182,6 +191,23 @@ void TerrainFinalise(uint3 id : SV_DispatchThreadID)
     }
 
     float4 value = _Target[id];
-    float height = clamp((value.r - _SeaLevel[0]) / _ReliefSpan, -1.0, 1.0);
+    float scaled = (value.r - _SeaLevel[0]) / _ReliefSpan;
+
+    float height;
+    if (scaled <= 0.0)
+    {
+        height = max(scaled, -1.0);
+    }
+    else
+    {
+        // Land: raise the shape to a power above 1 so lowlands stay low and flat while the peaks stay high, then
+        // roughen the high ground with a fine ridged term so mountains get crags instead of smooth domes.
+        float land = pow(saturate(scaled), 1.0 + _MountainSharpness);
+        float3 direction = CS_TexelCentreDir(int3(id), _Resolution);
+        float crags = RidgedFbm(direction * _CragFrequency + _SeedOffset.yxz, 3);
+        land += _CragAmount * (crags - 0.45) * smoothstep(0.25, 0.65, land);
+        height = clamp(land, 0.0005, 1.0);
+    }
+
     _Target[id] = float4(height, value.g, 0.0, 0.0);
 }

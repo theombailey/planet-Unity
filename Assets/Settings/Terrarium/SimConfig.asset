@@ -35,9 +35,14 @@ MonoBehaviour:
   continentFrequency: 2.4
   terrainOctaves: 5
   ridgeFrequency: 5
-  ridgeAmount: 0.45
+  ridgeAmount: 0.6
+  ridgeSharpness: 1.8
+  mountainSharpness: 0.7
+  cragAmount: 0.22
+  cragFrequency: 18
   reliefSpan: 0.6
-  terrainHeightScale: 0.02
+  terrainHeightScale: 0.03
+  groundDetail: 1
   baseTemperature: 12
   sunGain: 65
   altitudeLapse: 25
@@ -190,7 +195,7 @@ MonoBehaviour:
   meteorRimHeight: 0.12
   meteorOrganic: 2
   meteorCooldownSeconds: 1.5
-  surfaceHeightMin: 0.03
+  surfaceHeightMin: 0.045
   surfaceHeightMax: 0.32
   surfaceHeightDefault: 0.14
   surfacePitchDefaultDegrees: 62
@@ -199,7 +204,7 @@ MonoBehaviour:
   surfaceLookDegreesPerPixel: 0.2
   surfaceBlendOmega: 3.2
   spinDialRange: 4
-  planetMeshSubdivisions: 128
+  planetMeshSubdivisions: 256
   debugBrushRadius: 0.18
   debugBrushStrength: 1.5
   inkColor: {r: 0.1, g: 0.07, b: 0.08, a: 1}
@@ -238,6 +243,8 @@ MonoBehaviour:
   skyZenithColor: {r: 0.09, g: 0.29, b: 0.88, a: 1}
   skyHorizonColor: {r: 0.5, g: 0.74, b: 0.97, a: 1}
   nightSkyColor: {r: 0.012, g: 0.022, b: 0.07, a: 1}
+  skyFadeStartHeight: 0.3
+  skyFadeEndHeight: 0.9
   starDensity: 0.35
   deskHazeStrength: 1
   cloudHeight: 0.05

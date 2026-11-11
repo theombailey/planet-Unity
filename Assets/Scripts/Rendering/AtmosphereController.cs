@@ -22,10 +22,12 @@
 //           desk-to-surface blend, so flying down turns the dark room into day.
 //
 // Equations (b = camera surface blend 0..1, c = camera, P = planet centre, R = planet radius):
-//     up (for the sky)    = normalize( slerp( worldUp, normalize(c - P), b ) )
+//     up (for the sky)    = normalize( slerp( worldUp, normalize(c - P), skyWeight ) )
 //     lamp direction      = normalize( lampPosition - c )
 //     horizon dip         = -sqrt(1 - (R / |c - P|)^2)   (the planet is small, so its horizon is far below level)
-//     glow fade           = 1 - b
+//     sky weight          = 1 - smoothstep(skyFadeStart, skyFadeEnd, camera height above the ground)
+//                           (how much of the planet's sky you are in; the sky, glow and cloud layer all use it)
+//     glow fade           = 1 - skyWeight
 //     cloud shell scale   = 1 + cloudHeight / R         (it is a child of the planet, scaled by R)
 //     cloud time          = sim time (so the wind stops when the sim is paused)
 //
@@ -142,9 +144,15 @@ namespace Terrarium.Rendering
             float radius = planet.lossyScale.x;
             float blend = cameraRig.SurfaceBlend;
 
+            // How much of the PLANET's sky you are in. It depends on how high the camera is above the ground, not on the
+            // camera blend, so the blue sky is gone by the time you have risen clear of the planet and you see the
+            // workshop, instead of the sky lingering all the way back to the desk.
+            float cameraHeight = Mathf.Max(0f, (cameraPosition - centre).magnitude - radius);
+            float skyWeight = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(config.skyFadeStartHeight, Mathf.Max(config.skyFadeEndHeight, config.skyFadeStartHeight + 0.01f), cameraHeight));
+
             // Where "up" is for the sky: world up from the desk, the planet's local up from the surface.
             Vector3 surfaceUp = (cameraPosition - centre).normalized;
-            Vector3 up = Vector3.Slerp(Vector3.up, surfaceUp, blend);
+            Vector3 up = Vector3.Slerp(Vector3.up, surfaceUp, skyWeight);
             Vector3 lampDirection = (lamp.position - cameraPosition).normalized;
 
             Shader.SetGlobalVector(AtmoCentreId, new Vector4(centre.x, centre.y, centre.z, radius));
@@ -159,7 +167,7 @@ namespace Terrarium.Rendering
             // Sky.
             Shader.SetGlobalVector(SkyUpId, up);
             Shader.SetGlobalVector(SkyLampDirId, lampDirection);
-            Shader.SetGlobalFloat(SkyBlendId, blend);
+            Shader.SetGlobalFloat(SkyBlendId, skyWeight);
 
             // How far below level the planet's horizon is for this camera: -sin(acos(R / r)) = -sqrt(1 - (R/r)^2).
             float distanceToCentre = Mathf.Max((cameraPosition - centre).magnitude, radius);
@@ -180,7 +188,7 @@ namespace Terrarium.Rendering
             }
 
             // Atmosphere glow. The shell is only a bounding shape, a little larger than the real shell of air.
-            Shader.SetGlobalVector(AtmoParamsId, new Vector4(config.atmosphereHeight, config.atmosphereStrength, 1f - blend, 0f));
+            Shader.SetGlobalVector(AtmoParamsId, new Vector4(config.atmosphereHeight, config.atmosphereStrength, 1f - skyWeight, 0f));
             Shader.SetGlobalColor(AtmoColorId, config.atmosphereColor.linear);
             if (atmosphereShell != null)
             {
@@ -200,7 +208,7 @@ namespace Terrarium.Rendering
 
             // The planet's cloud layer fades out as the camera dives; the sky then draws its own clouds from the
             // same weather. Both use the planet's own frame, so the sky shader is given a rotation to get there.
-            float shellFade = 1f - blend;
+            float shellFade = 1f - skyWeight;
             Shader.SetGlobalFloat(CloudShellFadeId, shellFade);
             Shader.SetGlobalVector(SkyCloudParamsId, new Vector4(config.skyCloudHeight, config.skyCloudScaleMultiplier, CloudsEnabled ? 1f : 0f, 0f));
             Shader.SetGlobalMatrix(PlanetWorldToLocalId, Matrix4x4.Rotate(Quaternion.Inverse(planet.rotation)));

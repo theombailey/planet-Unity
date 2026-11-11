@@ -66,6 +66,7 @@ namespace Terrarium.Rendering
         private static readonly int PaperStrengthId = Shader.PropertyToID("_PainterlyPaperStrength");
         private static readonly int VignetteId = Shader.PropertyToID("_PainterlyVignette");
         private static readonly int PlanetHeightScaleId = Shader.PropertyToID("_PlanetHeightScale");
+        private static readonly int GroundDetailId = Shader.PropertyToID("_GroundDetail");
         private static readonly int BoilSeedId = Shader.PropertyToID("_PainterlyBoilSeed");
         private static readonly int BandsEnabledId = Shader.PropertyToID("_PainterlyBandsEnabled");
         private static readonly int HatchEnabledId = Shader.PropertyToID("_PainterlyHatchEnabled");
@@ -112,6 +113,7 @@ namespace Terrarium.Rendering
             Shader.SetGlobalFloat(PaperStrengthId, config.paperGrainStrength);
             Shader.SetGlobalFloat(VignetteId, config.vignetteStrength);
             Shader.SetGlobalFloat(PlanetHeightScaleId, config.terrainHeightScale);
+            Shader.SetGlobalFloat(GroundDetailId, config.groundDetail);
 
             bool boiling = BoilEnabled && Application.isPlaying;
             Shader.SetGlobalFloat(BoilSeedId, boiling ? Mathf.Floor(Time.unscaledTime * config.boilRateHz) : 0f);

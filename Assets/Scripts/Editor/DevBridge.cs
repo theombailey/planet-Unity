@@ -29,6 +29,7 @@
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
 //           probe <field> <face> <x> <y>      read one field texel back from the GPU
 //           facelamp height pitch             turn the surface camera to face the lamp (the sun, from the surface)
+//           blend 0..1                        hold the camera between desk view (0) and the surface (1), to inspect the flight
 //           rain                              how much of the planet is being rained on, and where it rains hardest
 //           fx <name> on|off ...   painterly switches: bands hatch outlines paper boil
 //           ink on|off      enable / disable the fullscreen ink + paper pass
@@ -268,6 +269,18 @@ namespace Terrarium.EditorTools
 
                 case "facelamp":
                     WriteResult(FaceLamp(parts));
+                    break;
+
+                case "blend":
+                    var blendRig = UnityEngine.Object.FindFirstObjectByType<Terrarium.Interaction.CameraRig>();
+                    if (blendRig == null || parts.Length < 2 || !EditorApplication.isPlaying)
+                    {
+                        WriteResult("error: usage 'blend 0..1' in Play mode (hold the camera between desk view and the surface)");
+                        break;
+                    }
+
+                    blendRig.SnapBlend(float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
+                    WriteResult("ok: camera blend held");
                     break;
 
                 case "camera":

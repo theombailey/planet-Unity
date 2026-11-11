@@ -96,13 +96,28 @@ namespace Terrarium
         [Range(0.5f, 8f)] public float ridgeFrequency = 5.0f;
 
         [Tooltip("How much ridged noise is added to the high ground to make mountain chains (0 = none).")]
-        [Range(0f, 1.5f)] public float ridgeAmount = 0.45f;
+        [Range(0f, 1.5f)] public float ridgeAmount = 0.6f;
+
+        [Tooltip("How sharp mountain crests are: the ridge noise is raised to this power, so a higher number gives narrow ridges and a lower one broad swells (1 = as before).")]
+        [Range(1f, 4f)] public float ridgeSharpness = 1.8f;
+
+        [Tooltip("How much lowlands are flattened against the peaks: land height is raised to 1 + this, so hills stay low and mountains stand out (0 = as before).")]
+        [Range(0f, 2f)] public float mountainSharpness = 0.7f;
+
+        [Tooltip("How craggy the high ground is: a fine ridged term added to mountains so they have jagged detail instead of smooth domes (0 = smooth).")]
+        [Range(0f, 0.6f)] public float cragAmount = 0.22f;
+
+        [Tooltip("Size of the crags: noise features per planet radius. Higher = finer, more numerous crags.")]
+        [Range(4f, 60f)] public float cragFrequency = 18f;
 
         [Tooltip("Raw-noise distance above sea level that counts as height 1 (the highest peaks). Smaller = steeper, more extreme relief.")]
         [Range(0.05f, 1f)] public float reliefSpan = 0.6f;
 
         [Tooltip("How far the highest mountain stands above sea level, as a fraction of the planet radius (visual only).")]
-        [Range(0f, 0.1f)] public float terrainHeightScale = 0.02f;
+        [Range(0f, 0.1f)] public float terrainHeightScale = 0.03f;
+
+        [Tooltip("Strength of the fine procedural ground detail (clumps, stones, speckle, rock faces) seen up close. 0 = smooth ground.")]
+        [Range(0f, 1.5f)] public float groundDetail = 1f;
 
         [Header("Climate (see Climate.compute)")]
         [Tooltip("Temperature of ground that gets no lamp light, before altitude and latitude cooling, in deg C.")]
@@ -572,7 +587,7 @@ namespace Terrarium
 
         [Header("Camera: surface mode (see CameraRig, SurfaceNavigation)")]
         [Tooltip("Lowest camera height above the planet radius in surface mode, in world units. Must clear the highest mountain (terrainHeightScale).")]
-        [Range(0.01f, 0.3f)] public float surfaceHeightMin = 0.03f;
+        [Range(0.01f, 0.3f)] public float surfaceHeightMin = 0.045f;
 
         [Tooltip("Highest camera height in surface mode; zooming out past it returns to desk view.")]
         [Range(0.1f, 2f)] public float surfaceHeightMax = 0.32f;
@@ -601,7 +616,7 @@ namespace Terrarium
 
         [Header("Planet surface and debug brush (see PlanetMeshBuilder, DebugBrush)")]
         [Tooltip("Quads along one edge of each of the 6 cube faces of the planet mesh. 128 gives ~99k vertices.")]
-        [Range(16, 256)] public int planetMeshSubdivisions = 128;
+        [Range(16, 256)] public int planetMeshSubdivisions = 256;
 
         [Tooltip("Radius of the debug brush on the planet, in world units. Adjustable on the F1 panel.")]
         [Range(0.02f, 1f)] public float debugBrushRadius = 0.18f;
@@ -719,6 +734,12 @@ namespace Terrarium
 
         [Tooltip("Sky colour at night.")]
         public Color nightSkyColor = new Color(0.012f, 0.022f, 0.070f);
+
+        [Tooltip("Camera height above the ground (world units) where the planet's sky starts to fade into the dark workshop as you rise away from the surface. Below this you see the full sky.")]
+        [Range(0.1f, 2f)] public float skyFadeStartHeight = 0.3f;
+
+        [Tooltip("Camera height above the ground (world units) by which the planet's sky has completely faded into the workshop.")]
+        [Range(0.3f, 6f)] public float skyFadeEndHeight = 0.9f;
 
         [Tooltip("How many stars show in the planet's night sky, seen from the surface (0 = none). The workshop behind the desk has none.")]
         [Range(0f, 1f)] public float starDensity = 0.35f;

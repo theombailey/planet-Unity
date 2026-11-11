@@ -50,6 +50,10 @@ namespace Terrarium.Climate
             shader.SetInt("_TerrainOctaves", config.terrainOctaves);
             shader.SetFloat("_RidgeFrequency", config.ridgeFrequency);
             shader.SetFloat("_RidgeAmount", config.ridgeAmount);
+            shader.SetFloat("_RidgeSharpness", config.ridgeSharpness);
+            shader.SetFloat("_MountainSharpness", config.mountainSharpness);
+            shader.SetFloat("_CragAmount", config.cragAmount);
+            shader.SetFloat("_CragFrequency", config.cragFrequency);
             shader.SetFloat("_LandFraction", landFraction);
             shader.SetFloat("_ReliefSpan", config.reliefSpan);
 

@@ -15,7 +15,10 @@
 //           The two modes each define a full camera pose. A "blend" number
 //           (0 = desk, 1 = surface), itself spring-smoothed, mixes the two poses:
 //               position = lerp(deskPosition, surfacePosition, blend)
-//               rotation = slerp(deskRotation, surfaceRotation, blend)
+//               rotation = deskRotation, then turned to look at the planet as the camera
+//                          leaves the desk, then settled into the surface orientation
+//                          over the last part of the descent (so the view never sweeps
+//                          across the sky on the way)
 //           so the flight between them is just the blend moving from 0 to 1,
 //           a smooth glide. While in surface mode the pose is rebuilt every
 //           frame from the planet's CURRENT rotation (see SurfaceNavigation), so
@@ -115,6 +118,17 @@ namespace Terrarium.Interaction
         }
 
         /// <summary>
+        /// Holds the camera part-way between desk view (0) and surface mode (1), with no easing. Used by the editor's
+        /// DevBridge to look at what the flight between the two shows. Call after SnapToSurface so there is a surface pose to blend to.
+        /// </summary>
+        public void SnapBlend(float value)
+        {
+            float clamped = Mathf.Clamp01(value);
+            blendTarget = clamped;
+            blend = new SpringFloat(clamped);
+        }
+
+        /// <summary>
         /// Jumps to surface mode over a point with no easing. Used by the editor's DevBridge to take surface captures.
         /// </summary>
         /// <param name="localDirection">Standpoint, a unit vector in the planet's local space.</param>
@@ -199,7 +213,14 @@ namespace Terrarium.Interaction
                     height.Value, surfacePitch.Value * Mathf.Deg2Rad, out Vector3 surfaceCameraPosition, out Quaternion surfaceCameraRotation);
 
                 position = Vector3.Lerp(position, surfaceCameraPosition, mix);
-                rotation = Quaternion.Slerp(rotation, surfaceCameraRotation, mix);
+
+                // Turning straight from the desk's orientation to the surface's would sweep the view across the
+                // sky on the way. Instead, as the camera leaves (or approaches) the ground it keeps looking at the
+                // planet, and only settles into the surface orientation over the last stretch near the ground.
+                Vector3 toPlanet = planet.position - position;
+                Quaternion lookAtPlanet = toPlanet.sqrMagnitude > 1e-6f ? Quaternion.LookRotation(toPlanet, Vector3.up) : rotation;
+                Quaternion leaving = Quaternion.Slerp(rotation, lookAtPlanet, Mathf.SmoothStep(0f, 1f, mix / 0.3f));
+                rotation = Quaternion.Slerp(leaving, surfaceCameraRotation, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 1f, mix)));
             }
 
             transform.SetPositionAndRotation(position, rotation);

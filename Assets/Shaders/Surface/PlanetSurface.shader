@@ -27,6 +27,10 @@
 //            strokes, and a broken white foam line at the shoreline.
 //   WET      Where it is raining the land is darkened and cooled (rain strength is the climate
 //   GROUND   field's alpha channel, written by Climate.compute).
+//   DETAIL   Up close the ground gains procedural detail: two scales of noise tilt the normal (clumps, stones),
+//   & CLIFFS patchy tone, speckle and dark flecks vary the colour, and steep ground turns to banded bare rock
+//            (steepness = slope of the height field, before the shading tilt is capped), so mountains have rock
+//            faces. All of it fades in as the camera approaches, so from the desk the planet stays smooth and clean.
 //   CLOUD    A cloud between a ground point and the lamp darkens the ground: the cloud
 //   SHADOWS  that shades a point is found by following the lamp ray up to the cloud
 //            layer, and its density comes from the same function as the clouds you
@@ -88,6 +92,7 @@ Shader "Terrarium/PlanetSurface"
         Texture2DArray<float> _TrailField;
         float _FieldResolution;
         float _PlanetHeightScale;
+        float _GroundDetail;   // 0..1+: strength of the fine procedural ground detail seen up close (SimConfig.groundDetail)
 
         CS_DEFINE_SAMPLER(CS_SampleField4, Texture2DArray<float4>, float4)
         CS_DEFINE_SAMPLER(CS_SampleField1, Texture2DArray<float>, float)
@@ -166,8 +171,9 @@ Shader "Terrarium/PlanetSurface"
                 return 1.0 - 0.18 * 4.0 * weight * (1.0 - weight);
             }
 
-            // Surface normal tilted by the height field's slope, in object space.
-            float3 TiltedNormal(float3 direction)
+            // Surface normal tilted by the height field's slope, in object space. closeness (0..1) is how near the
+            // camera is, which fades in fine procedural relief; steepness returns how steep the ground is (0 flat, 1 cliff).
+            float3 TiltedNormal(float3 direction, float closeness, out float steepness)
             {
                 float3 t1 = normalize(cross(direction, abs(direction.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0)));
                 float3 t2 = cross(direction, t1);
@@ -183,9 +189,28 @@ Shader "Terrarium/PlanetSurface"
                 float scale = _NormalStrength * _PlanetHeightScale / (2.0 * epsilon);
                 float2 slope = float2(hx1 - hx0, hy1 - hy0) * scale;
 
+                // How steep the ground really is, in height units per radian of arc, before the tilt is capped.
+                float gradient = length(float2(hx1 - hx0, hy1 - hy0)) / (2.0 * epsilon);
+                steepness = smoothstep(1.5, 5.0, gradient);
+
                 // Cap the tilt (about 22 degrees): a steep coast must shade as a slope, never turn
                 // away from the light entirely and render black.
                 slope *= min(1.0, 0.4 / max(length(slope), 1e-5));
+
+                // Fine procedural relief, only up close: two scales of noise tilt the normal a little, more on steep
+                // ground, so grass clumps, stones and rock faces catch the light instead of the ground being glass-smooth.
+                if (closeness > 0.01)
+                {
+                    const float step = 0.3;
+                    float3 coarse = direction * 140.0;
+                    float c0 = ValueNoise(coarse);
+                    float2 coarseGradient = float2(ValueNoise(coarse + t1 * step) - c0, ValueNoise(coarse + t2 * step) - c0) / step;
+                    float3 fine = direction * 520.0;
+                    float f0 = ValueNoise(fine);
+                    float2 fineGradient = float2(ValueNoise(fine + t1 * step) - f0, ValueNoise(fine + t2 * step) - f0) / step;
+                    slope += (coarseGradient * 0.15 + fineGradient * 0.10) * closeness * (0.45 + steepness);
+                }
+
                 return normalize(direction - slope.x * t1 - slope.y * t2);
             }
 
@@ -251,9 +276,37 @@ Shader "Terrarium/PlanetSurface"
                 float noiseA = Fbm(direction * 7.0 + 3.1, 3);
                 float noiseB = Fbm(direction * 15.0 + 9.7, 3);
 
+                // Fine ground detail fades in as the camera comes close (it would only shimmer from far away).
+                float detailCloseness = (1.0 - smoothstep(0.7, 3.5, distance(_WorldSpaceCameraPos, input.positionWS))) * _GroundDetail;
+                float steepness = 0.0;
+                float3 normalOS = height < 0.0 ? direction : TiltedNormal(direction, detailCloseness, steepness);
+
                 float3 albedo = height < 0.0
                     ? OceanAlbedo(direction, height, climate.r, noiseA)
                     : LandAlbedo(direction, height, terrain.g, climate.r, climate.g, noiseA, noiseB);
+
+                if (height >= 0.0)
+                {
+                    // Cliffs: steep ground is bare rock, banded like strata, so mountain flanks read as rock faces
+                    // and the peaks look sharper against soft green lowlands.
+                    float cliff = smoothstep(0.35, 0.85, steepness);
+                    float strata = 0.80 + 0.20 * sin(height * 75.0 + Fbm(direction * 34.0, 2) * 7.0);
+                    float3 rockFace = _Rock.rgb * strata * (0.85 + 0.30 * noiseB);
+                    albedo = lerp(albedo, rockFace, cliff * 0.85);
+
+                    // Ground detail: patchy tone, speckle, and dark flecks (stones, soil, seed heads).
+                    if (detailCloseness > 0.01)
+                    {
+                        float patches = Fbm(direction * 90.0, 3);
+                        float clumps = Fbm(direction * 260.0 + 5.0, 2);
+                        float speckle = ValueNoise(direction * 420.0);
+                        float tone = (0.68 + 0.64 * patches) * (0.80 + 0.40 * clumps) * (0.90 + 0.20 * speckle);
+                        albedo *= lerp(1.0, tone, detailCloseness);
+
+                        float fleck = smoothstep(0.80, 0.92, ValueNoise(direction * 900.0));
+                        albedo = lerp(albedo, albedo * 0.45, fleck * detailCloseness * 0.55);
+                    }
+                }
 
                 // The fungal / root network: ink threads wherever the physarum trail is strong. Up close
                 // the threshold drops and a fuzz of noise breaks the lines into fine root hairs.
@@ -291,7 +344,6 @@ Shader "Terrarium/PlanetSurface"
                     }
                 }
 
-                float3 normalOS = height < 0.0 ? direction : TiltedNormal(direction);
                 float3 normalWS = TransformObjectToWorldNormal(normalOS);
 
                 return half4(PainterlyShadeSun(albedo, input.positionWS, normalWS, input.positionCS), 1.0);
