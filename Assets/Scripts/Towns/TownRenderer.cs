@@ -27,7 +27,12 @@ using UnityEngine.Rendering;
 
 namespace Terrarium.Towns
 {
-    /// <summary>Draws the houses and people of the planet's towns.</summary>
+    /// <summary>
+    /// Draws the houses and people of the planet's towns. It runs after the planet has been turned for the frame
+    /// (PlanetMotion.LateUpdate), so the matrix it reads is this frame's: read earlier, everything on the planet
+    /// would lag a frame behind the ground, which at fast time is many house-widths.
+    /// </summary>
+    [DefaultExecutionOrder(200)]
     public sealed class TownRenderer : MonoBehaviour
     {
         private const float RebuildIntervalSeconds = 0.5f;

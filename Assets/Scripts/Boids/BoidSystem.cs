@@ -27,7 +27,8 @@ using UnityEngine.Rendering;
 
 namespace Terrarium.Boids
 {
-    /// <summary>Scene glue for the boid simulation.</summary>
+    /// <summary>Scene glue for the boid simulation. Runs after the planet has turned for the frame, so the matrix the birds are drawn with is current.</summary>
+    [DefaultExecutionOrder(200)]
     public sealed class BoidSystem : MonoBehaviour
     {
         [Tooltip("The simulation: config, preset and seed.")]
