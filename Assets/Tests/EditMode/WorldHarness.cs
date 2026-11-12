@@ -55,10 +55,12 @@ namespace Terrarium.Tests
             Climate = new Field(FieldId.Climate, resolution, RenderTextureFormat.ARGBFloat, pingPong: true);
             Soil = new Field(FieldId.Soil, resolution, RenderTextureFormat.ARGBFloat, pingPong: true);
             Trail = new Field(FieldId.Trail, resolution, RenderTextureFormat.RFloat, pingPong: true);
+            Land = new Field(FieldId.Land, resolution, RenderTextureFormat.ARGBFloat, pingPong: true);
             Clear(Terrain);
             Clear(Climate);
             Clear(Soil);
             Clear(Trail);
+            Clear(Land);
         }
 
         public SimConfig Config { get; }
@@ -79,17 +81,20 @@ namespace Terrarium.Tests
 
         public Field Trail { get; }
 
+        public Field Land { get; }
+
         /// <summary>Creates a physarum simulation on this world's resolution. Released with the harness.</summary>
         public PhysarumSimulation CreatePhysarum(int poolSize)
         {
             var physarumShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Shaders/Compute/Physarum.compute");
+            var settlementShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Shaders/Compute/Settlement.compute");
             var nutrientShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Shaders/Compute/Nutrients.compute");
-            if (physarumShader == null || nutrientShader == null)
+            if (physarumShader == null || settlementShader == null || nutrientShader == null)
             {
-                throw new InvalidOperationException("Physarum.compute or Nutrients.compute not found.");
+                throw new InvalidOperationException("Physarum.compute, Settlement.compute or Nutrients.compute not found.");
             }
 
-            var physarum = new PhysarumSimulation(physarumShader, nutrientShader, Config);
+            var physarum = new PhysarumSimulation(physarumShader, settlementShader, nutrientShader, Config);
             physarum.Allocate(poolSize, Resolution);
             physarumSimulations.Add(physarum);
             return physarum;
@@ -119,12 +124,18 @@ namespace Terrarium.Tests
             }
         }
 
+        /// <summary>Scatters the starting people on livable land.</summary>
+        public void SeedPeople(PhysarumSimulation physarum, int seed, int count)
+        {
+            physarum.SeedAgents(Land, Soil, Terrain.Current, Climate.Current, seed, count);
+        }
+
         /// <summary>Runs physarum steps of <paramref name="stepSeconds"/> each.</summary>
         public void RunPhysarum(PhysarumSimulation physarum, int steps, float stepSeconds)
         {
             for (int i = 0; i < steps; i++)
             {
-                physarum.Step(Trail, Soil, Terrain.Current, Climate.Current, stepSeconds);
+                physarum.Step(Trail, Land, Soil, Terrain.Current, Climate.Current, stepSeconds);
             }
         }
 
@@ -227,6 +238,7 @@ namespace Terrarium.Tests
             Climate.Release();
             Soil.Release();
             Trail.Release();
+            Land.Release();
             UnityEngine.Object.DestroyImmediate(Config);
         }
 

@@ -1,12 +1,15 @@
 // =============================================================================
 // PhysarumTests (EditMode, runs compute shaders)
 // -----------------------------------------------------------------------------
-// Purpose : Checks the physarum agents and the nutrient transport:
-//           - agents stay exactly on the sphere with a tangent heading, also as
-//             they cross cube-face seams, and start on dry land,
-//           - the trail grows where agents walk and fades when they are gone,
-//           - transport conserves nutrients (including across seams), and is
-//             much faster along trails,
+// Purpose : Checks the people (physarum walkers), their roads, the towns and farms
+//           that follow, and the nutrient transport:
+//           - people stay exactly on the sphere with a tangent heading, also as
+//             they cross cube-face seams, and start on livable land,
+//           - the road grows where people walk and fades when they are gone,
+//           - people stay on land and keep to ground that can be lived on,
+//           - town density builds where people spend time and never at sea,
+//           - farms grow in a ring round a town, not under it and not far from it,
+//           - transport conserves nutrients (including across seams),
 //           - decomposition turns organic matter into nutrients one-for-one,
 //           - the population neither dies out nor fills the pool.
 // =============================================================================
@@ -23,17 +26,18 @@ namespace Terrarium.Tests
         private const float Step = 1f / 60f;
 
         [Test]
-        public void Physarum_StartAgents_AreScatteredOnDryLand()
+        public void People_StartOnLivableLand()
         {
             using (var world = new WorldHarness(Resolution))
             {
-                world.Generate(seed: 3, landFraction: 0.4f, spinUp: false);
+                world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
                 var physarum = world.CreatePhysarum(8192);
-                physarum.SeedAgents(world.Terrain.Current, seed: 1, startAgents: 4000);
+                world.SeedPeople(physarum, seed: 1, count: 4000);
 
                 uint[] alive = WorldHarness.ReadBuffer<uint>(physarum.Alive);
                 Vector4[] bodies = WorldHarness.ReadBuffer<Vector4>(physarum.PosEnergy);
                 float[] terrain = world.Read(world.Terrain.Current);
+                float[] climate = world.Read(world.Climate.Current);
 
                 int count = 0;
                 for (int i = 0; i < alive.Length; i++)
@@ -45,22 +49,24 @@ namespace Terrarium.Tests
 
                     count++;
                     Texel texel = CubeSphere.DirToTexel(bodies[i], Resolution);
-                    Assert.Greater(terrain[world.Index(texel.Face, texel.X, texel.Y)], 0f, $"Agent {i} did not start on land.");
+                    int index = world.Index(texel.Face, texel.X, texel.Y);
+                    Assert.Greater(terrain[index], 0f, $"Person {i} did not start on land.");
+                    Assert.Greater(climate[index], -2f, $"Person {i} started on frozen ground.");
                 }
 
-                Assert.Greater(count, 3800, "Nearly all of the requested start agents should be placed.");
+                Assert.Greater(count, 1000, "A good share of the requested people should find livable ground.");
                 Assert.LessOrEqual(count, 4000);
             }
         }
 
         [Test]
-        public void Physarum_Agents_StayOnTheSphere_WithTangentHeadings_AndCrossEveryFace()
+        public void People_StayOnTheSphere_WithTangentHeadings_AndCrossEveryFace()
         {
             using (var world = new WorldHarness(Resolution))
             {
-                world.Generate(seed: 3, landFraction: 0.9f, spinUp: false);   // mostly land: agents roam everywhere
+                world.Generate(seed: 3, landFraction: 0.9f, spinUp: true);   // mostly land: people roam everywhere
                 var physarum = world.CreatePhysarum(8192);
-                physarum.SeedAgents(world.Terrain.Current, seed: 2, startAgents: 3000);
+                world.SeedPeople(physarum, seed: 2, count: 3000);
 
                 var facesVisited = new bool[CubeSphere.FaceCount];
                 for (int round = 0; round < 8; round++)
@@ -80,29 +86,29 @@ namespace Terrarium.Tests
 
                         Vector3 position = bodies[i];
                         Vector3 heading = headings[i];
-                        Assert.IsFalse(float.IsNaN(position.x) || float.IsNaN(heading.x), $"Agent {i} has NaN.");
-                        Assert.AreEqual(1f, position.magnitude, 1e-4f, $"Agent {i} left the unit sphere.");
-                        Assert.AreEqual(1f, heading.magnitude, 1e-3f, $"Agent {i} heading is not unit length.");
-                        Assert.AreEqual(0f, Vector3.Dot(position, heading), 1e-3f, $"Agent {i} heading is not tangent to the sphere.");
+                        Assert.IsFalse(float.IsNaN(position.x) || float.IsNaN(heading.x), $"Person {i} has NaN.");
+                        Assert.AreEqual(1f, position.magnitude, 1e-4f, $"Person {i} left the unit sphere.");
+                        Assert.AreEqual(1f, heading.magnitude, 1e-3f, $"Person {i} heading is not unit length.");
+                        Assert.AreEqual(0f, Vector3.Dot(position, heading), 1e-3f, $"Person {i} heading is not tangent to the sphere.");
                         facesVisited[CubeSphere.FaceOf(position)] = true;
                     }
                 }
 
                 for (int face = 0; face < CubeSphere.FaceCount; face++)
                 {
-                    Assert.IsTrue(facesVisited[face], $"No agent was ever on face {face}.");
+                    Assert.IsTrue(facesVisited[face], $"Nobody was ever on face {face}.");
                 }
             }
         }
 
         [Test]
-        public void Physarum_Trail_GrowsWhereAgentsWalk()
+        public void People_Road_GrowsWhereTheyWalk()
         {
             using (var world = new WorldHarness(Resolution))
             {
-                world.Generate(seed: 3, landFraction: 0.4f, spinUp: false);
+                world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
                 var physarum = world.CreatePhysarum(8192);
-                physarum.SeedAgents(world.Terrain.Current, seed: 4, startAgents: 2000);
+                world.SeedPeople(physarum, seed: 4, count: 2000);
 
                 world.RunPhysarum(physarum, 120, Step);
                 float[] trail = world.Read(world.Trail.Current);
@@ -116,36 +122,32 @@ namespace Terrarium.Tests
                     sum += value;
                 }
 
-                Assert.Greater(max, 0.3f, "Agents should have laid a visible trail.");
-                Assert.Greater(sum, 50.0, "There should be trail overall.");
+                Assert.Greater(max, 0.3f, "People should have worn a visible path.");
+                Assert.Greater(sum, 50.0, "There should be path overall.");
             }
         }
 
         [Test]
-        public void Physarum_Agents_FindAndGatherAtNutrientPatches()
+        public void People_KeepToLand_AndToGroundThatCanBeLivedOn()
         {
-            // Bare land (no weathering is stepped) with two nutrient patches painted on, as the brush tool will.
-            // Agents are scattered everywhere; the ones that find food live and multiply, the rest starve, so the
-            // population ends up concentrated on the patches. Nothing tells them where the patches are.
-            using (var world = new WorldHarness(Resolution))
+            // Run for a while with nobody arriving. People who wander into the sea or onto frozen ground lose energy
+            // and die, so those who are left should be on land, in a place that is neither frozen nor scorched.
+            using (var world = new WorldHarness(Resolution, config => config.peopleArrivalRate = 0f))
             {
-                world.Generate(seed: 3, landFraction: 0.97f, spinUp: false);
+                world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
                 var physarum = world.CreatePhysarum(30_000);
-                physarum.SeedAgents(world.Terrain.Current, seed: 5, startAgents: 6000);
-
-                Vector3 patchA = new Vector3(1f, 0f, 0f);
-                Vector3 patchB = new Vector3(0.6f, 0.8f, 0f);
-                var brush = new FieldBrush(AssetDatabase_Load("Brush"));
-                brush.Apply(world.Soil.Current, patchA, 0.15f, new Vector4(4f, 0f, 0f, 0f), 0f, 50f);
-                brush.Apply(world.Soil.Current, patchB, 0.15f, new Vector4(4f, 0f, 0f, 0f), 0f, 50f);
+                world.SeedPeople(physarum, seed: 5, count: 3000);
 
                 world.RunPhysarum(physarum, 1800, Step);   // 30 sim seconds
 
                 uint[] alive = WorldHarness.ReadBuffer<uint>(physarum.Alive);
                 Vector4[] bodies = WorldHarness.ReadBuffer<Vector4>(physarum.PosEnergy);
+                float[] terrain = world.Read(world.Terrain.Current);
+                float[] climate = world.Read(world.Climate.Current);
 
                 int total = 0;
-                int near = 0;
+                int ashore = 0;
+                int bearable = 0;
                 for (int i = 0; i < alive.Length; i++)
                 {
                     if (alive[i] == 0u)
@@ -154,58 +156,195 @@ namespace Terrarium.Tests
                     }
 
                     total++;
-                    Vector3 position = bodies[i];
-                    float angleA = Mathf.Acos(Mathf.Clamp(Vector3.Dot(position, patchA.normalized), -1f, 1f));
-                    float angleB = Mathf.Acos(Mathf.Clamp(Vector3.Dot(position, patchB.normalized), -1f, 1f));
-                    if (angleA < 0.35f || angleB < 0.35f)
+                    Texel texel = CubeSphere.DirToTexel(bodies[i], Resolution);
+                    int index = world.Index(texel.Face, texel.X, texel.Y);
+                    if (terrain[index] >= 0f)
                     {
-                        near++;
+                        ashore++;
+                    }
+
+                    if (climate[index] > -5f && climate[index] < 45f)
+                    {
+                        bearable++;
                     }
                 }
 
-                // Two caps of radius 0.35 rad cover about 6% of the sphere, so a population spread at random
-                // would have about 6% near the patches.
-                float share = total > 0 ? (float)near / total : 0f;
-                Debug.Log($"Physarum gathering: {near} of {total} agents within 0.35 rad of a nutrient patch ({share:P0}; random spread would be about 6%).");
+                Debug.Log($"People after 30 s: {total} alive, {ashore} ashore, {bearable} in bearable weather.");
                 Assert.Greater(total, 100, "The population died out.");
-                Assert.Greater(share, 0.5f, "Agents should gather where the nutrients are.");
+                Assert.Greater(ashore, total * 0.95f, "People should stay on land.");
+                Assert.Greater(bearable, total * 0.9f, "People should keep to ground that is neither frozen nor scorched.");
             }
         }
 
         [Test]
-        public void Physarum_Trail_FadesAwayWithNoAgents()
+        public void People_RoadFadesAwayWithNobodyWalking()
         {
             using (var world = new WorldHarness(Resolution))
             {
                 world.Generate(seed: 3, landFraction: 0.4f, spinUp: false);
                 var physarum = world.CreatePhysarum(1024);
-                physarum.SeedAgents(world.Terrain.Current, seed: 4, startAgents: 0);
+                world.SeedPeople(physarum, seed: 4, count: 0);
 
                 new FieldBrush(AssetDatabase_Load("Brush")).Apply(world.Trail.Current, Vector3.right, 0.3f, new Vector4(1f, 0f, 0f, 0f), 0f, 10f);
                 float before = Max(world.Read(world.Trail.Current));
                 Assert.Greater(before, 0.9f);
 
-                world.RunPhysarum(physarum, 300, Step);   // 5 seconds
+                float seconds = 20f;
+                world.RunPhysarum(physarum, (int)(seconds / Step), Step);
                 float after = Max(world.Read(world.Trail.Current));
 
-                // Decay alone leaves exp(-0.9 * 5) = 1%; blurring lowers the peak further.
-                Assert.Less(after, 0.03f, "With no agents the trail must fade away.");
+                // Decay alone leaves exp(-decay * 20 s); blurring lowers the peak further.
+                float expected = Mathf.Exp(-world.Config.physarumTrailDecay * seconds);
+                Assert.Less(after, expected + 0.02f, "With nobody walking the road must fade away.");
+            }
+        }
+
+        // ------------------------------------------------------------------ towns and farms
+
+        [Test]
+        public void Towns_BuildWherePeopleSpendTime_AndNeverAtSea()
+        {
+            using (var world = new WorldHarness(Resolution, config => config.peopleArrivalRate = 0f))
+            {
+                world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
+                var physarum = world.CreatePhysarum(30_000);
+                world.SeedPeople(physarum, seed: 6, count: 3000);
+
+                world.RunPhysarum(physarum, 3600, Step);   // 60 sim seconds
+                float[] land = world.Read(world.Land.Current);
+                float[] terrain = world.Read(world.Terrain.Current);
+
+                float peak = 0f;
+                bool anyAtSea = false;
+                world.ForEachTexel((face, x, y, direction) =>
+                {
+                    int cell = world.Index(face, x, y);
+                    peak = Mathf.Max(peak, land[cell]);
+                    if (terrain[cell] < 0f && (land[cell] != 0f || land[cell + 1] != 0f))
+                    {
+                        anyAtSea = true;
+                    }
+                });
+
+                Debug.Log($"Peak town density after 60 s: {peak:0.000}");
+                Assert.Greater(peak, world.Config.farmStart, "People who gather should leave a town behind.");
+                Assert.IsFalse(anyAtSea, "Nothing is built at sea.");
             }
         }
 
         [Test]
+        public void Towns_WithNobodyThere_StayEmpty()
+        {
+            using (var world = new WorldHarness(Resolution))
+            {
+                world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
+                var physarum = world.CreatePhysarum(1024);
+                world.SeedPeople(physarum, seed: 6, count: 0);
+
+                world.RunPhysarum(physarum, 600, Step);
+                float[] land = world.Read(world.Land.Current);
+
+                Assert.AreEqual(0f, Max(land), 1e-6f, "No people, no towns, no farms.");
+            }
+        }
+
+        [Test]
+        public void Farms_GrowRoundATown_NotUnderIt_AndNotFarFromIt()
+        {
+            using (var world = new WorldHarness(Resolution, config =>
+            {
+                config.peopleArrivalRate = 0f;
+                config.farmGrowth = 0.5f;       // fast, so the test can be short
+                config.townDecay = 0.0f;        // keep the painted town exactly as painted
+                config.townSpread = 0.0f;
+            }))
+            {
+                world.Generate(seed: 3, landFraction: 0.97f, spinUp: true);   // almost all land, so livability is the only limit
+                var physarum = world.CreatePhysarum(1024);
+                world.SeedPeople(physarum, seed: 6, count: 0);
+
+                // Put the town where the ground is best: the warmest, wettest land.
+                float[] climateBefore = world.Read(world.Climate.Current);
+                float[] terrainBefore = world.Read(world.Terrain.Current);
+                Vector3 centre = Vector3.right;
+                float bestScore = float.MinValue;
+                world.ForEachTexel((face, x, y, direction) =>
+                {
+                    int cell = world.Index(face, x, y);
+                    float score = terrainBefore[cell] > 0.05f && terrainBefore[cell] < 0.4f
+                        ? Mathf.Clamp01(climateBefore[cell + 1]) - Mathf.Abs(climateBefore[cell] - 20f) * 0.03f
+                        : float.MinValue;
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        centre = direction;
+                    }
+                });
+
+                // A town painted as three rings of density: a core, a halo, and nothing outside.
+                var brush = new FieldBrush(AssetDatabase_Load("Brush"));
+                brush.Apply(world.Land.Current, centre, 0.30f, new Vector4(0.55f, 0f, 0f, 0f), 0f, 50f);    // everywhere in the disc: the halo
+                brush.Apply(world.Land.Current, centre, 0.12f, new Vector4(5f, 0f, 0f, 0f), 0f, 5.9f);       // the core
+
+                world.RunPhysarum(physarum, 1200, Step);   // 20 sim seconds
+                float[] land = world.Read(world.Land.Current);
+                float[] terrain = world.Read(world.Terrain.Current);
+                float[] climate = world.Read(world.Climate.Current);
+
+                float coreFarm = 0f;
+                float haloFarm = 0f;
+                float farFarm = 0f;
+                int haloLivable = 0;
+                world.ForEachTexel((face, x, y, direction) =>
+                {
+                    int cell = world.Index(face, x, y);
+                    if (terrain[cell] < 0f)
+                    {
+                        return;
+                    }
+
+                    float angle = Mathf.Acos(Mathf.Clamp(Vector3.Dot(direction, centre), -1f, 1f));
+                    float farm = land[cell + 1];
+                    if (angle < 0.04f)
+                    {
+                        coreFarm = Mathf.Max(coreFarm, farm);
+                    }
+                    else if (angle > 0.15f && angle < 0.26f)
+                    {
+                        haloFarm = Mathf.Max(haloFarm, farm);
+                        if (climate[cell] > 12f && climate[cell + 1] > 0.35f)
+                        {
+                            haloLivable++;
+                        }
+                    }
+                    else if (angle > 0.40f)
+                    {
+                        farFarm = Mathf.Max(farFarm, farm);
+                    }
+                });
+
+                Debug.Log($"Farm strength: core {coreFarm:0.000}, halo {haloFarm:0.000} ({haloLivable} warm, wet texels), far {farFarm:0.000}");
+                Assert.Less(coreFarm, 0.05f, "Land under the town is built over, not farmed.");
+                Assert.Less(farFarm, 0.01f, "Land far from any town is not farmed.");
+                Assert.Greater(haloLivable, 0, "The test needs some warm, wet ground in the halo.");
+                Assert.Greater(haloFarm, 0.1f, "The good ground round the town should be farmed.");
+            }
+        }
+
+        // ------------------------------------------------------------------ nutrients
+
+        [Test]
         public void Nutrients_Transport_ConservesTheTotalOnLand_IncludingAcrossSeams()
         {
-            using (var world = new WorldHarness(Resolution, config => config.physarumTrailDecay = 0f))
+            using (var world = new WorldHarness(Resolution, config => config.nutrientDiffusion = 0.0002f))
             {
                 world.Generate(seed: 3, landFraction: 0.95f, spinUp: false);   // nearly all land, so blobs spread over seams
                 var physarum = world.CreatePhysarum(1024);
-                physarum.SeedAgents(world.Terrain.Current, seed: 1, startAgents: 0);
+                world.SeedPeople(physarum, seed: 1, count: 0);
 
                 var brush = new FieldBrush(AssetDatabase_Load("Brush"));
                 brush.Apply(world.Soil.Current, new Vector3(1f, 1f, 1f), 0.12f, new Vector4(4f, 0f, 0f, 0f), 0f, 50f);   // a cube corner
                 brush.Apply(world.Soil.Current, new Vector3(-1f, 1f, 0f), 0.12f, new Vector4(8f, 0f, 0f, 0f), 0f, 50f);   // an edge
-                brush.Apply(world.Trail.Current, Vector3.up, Mathf.PI, new Vector4(1000f, 0f, 0f, 0f), 0f, 2f);   // uniform trail speeds spreading up
 
                 float before = LandTotal(world, world.Read(world.Soil.Current), 0);
                 float peakBefore = Max(world.Read(world.Soil.Current));
@@ -220,43 +359,13 @@ namespace Terrarium.Tests
         }
 
         [Test]
-        public void Nutrients_Transport_IsMuchFasterAlongATrail()
-        {
-            float withoutTrail = PeakAfterSpreading(trailValue: 0f);
-            float withTrail = PeakAfterSpreading(trailValue: 2f);
-
-            Assert.Less(withTrail, withoutTrail * 0.8f, $"Peak with trail {withTrail:0.000}, without {withoutTrail:0.000}: the network should spread nutrients much faster.");
-        }
-
-        private static float PeakAfterSpreading(float trailValue)
-        {
-            using (var world = new WorldHarness(Resolution, config => config.physarumTrailDecay = 0f))
-            {
-                world.Generate(seed: 3, landFraction: 0.95f, spinUp: false);
-                var physarum = world.CreatePhysarum(1024);
-                physarum.SeedAgents(world.Terrain.Current, seed: 1, startAgents: 0);
-
-                var brush = new FieldBrush(AssetDatabase_Load("Brush"));
-                brush.Apply(world.Soil.Current, new Vector3(0.3f, 1f, 0.2f), 0.15f, new Vector4(5f, 0f, 0f, 0f), 0f, 50f);
-                if (trailValue > 0f)
-                {
-                    // Uniform trail everywhere (weight > 0.002 anywhere except the antipode, clamped to the value).
-                    brush.Apply(world.Trail.Current, Vector3.up, Mathf.PI, new Vector4(1000f, 0f, 0f, 0f), 0f, trailValue);
-                }
-
-                world.RunPhysarum(physarum, 600, Step);
-                return Max(world.Read(world.Soil.Current));
-            }
-        }
-
-        [Test]
         public void Nutrients_Decomposition_TurnsOrganicMatterIntoNutrientsOneForOne()
         {
             using (var world = new WorldHarness(Resolution, config => config.decompositionRate = 0.2f))
             {
                 world.Generate(seed: 3, landFraction: 0.95f, spinUp: true);   // warm, moist land
                 var physarum = world.CreatePhysarum(1024);
-                physarum.SeedAgents(world.Terrain.Current, seed: 1, startAgents: 0);
+                world.SeedPeople(physarum, seed: 1, count: 0);
 
                 // Put organic matter (channel G) on the land, then look at nutrients + organic together.
                 new FieldBrush(AssetDatabase_Load("Brush")).Apply(world.Soil.Current, Vector3.right, 0.8f, new Vector4(0f, 3f, 0f, 0f), 0f, 50f);
@@ -274,28 +383,23 @@ namespace Terrarium.Tests
             }
         }
 
+        // ------------------------------------------------------------------ population
+
         [Test]
-        public void Physarum_Population_NeitherDiesOutNorFillsThePool()
+        public void People_Population_NeitherDiesOutNorFillsThePool()
         {
-            // With the default config the population should rise from its start, overshoot as it eats through
-            // the soil's stock, then settle back to what the weathering income can feed: a damped boom and
-            // bust. The pool is deliberately larger than the overshoot, so reaching it would mean food is
-            // not limiting.
+            // With the default config the population should rise from its start, then settle at what the land can
+            // feed: food limits it, not the pool. The pool is deliberately larger than the settled population, so
+            // reaching it would mean food is not limiting.
             const int pool = 30_000;
 
-            // This tests the fungus rules, not the terrain, so it keeps the large continents it was tuned on
-            // (the game's default continents are now smaller).
-            using (var world = new WorldHarness(Resolution, config =>
-            {
-                config.continentFrequency = 1.1f;
-                config.ridgeFrequency = 2.6f;
-            }))
+            using (var world = new WorldHarness(Resolution))
             {
                 world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
                 var physarum = world.CreatePhysarum(pool);
-                physarum.SeedAgents(world.Terrain.Current, seed: 1, startAgents: 3000);
+                world.SeedPeople(physarum, seed: 1, count: world.Config.physarumStartAgents);
 
-                // Climate (so weathering keeps feeding the soil) and agents advance together, in rounds.
+                // Climate (so the seasons turn) and people advance together, in rounds.
                 const int stepsPerRound = 300;
                 const int rounds = 40;   // 200 sim seconds
                 double time = 0.0;
@@ -313,8 +417,67 @@ namespace Terrarium.Tests
                 // After the initial rise the population must sit well inside the pool and above extinction.
                 for (int round = rounds / 2; round < rounds; round++)
                 {
-                    Assert.Greater(alive[round], 200u, $"The population died out by round {round}.");
+                    Assert.Greater(alive[round], 100u, $"The population died out by round {round}.");
                     Assert.Less(alive[round], pool * 0.9f, $"The population filled the pool at round {round}: it is not limited by food.");
+                }
+            }
+        }
+
+        [Test]
+        public void People_Report_PopulationTownsAndFarmsOverTime()
+        {
+            // A diagnostic, not a pass/fail check: prints how the settlement develops, for tuning.
+            // Run it with:  run-tests People_Report   and read "PEOPLE REPORT" in the editor log.
+            const int resolution = 128;
+            const int pool = 24_000;
+            foreach (int seed in new[] { 3, 7 })
+            {
+                using (var world = new WorldHarness(resolution))
+                {
+                    world.Generate(seed: seed, landFraction: 0.4f, spinUp: true);
+                    var physarum = world.CreatePhysarum(pool);
+                    world.SeedPeople(physarum, seed: 1, count: world.Config.physarumStartAgents);
+
+                    const int stepsPerRound = 600;   // 10 sim seconds at 1/60
+                    double time = 0.0;
+                    var report = new System.Text.StringBuilder();
+                    report.AppendLine($"PEOPLE REPORT seed {seed}, field {resolution}, pool {pool}");
+                    for (int round = 0; round < 40; round++)
+                    {
+                        world.Run(time, time + stepsPerRound * Step, Step);
+                        world.RunPhysarum(physarum, stepsPerRound, Step);
+                        time += stepsPerRound * Step;
+
+                        if (round % 3 == 2)
+                        {
+                            float[] land = world.Read(world.Land.Current);
+                            float[] terrain = world.Read(world.Terrain.Current);
+                            float peak = 0f;
+                            int townTexels = 0;
+                            int houseTexels = 0;
+                            double farm = 0.0;
+                            int landTexels = 0;
+                            world.ForEachTexel((face, x, y, direction) =>
+                            {
+                                int cell = world.Index(face, x, y);
+                                if (terrain[cell] < 0f)
+                                {
+                                    return;
+                                }
+
+                                landTexels++;
+                                peak = Mathf.Max(peak, land[cell]);
+                                farm += land[cell + 1];
+                                if (land[cell] > 0.6f) { townTexels++; }
+                                if (land[cell] > world.Config.houseThreshold) { houseTexels++; }
+                            });
+
+                            uint alive = WorldHarness.ReadBuffer<uint>(physarum.Counters)[0];
+                            report.AppendLine($"  t={time:0}s  people {alive,6}  peakTown {peak,6:0.00}  townTexels(>0.6) {townTexels,5}  houseTexels {houseTexels,5}  farm {farm / landTexels:P2} of land");
+                        }
+                    }
+
+                    Debug.Log(report.ToString());
                 }
             }
         }

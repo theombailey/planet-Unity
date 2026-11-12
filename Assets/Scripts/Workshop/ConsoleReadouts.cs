@@ -7,10 +7,9 @@
 // Idea    : Four times a second it reads the latest EcosystemStats (the same numbers the
 //           panel used) and writes them to the tubes. The same snapshot goes to a PaperLog,
 //           which decides whether anything is worth a line on the paper. It also prints a
-//           line when a world starts or a one-shot tool is used (meteor, spores, seeds,
+//           line when a world starts or a one-shot tool is used (meteor, settlers, seeds,
 //           birds), since those are events the player caused and wants to see logged.
-// Readings : YEAR (3 tubes), TEMP deg C (4 tubes, 1 decimal), TREES (4), BIRDS (5), FUNGUS in
-//            thousands (4 tubes, 1 decimal).
+// Readings : YEAR (3 tubes), TEMP deg C (4 tubes, 1 decimal), TREES (4), BIRDS (5), PEOPLE (4).
 // =============================================================================
 
 using System.Collections.Generic;
@@ -34,7 +33,7 @@ namespace Terrarium.Workshop
         [SerializeField] private NixieDisplay temperature;
         [SerializeField] private NixieDisplay trees;
         [SerializeField] private NixieDisplay birds;
-        [SerializeField] private NixieDisplay fungus;
+        [SerializeField] private NixieDisplay people;
         [SerializeField] private PaperRoll paper;
 
         private readonly PaperLog log = new PaperLog();
@@ -64,7 +63,7 @@ namespace Terrarium.Workshop
             if (temperature != null) { temperature.Show(s.MeanTemperature); }
             if (trees != null) { trees.Show(s.TreesAlive); }
             if (birds != null) { birds.Show(s.BoidsAlive); }
-            if (fungus != null) { fungus.Show(s.PhysarumAlive / 1000f); }
+            if (people != null) { people.Show(s.PeopleAlive); }
 
             lines.Clear();
             log.Poll(s, lines);
@@ -112,7 +111,7 @@ namespace Terrarium.Workshop
             switch (kind)
             {
                 case ToolKind.Meteor: paper.Print("METEOR STRIKE"); break;
-                case ToolKind.SporeDish: paper.Print("SPORES SOWN"); break;
+                case ToolKind.Settlers: paper.Print("SETTLERS SENT"); break;
                 case ToolKind.SeedJar: paper.Print("SEED PLANTED"); break;
                 case ToolKind.BoidCage: paper.Print("BIRDS RELEASED"); break;
             }

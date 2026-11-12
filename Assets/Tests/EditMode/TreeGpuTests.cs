@@ -61,7 +61,7 @@ namespace Terrarium.Tests
             shader.SetTexture(kernel, "_Soil", world.Soil.Current);
             shader.SetTexture(kernel, "_Climate", world.Climate.Current);
             shader.SetTexture(kernel, "_Terrain", world.Terrain.Current);
-            shader.SetTexture(kernel, "_Trail", world.Trail.Current);
+            shader.SetTexture(kernel, "_Land", world.Land.Current);
 
             ComputeBuffer dirBuffer = null;
             if (kernelName == "TreeSample")
@@ -94,12 +94,12 @@ namespace Terrarium.Tests
                 world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
                 var brush = new FieldBrush(Brush());
                 brush.Apply(world.Soil.Current, Vector3.right, 0.3f, new Vector4(0.7f, 0f, 0.4f, 0f), 0f, 5f);   // nutrients (R) and canopy (B)
-                brush.Apply(world.Trail.Current, Vector3.right, 0.3f, new Vector4(1.5f, 0f, 0f, 0f), 0f, 10f);
+                brush.Apply(world.Land.Current, Vector3.right, 0.3f, new Vector4(0.2f, 0.4f, 0f, 0f), 0f, 10f);   // a town edge and a field
 
                 float[] soil = world.Read(world.Soil.Current);
                 float[] climate = world.Read(world.Climate.Current);
                 float[] terrain = world.Read(world.Terrain.Current);
-                float[] trail = world.Read(world.Trail.Current);
+                float[] land = world.Read(world.Land.Current);
 
                 var directions = new[] { new Vector4(1f, 0f, 0f, 0f), new Vector4(0.3f, 0.8f, -0.5f, 0f) };
                 using (var output = new ComputeBuffer(4, 16))
@@ -129,7 +129,8 @@ namespace Terrarium.Tests
                         Assert.AreEqual(climate[i + 1], answer[s * 2].y, 1e-5f, "moisture");
                         Assert.AreEqual(climate[i], answer[s * 2].z, 1e-4f, "temperature");
                         Assert.AreEqual(soil[i + 2], answer[s * 2].w, 1e-5f, "canopy");
-                        Assert.AreEqual(trail[world.Index(texel.Face, texel.X, texel.Y, 1)], answer[s * 2 + 1].x, 1e-5f, "trail");
+                        float cleared = Mathf.Clamp01(Mathf.Max(land[i], land[i + 1]));
+                        Assert.AreEqual(cleared, answer[s * 2 + 1].x, 1e-5f, "cleared land");
                         Assert.AreEqual(climate[i + 2], answer[s * 2 + 1].y, 1e-5f, "insolation");
                         Assert.AreEqual(terrain[i], answer[s * 2 + 1].z, 1e-5f, "height");
                     }

@@ -9,7 +9,7 @@
 //   CompostScoop   adds nutrients + organic   (continuous)
 //   HeatLamp       raises temperature         (continuous)
 //   FrostSpray     lowers temperature         (continuous)
-//   SporeDish      starts fungal agents       (one burst per click)
+//   Settlers       sends settlers to found new villages   (one burst per click)
 //   Meteor         digs a crater, kills life  (one impact per click, with a cooldown)
 //   SeedJar        plants a tree seed         (it grows only if the spot allows)
 //   BoidCage       releases a flock of birds  (one click, a few hundred boids)
@@ -30,8 +30,8 @@ namespace Terrarium.Interaction
         /// <summary>Plants a tree (once trees exist).</summary>
         SeedJar,
 
-        /// <summary>Starts fungal agents.</summary>
-        SporeDish,
+        /// <summary>Sends settlers who found new villages.</summary>
+        Settlers,
 
         /// <summary>Releases a flock (once flocks exist).</summary>
         BoidCage,
@@ -60,7 +60,7 @@ namespace Terrarium.Interaction
                 case ToolKind.WateringCan: return "Watering can";
                 case ToolKind.CompostScoop: return "Compost scoop";
                 case ToolKind.SeedJar: return "Seed jar";
-                case ToolKind.SporeDish: return "Spore dish";
+                case ToolKind.Settlers: return "Settlers";
                 case ToolKind.BoidCage: return "Bird cage";
                 case ToolKind.HeatLamp: return "Heat lamp";
                 case ToolKind.FrostSpray: return "Frost spray";
@@ -78,7 +78,7 @@ namespace Terrarium.Interaction
                 case ToolKind.WateringCan: return "hold the left button over the planet to rain";
                 case ToolKind.CompostScoop: return "hold the left button over the planet to spread compost";
                 case ToolKind.SeedJar: return "click on dry land to plant a seed";
-                case ToolKind.SporeDish: return "click to scatter fungal spores";
+                case ToolKind.Settlers: return "click to send settlers";
                 case ToolKind.BoidCage: return "click on the planet to release a flock of birds";
                 case ToolKind.HeatLamp: return "hold the left button to warm the ground";
                 case ToolKind.FrostSpray: return "hold the left button to chill the ground";

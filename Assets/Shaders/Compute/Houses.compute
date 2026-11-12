@@ -1,0 +1,115 @@
+// =============================================================================
+// Houses.compute
+// -----------------------------------------------------------------------------
+// Purpose : Decides where the houses of the towns stand, entirely on the GPU, and
+//           writes them into a list that the house shader draws.
+//
+// Kernels :
+//   BuildHouses - one thread per candidate spot; appends a house to the list if one belongs there.
+//
+// Idea    : Nobody places a house. A fixed, even scatter of CANDIDATE spots covers the planet
+//   (a Fibonacci spiral, which spaces points almost evenly over a sphere, each nudged a
+//   little at random so the houses do not stand in rows). A candidate gets a house when the
+//   town density there beats a threshold of its own:
+//        threshold_i = houseThreshold + u_i * (coreFull - houseThreshold) * 0.7       u_i random in [0,1)
+//        house       when  townDensity(spot) > threshold_i  and the spot is dry land above the beach
+//   Every candidate has a different threshold, so as the town density rises the houses
+//   appear one by one: a village starts as a handful, a town fills in toward its centre
+//   and thins out toward its edge, and when the town shrinks the houses go again.
+//   The spot is also a little bigger and taller where the town is denser.
+//   Fibonacci spiral:  z_i = 1 - 2 (i + 0.5) / N,   azimuth_i = i * golden angle,   r = sqrt(1 - z^2)
+//
+// Output  : _Houses (append buffer). Each house is 3 float4:
+//     [0] xyz position on the (displaced) surface in the planet's local space, w width
+//     [1] x yaw (radians), y random 0..1, z temperature (deg C), w moisture 0..1
+//     [2] x tallness (1 = a cottage, up to 1.5 for a tall town house), y town density, z farmland, w unused
+//
+// Parameters: _CandidateCount, _HouseThreshold, _CoreFull, _HouseSize, _HeightScale (the planet's
+//   terrain height scale), _Resolution.
+// Textures (slice = cube face): _Land, _Terrain, _Climate, all read with the seam-correct bilinear sampler.
+// =============================================================================
+
+#pragma kernel BuildHouses
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+#include "Assets/Shaders/Include/Noise.hlsl"
+
+struct House
+{
+    float4 positionSize;
+    float4 style;
+    float4 extra;
+};
+
+AppendStructuredBuffer<House> _Houses;
+Texture2DArray<float4> _Land;
+Texture2DArray<float4> _Terrain;
+Texture2DArray<float4> _Climate;
+
+CS_DEFINE_SAMPLER(SampleField4, Texture2DArray<float4>, float4)
+
+uint _CandidateCount;
+int _Resolution;
+float _HouseThreshold;
+float _CoreFull;
+float _HouseSize;
+float _HeightScale;
+
+static const float GOLDEN_ANGLE = 2.39996323;
+
+float Random01(inout uint state)
+{
+    state = HashUint(state);
+    return (state >> 8) * (1.0 / 16777216.0);
+}
+
+[numthreads(64, 1, 1)]
+void BuildHouses(uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x;
+    if (index >= _CandidateCount)
+    {
+        return;
+    }
+
+    uint rng = HashUint(index * 2654435761u + 977u);
+
+    // This candidate's even-scatter point, nudged by up to a third of the spacing in a random direction.
+    float z = 1.0 - 2.0 * (index + 0.5) / _CandidateCount;
+    float azimuth = index * GOLDEN_ANGLE;
+    float ring = sqrt(saturate(1.0 - z * z));
+    float3 direction = float3(ring * cos(azimuth), z, ring * sin(azimuth));
+
+    float3 reference = abs(direction.y) < 0.99 ? float3(0, 1, 0) : float3(1, 0, 0);
+    float3 east = normalize(cross(reference, direction));
+    float3 north = cross(direction, east);
+    float spacing = sqrt(12.5663706 / _CandidateCount);
+    float nudgeAngle = Random01(rng) * 6.28318530718;
+    float nudge = Random01(rng) * spacing * 0.33;
+    direction = normalize(direction + (east * cos(nudgeAngle) + north * sin(nudgeAngle)) * nudge);
+
+    float4 land = SampleField4(_Land, direction, _Resolution);
+    float town = land.r;
+    float threshold = _HouseThreshold + Random01(rng) * (_CoreFull - _HouseThreshold) * 0.7;
+    if (town <= threshold)
+    {
+        return;
+    }
+
+    float height = SampleField4(_Terrain, direction, _Resolution).r;
+    if (height < 0.04)
+    {
+        return;   // water or beach
+    }
+
+    float4 climate = SampleField4(_Climate, direction, _Resolution);
+    float dense = saturate((town - _HouseThreshold) / max(_CoreFull - _HouseThreshold, 1e-4));
+    float variety = Random01(rng);
+
+    House house;
+    float radius = 1.0 + _HeightScale * height - 0.15 * _HouseSize;    // sunk a little so no gap shows on a slope
+    house.positionSize = float4(direction * radius, _HouseSize * (0.8 + 0.5 * variety) * (1.0 + 0.35 * dense));
+    house.style = float4(Random01(rng) * 6.28318530718, variety, climate.r, climate.g);
+    house.extra = float4(1.0 + 0.5 * dense * Random01(rng), town, land.g, 0.0);
+    _Houses.Append(house);
+}

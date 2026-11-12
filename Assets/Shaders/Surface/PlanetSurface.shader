@@ -73,7 +73,9 @@ Shader "Terrarium/PlanetSurface"
         _Desert ("Desert", Color) = (0.85, 0.65, 0.38, 1)
         _Rock ("Rock", Color) = (0.50, 0.45, 0.43, 1)
         _Snow ("Snow", Color) = (0.94, 0.96, 0.99, 1)
-        _Mycelium ("Mycelium ink", Color) = (0.17, 0.10, 0.07, 1)
+        _RoadInk ("Footpath ink", Color) = (0.17, 0.10, 0.07, 1)
+        _RoadDust ("Busy road", Color) = (0.74, 0.62, 0.44, 1)
+        _TownGround ("Town ground", Color) = (0.58, 0.47, 0.34, 1)
         _NormalStrength ("Relief shading strength", Range(0, 20)) = 1.2
     }
 
@@ -90,6 +92,7 @@ Shader "Terrarium/PlanetSurface"
         Texture2DArray<float4> _ClimateField;
         Texture2DArray<float4> _SoilField;
         Texture2DArray<float> _TrailField;
+        Texture2DArray<float4> _LandField;
         float _FieldResolution;
         float _PlanetHeightScale;
         float _GroundDetail;   // 0..1+: strength of the fine procedural ground detail seen up close (SimConfig.groundDetail)
@@ -108,7 +111,9 @@ Shader "Terrarium/PlanetSurface"
             float4 _Desert;
             float4 _Rock;
             float4 _Snow;
-            float4 _Mycelium;
+            float4 _RoadInk;
+            float4 _RoadDust;
+            float4 _TownGround;
             float _NormalStrength;
         CBUFFER_END
 
@@ -308,18 +313,56 @@ Shader "Terrarium/PlanetSurface"
                     }
                 }
 
-                // The fungal / root network: ink threads wherever the physarum trail is strong. Up close
-                // the threshold drops and a fuzz of noise breaks the lines into fine root hairs.
+                // People: trodden earth under towns, a quilt of dark ruled fields round them, and footpaths worn into
+                // the ground where many have walked.
+                float4 land = float4(0.0, 0.0, 0.0, 0.0);
                 if (height >= 0.0 && n > 0)
                 {
+                    land = CS_SampleField4(_LandField, direction, n);
+                    float distanceToCamera = distance(_WorldSpaceCameraPos, input.positionWS);
+                    float closeness = 1.0 - smoothstep(1.2, 5.0, distanceToCamera);
+                    float nearness = 1.0 - smoothstep(0.25, 1.6, distanceToCamera);
+
+                    // Town ground: packed earth that the grass has given way to.
+                    float yard = smoothstep(0.6, 1.6, land.r);
+                    albedo = lerp(albedo, _TownGround.rgb * (0.85 + 0.30 * noiseB), yard * 0.8);
+
+                    // Farms: the land is cut into small fields. Each has its own crop tone and is tilled in rows along its
+                    // own direction, with a dark hedge between neighbours. Darker than wild ground, so a farmed region
+                    // reads at a glance even from far away.
+                    float farm = smoothstep(0.04, 0.35, land.g);
+                    if (farm > 0.001)
+                    {
+                        float3 fieldSpace = direction * 55.0;
+                        int3 cell = (int3)floor(fieldSpace);
+                        float3 inside = fieldSpace - floor(fieldSpace) - 0.5;
+                        float pick = Hash3(cell);
+                        float turn = Hash3(cell + int3(17, 31, 5)) * 6.28318;
+                        float3 rowAxis = normalize(float3(cos(turn), sin(turn * 1.7), sin(turn)));
+
+                        float3 crop = pick < 0.34 ? float3(0.34, 0.24, 0.15) : (pick < 0.70 ? float3(0.36, 0.50, 0.20) : float3(0.62, 0.52, 0.26));
+                        crop *= 0.85 + 0.25 * noiseB;
+                        albedo = lerp(albedo, crop, farm * 0.85);
+
+                        float rows = abs(frac(dot(fieldSpace, rowAxis) * 14.0) - 0.5) * 2.0;
+                        float furrow = smoothstep(0.55, 0.95, rows);
+                        albedo *= 1.0 - 0.30 * furrow * nearness * farm;
+
+                        float hedgeDistance = 0.5 - max(abs(inside.x), max(abs(inside.y), abs(inside.z)));
+                        float hedge = 1.0 - smoothstep(0.0, 0.035, hedgeDistance);
+                        albedo = lerp(albedo, float3(0.10, 0.13, 0.07), hedge * farm * lerp(0.25, 0.8, nearness));
+                    }
+
+                    // Footpaths: thin ink lines wherever the trail is worn. Up close the threshold drops and a fuzz of
+                    // noise breaks the lines up; the busiest roads are pale dust, drawn over the ink.
                     float trail = CS_SampleField1(_TrailField, direction, n);
-                    float closeness = 1.0 - smoothstep(1.2, 5.0, distance(_WorldSpaceCameraPos, input.positionWS));
                     float fuzz = ValueNoise(direction * 220.0) - 0.5;
                     float threshold = lerp(0.45, 0.12, closeness);
                     float thread = smoothstep(threshold, threshold + 0.3, trail + fuzz * 0.25 * closeness);
-                    albedo = lerp(albedo, _Mycelium.rgb, thread * 0.8);
+                    albedo = lerp(albedo, _RoadInk.rgb, thread * 0.8);
+                    float busy = smoothstep(1.2, 3.5, trail + fuzz * 0.4 * closeness);
+                    albedo = lerp(albedo, _RoadDust.rgb * (0.9 + 0.2 * noiseB), busy * 0.85);
                 }
-
                 // Wet ground: where it is raining (the climate field's alpha channel), land goes darker and cooler.
                 if (n > 0 && height >= 0.0)
                 {
@@ -346,7 +389,20 @@ Shader "Terrarium/PlanetSurface"
 
                 float3 normalWS = TransformObjectToWorldNormal(normalOS);
 
-                return half4(PainterlyShadeSun(albedo, input.positionWS, normalWS, input.positionCS), 1.0);
+                float3 colour = PainterlyShadeSun(albedo, input.positionWS, normalWS, input.positionCS);
+
+                // Town lights: on the night side, windows glow in speckles wherever a town stands, so a settlement
+                // still shows from the desk when the sun is away.
+                if (n > 0 && land.r > 0.6)
+                {
+                    float3 upWS = normalize(input.positionWS - _AtmoCentre.xyz);
+                    float night = 1.0 - smoothstep(-0.12, 0.05, dot(upWS, _SunDirection.xyz));
+                    float speck = smoothstep(0.45, 0.65, ValueNoise(direction * 650.0));
+                    float glow = smoothstep(0.6, 1.6, land.r) * (0.45 + 0.55 * speck) * night;
+                    colour += float3(1.0, 0.70, 0.36) * glow * 0.9;
+                }
+
+                return half4(colour, 1.0);
             }
             ENDHLSL
         }

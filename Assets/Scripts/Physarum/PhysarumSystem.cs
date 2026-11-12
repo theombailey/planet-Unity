@@ -1,14 +1,15 @@
 // =============================================================================
 // PhysarumSystem
 // -----------------------------------------------------------------------------
-// Purpose : Puts the physarum simulation into the scene: creates it when
-//           needed, seeds the agents for each new world, steps it when SimLoop
-//           asks, and reports the living population to the debug panel.
+// Purpose : Puts the people (the physarum walkers who make roads, towns and farms)
+//           into the scene: creates the simulation when needed, seeds the people
+//           for each new world, steps it when SimLoop asks, and reports the living
+//           population to the debug panel.
 // Idea    : Lazy setup. The simulation is created (and re-sized after a quality
 //           preset change) at the first step that needs it, so it never has to
 //           guess whether the fields exist yet. A new world (FieldSet.WorldReset)
-//           only sets a flag; the agents are scattered on the NEW land at the
-//           next step, by which time the terrain has been generated.
+//           only sets a flag; the people are scattered on the NEW land at the
+//           next step, by which time the terrain and climate have been generated.
 // Population readback: every quarter second the counters buffer is requested
 //           with AsyncGPUReadback; the answer arrives a few frames later and is
 //           stored for the panel. Nothing ever waits for the GPU.
@@ -25,7 +26,7 @@ namespace Terrarium.Physarum
     public sealed class PhysarumSystem : MonoBehaviour
     {
         private const float ReadbackIntervalSeconds = 0.25f;
-        private const float SporeBatch = 16f;
+        private const float PioneerBatch = 4f;
 
         [Tooltip("The simulation: config, preset and seed.")]
         [SerializeField] private SimRoot simRoot;
@@ -36,13 +37,15 @@ namespace Terrarium.Physarum
         [Tooltip("Physarum.compute.")]
         [SerializeField] private ComputeShader physarumShader;
 
+        [Tooltip("Settlement.compute.")]
+        [SerializeField] private ComputeShader settlementShader;
+
         [Tooltip("Nutrients.compute.")]
         [SerializeField] private ComputeShader nutrientShader;
 
         private PhysarumSimulation simulation;
         private bool needsSeeding;
-        private Rng sporeRng = new Rng(1);
-        private float sporeBacklog;
+        private float pioneerBacklog;
         private float readbackTimer;
         private bool readbackPending;
 
@@ -58,9 +61,12 @@ namespace Terrarium.Physarum
         /// <summary>The most agents the pool can hold (from the quality preset).</summary>
         public int PoolSize => simulation != null ? simulation.PoolSize : 0;
 
+        /// <summary>The running simulation (null until the first step). For drawing the people, the DevBridge and tests.</summary>
+        public PhysarumSimulation Simulation => simulation;
+
         private void Awake()
         {
-            if (simRoot == null || fieldSet == null || physarumShader == null || nutrientShader == null)
+            if (simRoot == null || fieldSet == null || physarumShader == null || settlementShader == null || nutrientShader == null)
             {
                 Debug.LogError("PhysarumSystem is missing a reference.", this);
                 enabled = false;
@@ -131,7 +137,7 @@ namespace Terrarium.Physarum
 
             if (simulation == null)
             {
-                simulation = new PhysarumSimulation(physarumShader, nutrientShader, config);
+                simulation = new PhysarumSimulation(physarumShader, settlementShader, nutrientShader, config);
                 needsSeeding = true;
             }
 
@@ -141,49 +147,51 @@ namespace Terrarium.Physarum
             }
 
             Field terrain = fieldSet.Get(FieldId.Terrain);
+            Field land = fieldSet.Get(FieldId.Land);
+            Field soil = fieldSet.Get(FieldId.Soil);
+            Field trail = fieldSet.Get(FieldId.Trail);
+            RenderTexture climate = fieldSet.Get(FieldId.Climate).Current;
 
             if (needsSeeding)
             {
-                simulation.SeedAgents(terrain.Current, simRoot.ActiveSeed, config.physarumStartAgents);
-                sporeRng = new Rng(simRoot.ActiveSeed ^ 0x2545F491);
-                sporeBacklog = 0f;
+                simulation.SeedAgents(land, soil, terrain.Current, climate, simRoot.ActiveSeed, config.physarumStartAgents);
+                pioneerBacklog = 0f;
                 needsSeeding = false;
             }
 
-            // Spore rain: a faint background supply of new agents at random places, so a crashed network
-            // can recover instead of staying extinct. Landed in batches to keep the number of dispatches low.
-            sporeBacklog += config.physarumSporeRain * deltaSeconds;
-            if (sporeBacklog >= SporeBatch)
+            // Pioneers: a faint background supply of new people who each settle the first good, empty place they
+            // find, so a continent nobody reached (or a world whose people died out) can still be settled.
+            // Landed in batches to keep the number of dispatches low.
+            pioneerBacklog += config.peopleArrivalRate * deltaSeconds;
+            if (pioneerBacklog >= PioneerBatch)
             {
-                int count = (int)sporeBacklog;
-                sporeBacklog -= count;
-                float z = sporeRng.Range(-1f, 1f);
-                float phi = sporeRng.Range(0f, 2f * Mathf.PI);
-                float r = Mathf.Sqrt(Mathf.Max(0f, 1f - z * z));
-                simulation.SpawnAgents(new Vector3(r * Mathf.Cos(phi), z, r * Mathf.Sin(phi)), 0.03f, count);
+                int count = (int)pioneerBacklog;
+                pioneerBacklog -= count;
+                simulation.SpawnPioneers(land, soil, terrain.Current, climate, count);
             }
 
-            simulation.Step(
-                fieldSet.Get(FieldId.Trail),
-                fieldSet.Get(FieldId.Soil),
-                terrain.Current,
-                fieldSet.Get(FieldId.Climate).Current,
-                deltaSeconds);
+            simulation.Step(trail, land, soil, terrain.Current, climate, deltaSeconds);
         }
-
-        /// <summary>The spore dish: starts agents at random points inside a circle on the planet.</summary>
+        /// <summary>The settlers' jar: starts people at random points inside a circle on the planet.</summary>
         /// <param name="localDirection">Centre, a unit vector in the planet's local space.</param>
         /// <param name="angularRadius">Radius in radians.</param>
-        /// <param name="count">How many agents to try to start.</param>
+        /// <param name="count">How many people to try to start.</param>
         public void SpawnAgents(Vector3 localDirection, float angularRadius, int count)
         {
-            if (simulation != null && simulation.IsAllocated)
+            if (simulation != null && simulation.IsAllocated && fieldSet.Resolution > 0)
             {
-                simulation.SpawnAgents(localDirection, angularRadius, count);
+                simulation.SpawnAgents(
+                    fieldSet.Get(FieldId.Land),
+                    fieldSet.Get(FieldId.Soil),
+                    fieldSet.Get(FieldId.Terrain).Current,
+                    fieldSet.Get(FieldId.Climate).Current,
+                    localDirection,
+                    angularRadius,
+                    count);
             }
         }
 
-        /// <summary>An impact: removes every agent inside a circle on the planet.</summary>
+        /// <summary>An impact: removes every person inside a circle on the planet.</summary>
         public void KillAgents(Vector3 localDirection, float angularRadius)
         {
             if (simulation != null && simulation.IsAllocated)
@@ -195,9 +203,9 @@ namespace Terrarium.Physarum
         /// <summary>Immediate-mode readout, called from the F1 debug panel.</summary>
         public void OnDebugGui()
         {
-            GUILayout.Label($"Physarum agents alive: {AliveCount:N0} of {PoolSize:N0}");
+            GUILayout.Label($"People alive: {AliveCount:N0} of {PoolSize:N0}");
             GUILayout.Label($"  born {BornLastStep:N0}, died {DiedLastStep:N0} in the last step");
-            if (GUILayout.Button("Re-scatter agents"))
+            if (GUILayout.Button("Re-scatter people"))
             {
                 needsSeeding = true;
             }

@@ -37,6 +37,7 @@ namespace Terrarium.Tests
                 shader.SetTexture(fields, "_Climate", world.Climate.Current);
                 shader.SetTexture(fields, "_Terrain", world.Terrain.Current);
                 shader.SetTexture(fields, "_Trail", world.Trail.Current);
+                shader.SetTexture(fields, "_Land", world.Land.Current);
                 shader.Dispatch(fields, (Resolution + 7) / 8, (Resolution + 7) / 8, CubeSphere.FaceCount);
 
                 if (boids != null)

@@ -339,15 +339,30 @@ namespace Terrarium.Tests
         }
 
         [Test]
-        public void TreeLife_NutrientFactor_RisesWithNutrients_AndTheFungalNetworkHelps()
+        public void TreeLife_NutrientFactor_RisesWithNutrients()
         {
-            Assert.AreEqual(0f, TreeLife.NutrientFactor(0f, 0f, config));
-            Assert.AreEqual(0.5f, TreeLife.NutrientFactor(config.treeNutrientHalf, 0f, config), 1e-5f);
-            Assert.Greater(TreeLife.NutrientFactor(0.5f, 0f, config), TreeLife.NutrientFactor(0.1f, 0f, config));
-            Assert.Less(TreeLife.NutrientFactor(10f, 0f, config), 1f);
+            Assert.AreEqual(0f, TreeLife.NutrientFactor(0f, config));
+            Assert.AreEqual(0.5f, TreeLife.NutrientFactor(config.treeNutrientHalf, config), 1e-5f);
+            Assert.Greater(TreeLife.NutrientFactor(0.5f, config), TreeLife.NutrientFactor(0.1f, config));
+            Assert.Less(TreeLife.NutrientFactor(10f, config), 1f);
+        }
 
-            Assert.Greater(TreeLife.NutrientFactor(0.1f, 1f, config), TreeLife.NutrientFactor(0.1f, 0f, config),
-                "Mycorrhizae: the same soil feeds a tree better when the network reaches it.");
+        [Test]
+        public void TreeLife_ClearedLand_StarvesTrees_AndBlocksSeeds()
+        {
+            TreeEnvironment open = Good;
+            TreeEnvironment farmed = Good;
+            farmed.Cleared = 0.5f;
+            TreeEnvironment builtOver = Good;
+            builtOver.Cleared = 1f;
+
+            Assert.AreEqual(1f, TreeLife.ClearingFactor(0f, config), 1e-6f);
+            Assert.Less(TreeLife.GrowthRate(farmed, config), TreeLife.GrowthRate(open, config), "A tree among the fields grows worse.");
+            Assert.Less(TreeLife.GrowthRate(builtOver, config), TreeLife.GrowthRate(farmed, config));
+            Assert.Greater(TreeLife.GrowthRate(builtOver, config), 0f, "Clearing starves a tree; it does not instantly kill it.");
+
+            Assert.Greater(TreeLife.GerminationChance(open, config), 0f);
+            Assert.AreEqual(0f, TreeLife.GerminationChance(builtOver, config), "Nothing germinates on land that people have built over.");
         }
 
         [Test]
@@ -358,7 +373,7 @@ namespace Terrarium.Tests
             Assert.Greater(TreeLife.LightFactor(5f, config), 0f);
         }
 
-        private static TreeEnvironment Good => new TreeEnvironment { Temperature = 22f, Moisture = 0.8f, Nutrients = 1f, Trail = 0f, Crowding = 0f };
+        private static TreeEnvironment Good => new TreeEnvironment { Temperature = 22f, Moisture = 0.8f, Nutrients = 1f, Cleared = 0f, Crowding = 0f };
 
         [Test]
         public void TreeLife_GrowthRate_IsHighInGoodConditions_AndZeroWhenAnyNecessityIsMissing()

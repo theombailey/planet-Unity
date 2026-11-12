@@ -162,76 +162,125 @@ namespace Terrarium
         [Tooltip("Sim seconds of the spin-up that are re-run on the full-size grid after the copy, to smooth out the coarse grid's rough coastlines.")]
         [Range(0f, 100f)] public float climateSettleSeconds = 20f;
 
-        [Header("Physarum: fungal / root network (see Physarum.compute, Nutrients.compute)")]
-        [Tooltip("Agents scattered on land when a world starts. The population then rises or falls with the nutrients; the pool size comes from the quality preset.")]
-        [Range(1000, 500_000)] public int physarumStartAgents = 30_000;
+        [Header("People: walkers who make roads (see Physarum.compute)")]
+        [Tooltip("People scattered on livable land when a world starts. The population then rises or falls with the food; the pool size comes from the quality preset.")]
+        [Range(10, 20_000)] public int physarumStartAgents = 500;
 
         [Tooltip("Angle between the forward sensor and each side sensor, in degrees.")]
         [Range(5f, 90f)] public float physarumSensorAngleDegrees = 35f;
 
         [Tooltip("How far ahead the sensors look, in radians of arc on the planet (0.01 rad = 1% of the planet radius).")]
-        [Range(0.005f, 0.1f)] public float physarumSensorDistance = 0.03f;
+        [Range(0.005f, 0.1f)] public float physarumSensorDistance = 0.02f;
 
-        [Tooltip("How fast an agent can turn toward a stronger signal, in radians per sim second.")]
+        [Tooltip("How fast a walker can turn toward a stronger signal, in radians per sim second.")]
         [Range(1f, 80f)] public float physarumTurnSpeed = 20f;
 
-        [Tooltip("Agent speed along the ground, in radians of arc per sim second.")]
-        [Range(0.02f, 1.5f)] public float physarumSpeed = 0.25f;
+        [Tooltip("Walking speed along the ground, in radians of arc per sim second.")]
+        [Range(0.005f, 0.5f)] public float physarumSpeed = 0.05f;
 
-        [Tooltip("Trail laid down by one agent per step.")]
+        [Tooltip("Path laid down by one walker per step.")]
         [Range(0.01f, 5f)] public float physarumDepositAmount = 0.5f;
 
-        [Tooltip("How much of each step the trail is blurred toward its 3x3 neighbourhood mean, 0..1. More = thicker, smoother tubes.")]
+        [Tooltip("How much of each step the path is blurred toward its 3x3 neighbourhood mean, 0..1. More = wider, smoother roads.")]
         [Range(0f, 1f)] public float physarumTrailDiffusion = 0.3f;
 
-        [Tooltip("Fraction of the trail that fades per sim second.")]
-        [Range(0f, 5f)] public float physarumTrailDecay = 0.9f;
+        [Tooltip("Fraction of the path that fades per sim second. Unused paths vanish; used ones are renewed.")]
+        [Range(0f, 5f)] public float physarumTrailDecay = 0.25f;
 
-        [Tooltip("Highest trail value a texel can hold (stops runaway build-up under a crowd).")]
+        [Tooltip("Highest path value a texel can hold (stops runaway build-up under a crowd).")]
         [Range(1f, 50f)] public float physarumTrailMax = 10f;
 
-        [Tooltip("How strongly agents are drawn to nutrients, compared with trail (trail counts 1).")]
-        [Range(0f, 20f)] public float physarumNutrientWeight = 3f;
+        [Tooltip("How strongly walkers are drawn to good ground (warm, wet, low, fertile), compared with a path (a path counts 1).")]
+        [Range(0f, 20f)] public float physarumFoodWeight = 3f;
 
-        [Tooltip("Most nutrients one agent can eat per sim second.")]
-        [Range(0.0005f, 0.1f)] public float physarumEatRate = 0.005f;
+        [Tooltip("How strongly walkers are drawn to existing towns, compared with a path (a path counts 1).")]
+        [Range(0f, 20f)] public float physarumTownWeight = 1f;
 
-        [Tooltip("Energy gained per unit of nutrient eaten.")]
-        [Range(1f, 500f)] public float physarumEnergyPerNutrient = 40f;
+        [Tooltip("Energy a walker earns per sim second on perfect, empty ground. Poorer ground earns proportionally less.")]
+        [Range(0f, 2f)] public float physarumFoodRate = 0.25f;
 
-        [Tooltip("Energy an agent burns per sim second just to stay alive.")]
-        [Range(0f, 2f)] public float physarumUpkeep = 0.13f;
+        [Tooltip("Energy a walker burns per sim second just to stay alive.")]
+        [Range(0f, 2f)] public float physarumUpkeep = 0.12f;
 
-        [Tooltip("Energy a new agent starts with, and that scattered start agents are given.")]
+        [Tooltip("Energy a new walker starts with, and that scattered start walkers are given.")]
         [Range(0.1f, 5f)] public float physarumStartEnergy = 1f;
 
-        [Tooltip("An agent with more energy than this splits in two.")]
+        [Tooltip("A walker with more energy than this has a child (it splits in two).")]
         [Range(0.5f, 10f)] public float physarumReproduceEnergy = 2f;
 
-        [Tooltip("Body mass invested when an agent splits. It returns to the soil as organic matter when an agent dies, so mass is conserved.")]
+        [Tooltip("Energy invested in a child.")]
         [Range(0.05f, 2f)] public float physarumBirthCost = 0.5f;
 
-        [Tooltip("Energy lost per sim second by an agent that ends up in the ocean.")]
+        [Tooltip("Energy lost per sim second by a walker that ends up in the ocean.")]
         [Range(0f, 20f)] public float physarumOceanPenalty = 2f;
 
-        [Tooltip("Ground colder than this, in deg C, starts to drain agent energy.")]
-        [Range(-40f, 10f)] public float physarumColdLimit = -10f;
+        [Tooltip("Pioneers arriving at empty, livable places far from any town, per sim second. A faint supply, so a world whose people have died out can be settled again. Zero turns it off.")]
+        [Range(0f, 100f)] public float peopleArrivalRate = 0.5f;
 
-        [Tooltip("Energy lost per sim second in ground 10 deg C below the cold limit (scales up with the cold).")]
-        [Range(0f, 5f)] public float physarumColdPenalty = 0.4f;
+        [Header("Towns and farms (see Settlement.compute)")]
+        [Tooltip("Fraction of a place's town density that fades per sim second once the crowd has gone. Small, so a town has a long memory: it takes about 1 / this many seconds to forget.")]
+        [Range(0.001f, 1f)] public float townDecay = 0.03f;
 
-        [Tooltip("Spores that drift in from elsewhere: new agents landing at random places, per sim second. A faint background supply, so the network can recover after a crash instead of dying out for good. Zero turns it off.")]
-        [Range(0f, 100f)] public float physarumSporeRain = 6f;
+        [Tooltip("How fast the crowding of a place follows the people there, per sim second. Large: income is shared by who is here now, and the town density rises to meet it.")]
+        [Range(0.01f, 2f)] public float crowdingRate = 0.15f;
+
+        [Tooltip("How much of each step a place's town density is mixed with its neighbours, 0..1. This spreads a town into a halo that farms grow in.")]
+        [Range(0f, 1f)] public float townSpread = 0.2f;
+
+        [Tooltip("Walking speed in a full town, as a fraction of the open-ground speed.")]
+        [Range(0.05f, 1f)] public float townSlowdown = 0.35f;
+
+        [Tooltip("Town density at which people walk at the slowed speed.")]
+        [Range(0.1f, 5f)] public float townFull = 1f;
+
+        [Tooltip("Town density the food income can carry before crowding halves it, on ground with no farms.")]
+        [Range(0.02f, 5f)] public float townCapacity = 0.16f;
+
+        [Tooltip("Extra town density that fully farmed ground can carry before crowding halves the income.")]
+        [Range(0f, 10f)] public float farmCapacity = 0.8f;
+
+        [Tooltip("How much fully farmed ground multiplies the food people earn: income x (1 + this x farmland).")]
+        [Range(0f, 5f)] public float farmBoost = 1.5f;
+
+        [Tooltip("Town density where farms start to appear.")]
+        [Range(0f, 2f)] public float farmStart = 0.12f;
+
+        [Tooltip("Town density where farms are at full strength.")]
+        [Range(0f, 2f)] public float farmFull = 0.45f;
+
+        [Tooltip("Town density where farms start to give way to buildings.")]
+        [Range(0f, 5f)] public float coreStart = 1.4f;
+
+        [Tooltip("Town density where the ground is all built over (no farms).")]
+        [Range(0f, 5f)] public float coreFull = 2.4f;
+
+        [Tooltip("How fast farmland spreads onto good ground, per sim second.")]
+        [Range(0.001f, 1f)] public float farmGrowth = 0.03f;
+
+        [Tooltip("How fast unused farmland is given up, per sim second.")]
+        [Range(0.001f, 1f)] public float farmAbandon = 0.05f;
+
+        [Tooltip("Town density above which a house may stand. Each house also has its own threshold between this and the core, so a town thins out toward its edge.")]
+        [Range(0.01f, 2f)] public float houseThreshold = 0.6f;
+
+        [Tooltip("How many candidate spots are scattered evenly over the planet for houses. A house stands at a spot when the town density there is high enough, so this sets the most houses a place can hold: 1 per candidate.")]
+        [Range(10_000, 200_000)] public int houseCandidates = 200_000;
+
+        [Tooltip("Width of a house, as a fraction of the planet radius.")]
+        [Range(0.001f, 0.02f)] public float houseSize = 0.0032f;
+
+        [Tooltip("Smallest a house may look on screen, in pixels, so a town still shows as a cluster from the desk.")]
+        [Range(0f, 8f)] public float houseMinPixels = 1.6f;
+
+        [Tooltip("Height of a person, as a fraction of the planet radius.")]
+        [Range(0.0005f, 0.01f)] public float personSize = 0.0022f;
+
+        [Tooltip("Camera distance (world units) beyond which individual people are not drawn.")]
+        [Range(0.2f, 6f)] public float personVisibleDistance = 1.6f;
 
         [Header("Nutrient transport (see Nutrients.compute)")]
         [Tooltip("Plain spreading of nutrients through the soil, in radians squared per sim second.")]
         [Range(0f, 0.001f)] public float nutrientDiffusion = 0.00002f;
-
-        [Tooltip("Extra spreading per unit of trail, in radians squared per sim second. This is how the network moves nutrients from rich spots to poor ones.")]
-        [Range(0f, 0.01f)] public float nutrientNetworkDiffusion = 0.0002f;
-
-        [Tooltip("Trail above this adds no further transport speed.")]
-        [Range(0.5f, 10f)] public float nutrientTrailSaturation = 2f;
 
         [Tooltip("How fast organic matter turns into nutrients in warm, moist soil, per sim second.")]
         [Range(0f, 0.2f)] public float decompositionRate = 0.02f;
@@ -310,8 +359,11 @@ namespace Terrarium
         [Tooltip("Soil nutrients at which the nutrient factor is one half.")]
         [Range(0.01f, 1f)] public float treeNutrientHalf = 0.12f;
 
-        [Tooltip("How much the fungal network (trail) improves a tree's nutrient uptake: effective nutrients = n x (1 + this x trail).")]
-        [Range(0f, 10f)] public float treeMycorrhizaBoost = 2f;
+        [Tooltip("Seeds do not germinate on land that people have cleared (town or farm) beyond this fraction, 0..1.")]
+        [Range(0f, 1f)] public float treeClearedLimit = 0.3f;
+
+        [Tooltip("How much cleared land (town or farm) starves a tree already standing on it: growth x (1 - this x cleared).")]
+        [Range(0f, 1f)] public float treeClearingStress = 0.7f;
 
         [Tooltip("How strongly neighbours' canopy shades a tree: light factor = 1 / (1 + this x neighbours' canopy).")]
         [Range(0f, 5f)] public float treeShadeStrength = 1.2f;
@@ -567,8 +619,8 @@ namespace Terrarium
         [Tooltip("Temperature the frost spray removes per second at the brush centre, in deg C.")]
         [Range(1f, 300f)] public float frostRate = 60f;
 
-        [Tooltip("Agents the spore dish tries to start per click.")]
-        [Range(10, 5000)] public int sporeCount = 400;
+        [Tooltip("People the settlers' jar tries to start per click.")]
+        [Range(10, 5000)] public int settlerCount = 60;
 
         [Tooltip("Radius of a meteor crater, in world units.")]
         [Range(0.03f, 0.6f)] public float meteorRadius = 0.10f;

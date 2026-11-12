@@ -5,7 +5,7 @@
 //           - a meteor crater digs a bowl, raises a rim, scatters organic matter,
 //             leaves everything beyond it untouched, and treats a cube corner
 //             evenly across the three faces that meet there,
-//           - the spore dish starts agents inside its circle,
+//           - the settlers' jar starts people inside its circle,
 //           - an impact kills every agent inside its circle and none outside,
 //           - picking accounts for terrain relief,
 //           - the CPU height cache agrees with the GPU terrain,
@@ -132,16 +132,16 @@ namespace Terrarium.Tests
         // ------------------------------------------------------------- spawn / kill
 
         [Test]
-        public void SporeDish_StartsAgentsInsideItsCircle()
+        public void Settlers_StartPeopleInsideTheirCircle()
         {
             using (var world = new WorldHarness(Resolution))
             {
                 world.Generate(seed: 3, landFraction: 0.5f, spinUp: false);
                 var physarum = world.CreatePhysarum(8192);
-                physarum.SeedAgents(world.Terrain.Current, seed: 1, startAgents: 0);
+                world.SeedPeople(physarum, seed: 1, count: 0);
 
                 Vector3 centre = new Vector3(0f, 1f, 1f).normalized;
-                physarum.SpawnAgents(centre, 0.15f, 300);
+                physarum.SpawnAgents(world.Land, world.Soil, world.Terrain.Current, world.Climate.Current, centre, 0.15f, 300);
 
                 uint[] alive = WorldHarness.ReadBuffer<uint>(physarum.Alive);
                 Vector4[] bodies = WorldHarness.ReadBuffer<Vector4>(physarum.PosEnergy);
@@ -158,10 +158,10 @@ namespace Terrarium.Tests
                     Vector3 position = bodies[i];
                     Assert.AreEqual(1f, position.magnitude, 1e-4f);
                     float angle = Mathf.Acos(Mathf.Clamp(Vector3.Dot(position, centre), -1f, 1f));
-                    Assert.LessOrEqual(angle, 0.15f + 1e-3f, "A spore landed outside the dish's circle.");
+                    Assert.LessOrEqual(angle, 0.15f + 1e-3f, "A settler landed outside the circle.");
                 }
 
-                Assert.Greater(count, 270, "Nearly all of the 300 spores should find a free slot.");
+                Assert.Greater(count, 270, "Nearly all of the 300 settlers should find a free slot.");
                 Assert.LessOrEqual(count, 300);
             }
         }
@@ -171,9 +171,9 @@ namespace Terrarium.Tests
         {
             using (var world = new WorldHarness(Resolution))
             {
-                world.Generate(seed: 3, landFraction: 0.9f, spinUp: false);
+                world.Generate(seed: 3, landFraction: 0.9f, spinUp: true);
                 var physarum = world.CreatePhysarum(8192);
-                physarum.SeedAgents(world.Terrain.Current, seed: 2, startAgents: 4000);
+                world.SeedPeople(physarum, seed: 2, count: 4000);
 
                 Vector3 centre = Vector3.right;
                 const float radius = 0.7f;

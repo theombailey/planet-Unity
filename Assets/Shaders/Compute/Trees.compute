@@ -18,7 +18,7 @@
 //   answer comes back, asynchronously (a few frames later).
 //     Answer 0: nutrients (mean of the root texel and its 8 neighbours), moisture,
 //               temperature, canopy density
-//     Answer 1: trail (fungal network), insolation, terrain height, 0
+//     Answer 1: cleared land (town or farm, 0..1), insolation, terrain height, 0
 //
 // Idea (uptake): a tree draws water and nutrients through roots spread around it, not
 //   from one texel. Each tree takes its requested amount in total from a (2W+1)^2
@@ -46,7 +46,7 @@
 //   _Samples     write  two float4 per point (see above)
 //   _Trees       read   direction, canopy radius (rad), uptake (nutrients to take now),
 //                       canopy strength, cos(canopy radius)
-//   _Soil, _Climate, _Terrain, _Trail  read        _SoilRW  read+write (in place)
+//   _Soil, _Climate, _Terrain, _Land  read        _SoilRW  read+write (in place)
 // =============================================================================
 
 #pragma kernel TreeSample
@@ -72,7 +72,7 @@ StructuredBuffer<TreeGpu> _Trees;
 Texture2DArray<float4> _Soil;
 Texture2DArray<float4> _Climate;
 Texture2DArray<float4> _Terrain;
-Texture2DArray<float> _Trail;
+Texture2DArray<float4> _Land;
 RWTexture2DArray<float4> _SoilRW;
 
 int _Resolution;
@@ -104,7 +104,9 @@ void TreeSample(uint3 id : SV_DispatchThreadID)
     uint3 here = uint3(centre);
     float4 climate = _Climate[here];
     _Samples[id.x * 2] = float4(nutrients / 9.0, climate.g, climate.r, _Soil[here].b);
-    _Samples[id.x * 2 + 1] = float4(_Trail[here], climate.b, _Terrain[here].r, 0.0);
+    float4 land = _Land[here];   // R town density, G farmland
+    float cleared = saturate(max(land.g, land.r));
+    _Samples[id.x * 2 + 1] = float4(cleared, climate.b, _Terrain[here].r, 0.0);
 }
 
 [numthreads(64, 1, 1)]

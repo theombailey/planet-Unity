@@ -548,7 +548,7 @@ namespace Terrarium.Trees
                 treeShader.SetTexture(sampleKernel, "_Soil", soil);
                 treeShader.SetTexture(sampleKernel, "_Climate", fieldSet.Get(FieldId.Climate).Current);
                 treeShader.SetTexture(sampleKernel, "_Terrain", fieldSet.Get(FieldId.Terrain).Current);
-                treeShader.SetTexture(sampleKernel, "_Trail", fieldSet.Get(FieldId.Trail).Current);
+                treeShader.SetTexture(sampleKernel, "_Land", fieldSet.Get(FieldId.Land).Current);
                 treeShader.Dispatch(sampleKernel, (sampleCount + 63) / 64, 1, 1);
             }
 
@@ -602,14 +602,14 @@ namespace Terrarium.Trees
 
         private void ApplySample(Tree tree, Vector4 a, Vector4 b, float deltaSeconds, SimConfig config)
         {
-            // a = (nutrients, moisture, temperature, canopy)   b = (trail, insolation, height, 0)
+            // a = (nutrients, moisture, temperature, canopy)   b = (cleared land, insolation, height, 0)
             var environment = new TreeEnvironment
             {
                 Nutrients = a.x,
                 Moisture = a.y,
                 Temperature = a.z,
                 Crowding = Mathf.Max(0f, a.w - tree.LastCanopyStrength),
-                Trail = b.x,
+                Cleared = b.x,
             };
 
             tree.Age += deltaSeconds;
@@ -632,7 +632,7 @@ namespace Terrarium.Trees
             float growth = TreeLife.GrowthRate(environment, tree.Genes, config);
             tree.GrowthRate = growth;
 
-            float quality = TreeLife.NutrientFactor(environment.Nutrients, environment.Trail, config) * TreeLife.MoistureFactor(environment.Moisture, tree.Genes, config);
+            float quality = TreeLife.NutrientFactor(environment.Nutrients, config) * TreeLife.MoistureFactor(environment.Moisture, tree.Genes, config);
             tree.Richness = Mathf.Clamp01(Mathf.Lerp(tree.Richness, quality, Mathf.Clamp01(deltaSeconds / 40f)));
 
             tree.Health = Mathf.Clamp01(tree.Health + TreeLife.HealthChange(environment, tree.Genes, growth, deltaSeconds, config));
@@ -695,7 +695,7 @@ namespace Terrarium.Trees
                 Moisture = a.y,
                 Temperature = a.z,
                 Crowding = a.w,
-                Trail = b.x,
+                Cleared = b.x,
             };
 
             // Pioneer seeds (the first rain of seed on a new world) have better odds, so a forest can start.
@@ -703,7 +703,7 @@ namespace Terrarium.Trees
             if (rng.NextFloat() < chance)
             {
                 // The seedling starts out as rich as the spot it landed on, so its crown reflects the soil from the first branch.
-                float quality = TreeLife.NutrientFactor(environment.Nutrients, environment.Trail, config) * TreeLife.MoistureFactor(environment.Moisture, genes, config);
+                float quality = TreeLife.NutrientFactor(environment.Nutrients, config) * TreeLife.MoistureFactor(environment.Moisture, genes, config);
                 Plant(direction, b.z, quality, genes);
             }
         }

@@ -6,7 +6,7 @@
 //           leaves bud, colour and fall, and when it drops seeds. Pure functions of
 //           numbers (no scene, no GPU), so each rule can be tested on its own.
 // Idea    : Nothing here is scripted by place or time. A tree samples the world at
-//           its root (temperature, moisture, nutrients, trail, shade from
+//           its root (temperature, moisture, nutrients, cleared land, shade from
 //           neighbours) and every rule is a smooth response to those numbers.
 //           Forests, thinning in winter and regrowth in spring are what comes out.
 //
@@ -15,10 +15,10 @@
 //   temperature  smooth bump: 0 below tMin, 1 at tOpt, back to 0 above tMax
 //                f = smoothstep(tMin, tOpt, T) * (1 - smoothstep(tOpt, tMax, T))
 //   moisture     f = saturate( (M - mMin) / mSpan )
-//   nutrients    f = n_eff / (n_eff + nHalf)            (a saturating curve: half-effect at nHalf)
-//                n_eff = n * (1 + mycorrhizaBoost * saturate(trail))
-//                The fungal network (trail) makes a tree's uptake more efficient, as mycorrhizae do.
+//   nutrients    f = n / (n + nHalf)                    (a saturating curve: half-effect at nHalf)
 //   light        f = 1 / (1 + shade * crowding)         crowding = canopy density of the OTHERS
+//   clearing     f = 1 - clearingStress * cleared       cleared = how much people have built or farmed here (0..1)
+//                Seeds do not germinate at all where cleared exceeds clearedLimit.
 //
 // Health h in [0,1] (death at 0), per second:
 //   h' = h - (starve + drought + freeze + heat) * dt + recover * dt
@@ -58,8 +58,8 @@ namespace Terrarium.Trees
         /// <summary>Nutrients in the soil around the root.</summary>
         public float Nutrients;
 
-        /// <summary>Fungal network (trail) strength at the root.</summary>
-        public float Trail;
+        /// <summary>How much of the ground at the root people have cleared for a town or a farm, 0..1.</summary>
+        public float Cleared;
 
         /// <summary>Canopy density of the OTHER trees at the root (0 = open sky).</summary>
         public float Crowding;
@@ -100,11 +100,17 @@ namespace Terrarium.Trees
             return Mathf.Clamp01((moisture - (config.treeMoistureMin + genes.MoistureShift)) / config.treeMoistureSpan);
         }
 
-        /// <summary>Nutrient factor in [0,1], with the fungal network making uptake more efficient.</summary>
-        public static float NutrientFactor(float nutrients, float trail, SimConfig config)
+        /// <summary>Nutrient factor in [0,1]: a saturating curve with half the effect at the configured nutrient level.</summary>
+        public static float NutrientFactor(float nutrients, SimConfig config)
         {
-            float effective = Mathf.Max(0f, nutrients) * (1f + config.treeMycorrhizaBoost * Mathf.Clamp01(trail));
-            return effective / (effective + config.treeNutrientHalf);
+            float available = Mathf.Max(0f, nutrients);
+            return available / (available + config.treeNutrientHalf);
+        }
+
+        /// <summary>Clearing factor in [0,1]: standing on land that people have built over or farmed starves a tree.</summary>
+        public static float ClearingFactor(float cleared, SimConfig config)
+        {
+            return 1f - config.treeClearingStress * Mathf.Clamp01(cleared);
         }
 
         /// <summary>Light factor in [0,1]: shaded by neighbours' canopy.</summary>
@@ -124,8 +130,9 @@ namespace Terrarium.Trees
         {
             return TemperatureFactor(environment.Temperature, genes, config)
                  * MoistureFactor(environment.Moisture, genes, config)
-                 * NutrientFactor(environment.Nutrients, environment.Trail, config)
+                 * NutrientFactor(environment.Nutrients, config)
                  * LightFactor(environment.Crowding, config)
+                 * ClearingFactor(environment.Cleared, config)
                  * genes.Vigor(config);
         }
 
@@ -219,6 +226,11 @@ namespace Terrarium.Trees
         /// <summary>Chance that a plain seed landing in these conditions germinates: low, and proportional to how good the spot is.</summary>
         public static float GerminationChance(TreeEnvironment environment, SimConfig config)
         {
+            if (environment.Cleared > config.treeClearedLimit)
+            {
+                return 0f;   // people have built or farmed here
+            }
+
             return config.treeGerminationChance * GrowthRate(environment, config);
         }
 
@@ -229,6 +241,11 @@ namespace Terrarium.Trees
         /// </summary>
         public static float GerminationChance(TreeEnvironment environment, TreeGenes genes, SimConfig config)
         {
+            if (environment.Cleared > config.treeClearedLimit)
+            {
+                return 0f;   // people have built or farmed here
+            }
+
             return config.treeGerminationChance * GrowthRate(environment, genes, config);
         }
 

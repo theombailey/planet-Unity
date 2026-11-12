@@ -2,7 +2,7 @@
 // NixieDisplay
 // -----------------------------------------------------------------------------
 // Purpose : A row of nixie tubes that shows one number. The console has one for
-//           each key reading (year, temperature, trees, birds, fungus).
+//           each key reading (year, temperature, trees, birds, people).
 // Idea    : The number is turned into one digit per tube (Format, a plain function so
 //           it can be tested), and each tube's shader is told its digit, whether its
 //           decimal point is lit, and how brightly to glow. Tubes are only told when

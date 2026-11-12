@@ -8,7 +8,7 @@
 //           numbers that set the climate and food supply. Nothing here runs per
 //           frame; the F1 panel calls Apply and then starts a new world.
 // Parameters (all SimConfig fields): baseTemperature, evaporation, weatherRate,
-//           nutrientCap, physarumSporeRain, treeGerminationChance, boidEatRate.
+//           nutrientCap, peopleArrivalRate, treeGerminationChance, boidEatRate.
 // =============================================================================
 
 using UnityEngine;
@@ -50,7 +50,7 @@ namespace Terrarium
                     config.evaporation *= 0.7f;
                     config.weatherRate *= 1.5f;
                     config.nutrientCap = 1.4f;
-                    config.physarumSporeRain *= 1.5f;
+                    config.peopleArrivalRate *= 1.5f;
                     config.treeGerminationChance = 0.35f;
                     break;
 
@@ -59,7 +59,7 @@ namespace Terrarium
                     config.evaporation *= 1.6f;
                     config.weatherRate *= 0.6f;
                     config.nutrientCap = 0.6f;
-                    config.physarumSporeRain *= 0.5f;
+                    config.peopleArrivalRate *= 0.5f;
                     config.treeGerminationChance = 0.15f;
                     break;
 

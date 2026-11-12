@@ -1,115 +1,62 @@
 // =============================================================================
 // Nutrients.compute
 // -----------------------------------------------------------------------------
-// Purpose : Moves nutrients around the soil. This is the coupling that makes the
-//           fungal network matter: it carries nutrients from rich ground to poor.
+// Purpose : Moves nutrients around the soil and turns dead matter into nutrients.
+//           Trees draw on this soil; it is the planet's slow food supply.
 //
 // Kernels :
-//   ApplyEatReturn    - applies what the agents ate and what dead agents returned.
-//   NutrientTransport - spreads nutrients (fast along trails) and decomposes
-//                       organic matter into nutrients.
+//   NutrientTransport - spreads nutrients and decomposes organic matter into nutrients.
 //
 // Idea (transport): nutrients diffuse, like a drop of dye spreading, from a texel
-//   to its neighbours in proportion to the difference between them. Plain soil is a
-//   slow spreader. A trail is a fast pipe: the diffusion coefficient between two
-//   texels is boosted by how much trail is there,
-//        D = D0 + D1 * min(trail, saturation)
-//   so the network moves nutrients from where there are many to where there are few,
-//   which is how fungal networks really help trees. Nothing is told where to send
-//   them: they simply flow down the difference, faster wherever there is trail.
+//   to its neighbours in proportion to the difference between them, so rich ground
+//   slowly feeds poor ground next to it.
 //
 // Equations (per texel a, over its 4 axis neighbours b; k is a fraction of the gap moved per step):
-//     D_a    = D0 + D1 * min(trail_a, sat)                     (per texel)
-//     k_ab   = min( 0.5 (D_a + D_b) * dt / h^2 , 0.2 )         symmetric in a and b
-//     n_a'   = n_a + SUM_b  k_ab * (n_b - n_a)                 b over LAND neighbours only
+//     k      = min( D * dt / h^2 , 0.2 )                              the same for every pair
+//     n_a'   = n_a + SUM_b  k * (n_b - n_a)                           b over LAND neighbours only
 //   h is the angle one texel spans, (pi/2)/N: dividing by h^2 makes the spreading cover the
 //   same distance at any field resolution (the step is split into sub-steps by the C# side to
 //   keep k <= 0.2, which is what keeps the scheme stable).
 //
-// Conservation: because k_ab = k_ba, what a loses to b is exactly what b gains, so the total
-//   nutrient is unchanged by transport. Ocean texels are walls (k = 0) so nothing leaks into
+// Conservation: k is the same both ways, so what a loses to b is exactly what b gains and the
+//   total nutrient is unchanged by transport. Ocean texels are walls (k = 0) so nothing leaks into
 //   the sea. The only exceptions are the cube-face seams: the neighbour lookup there can land a
 //   fraction of a texel off, so the pairing is not exactly mutual and a very small amount can be
-//   created or lost; a test measures it. Real sources and sinks: weathering (Climate.compute),
-//   eating, and death.
+//   created or lost; a test measures it. Real sources and sinks: weathering (Climate.compute) and
+//   tree uptake.
 //
 //   Decomposition (organic matter o becomes nutrients; nothing is lost):
 //     x  = decompositionRate * moisture * saturate(T / 30) * o * dt
 //     o' = o - x,   n' = n + x
 //
-// Parameters: _DiffusionBase (D0), _DiffusionNetwork (D1), _TrailSaturation (sat),
-//   _DecompositionRate, _DeltaTime (this sub-step), _Resolution.
+// Parameters: _Diffusion (D), _DecompositionRate, _DeltaTime (this sub-step), _Resolution.
 //
 // Buffers & textures (slice = cube face):
 //   _SoilRead   read    R nutrients, G organic matter, B canopy, A reserved
 //   _SoilWrite  write   same layout (ping-pong: neighbours are read)
-//   _Soil       read+write in place (ApplyEatReturn: each thread touches only its own texel)
-//   _Trail, _Terrain, _Climate   read
-//   _Eaten, _Returned            per-texel fixed-point buffers filled by Physarum.compute
+//   _Terrain, _Climate  read
 // =============================================================================
 
-#pragma kernel ApplyEatReturn
 #pragma kernel NutrientTransport
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 
-#define NUTRIENT_SCALE 1048576.0
 #define MAX_EXCHANGE 0.2
 
-RWTexture2DArray<float4> _Soil;
 Texture2DArray<float4> _SoilRead;
 RWTexture2DArray<float4> _SoilWrite;
-Texture2DArray<float> _Trail;
 Texture2DArray<float4> _Terrain;
 Texture2DArray<float4> _Climate;
-RWStructuredBuffer<uint> _Eaten;
-RWStructuredBuffer<uint> _Returned;
 
 int _Resolution;
 float _DeltaTime;
-float _DiffusionBase;
-float _DiffusionNetwork;
-float _TrailSaturation;
+float _Diffusion;
 float _DecompositionRate;
-
-bool OutsideField(uint3 id)
-{
-    return id.x >= (uint)_Resolution || id.y >= (uint)_Resolution;
-}
-
-uint TexelIndex(uint3 id)
-{
-    return (id.z * (uint)_Resolution + id.y) * (uint)_Resolution + id.x;
-}
-
-[numthreads(8, 8, 1)]
-void ApplyEatReturn(uint3 id : SV_DispatchThreadID)
-{
-    if (OutsideField(id))
-    {
-        return;
-    }
-
-    uint index = TexelIndex(id);
-    float4 soil = _Soil[id];
-    soil.r = max(0.0, soil.r - _Eaten[index] * (1.0 / NUTRIENT_SCALE));
-    soil.g += _Returned[index] * (1.0 / NUTRIENT_SCALE);
-    _Soil[id] = soil;
-
-    _Eaten[index] = 0u;
-    _Returned[index] = 0u;
-}
-
-// How freely nutrients move out of a texel with this much trail (a per-texel diffusion coefficient).
-float Diffusivity(float trail)
-{
-    return _DiffusionBase + _DiffusionNetwork * min(trail, _TrailSaturation);
-}
 
 [numthreads(8, 8, 1)]
 void NutrientTransport(uint3 id : SV_DispatchThreadID)
 {
-    if (OutsideField(id))
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
     {
         return;
     }
@@ -119,11 +66,10 @@ void NutrientTransport(uint3 id : SV_DispatchThreadID)
     bool ocean = _Terrain[id].r < 0.0;
 
     float texelAngle = 1.57079633 / _Resolution;
-    float perStep = _DeltaTime / (texelAngle * texelAngle);
+    float k = min(_Diffusion * _DeltaTime / (texelAngle * texelAngle), MAX_EXCHANGE);
 
     if (!ocean)
     {
-        float here = Diffusivity(_Trail[id]);
         float nutrients = soil.r;
         float change = 0.0;
 
@@ -136,7 +82,6 @@ void NutrientTransport(uint3 id : SV_DispatchThreadID)
                 continue;   // the sea is a wall
             }
 
-            float k = min(0.5 * (here + Diffusivity(_Trail[neighbour])) * perStep, MAX_EXCHANGE);
             change += k * (_SoilRead[neighbour].r - nutrients);
         }
 

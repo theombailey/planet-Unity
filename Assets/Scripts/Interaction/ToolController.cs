@@ -23,7 +23,7 @@
 //      so a tool covers a wide area from the desk and a small one up close.
 //      angularRadius = radius / planetRadius  (arc length on a sphere = radius * angle).
 // Continuous tools add (rate * dt) each frame to a field channel, so the effect
-//      does not depend on frame rate. One-shot tools (spore dish, meteor) act on a click.
+//      does not depend on frame rate. One-shot tools (settlers, meteor) act on a click.
 //
 // Armed    : after picking up a tool the button must be released once before the tool
 //            acts, so the click that grabbed it does not also fire it.
@@ -105,6 +105,7 @@ namespace Terrarium.Interaction
         private Vector4 climateValue;
         private Vector4 soilValue;
         private Vector4 trailValue;
+        private Vector4 landValue;
         private bool lensOverlayOn;
         private bool viewWasShowing;
         private GUIStyle inkStyle;
@@ -475,8 +476,8 @@ namespace Terrarium.Interaction
                     brush.Apply(fieldSet.Get(FieldId.Climate).Current, localDirection, angularRadius, new Vector4(-config.frostRate * dt, 0f, 0f, 0f), -80f, 90f);
                     break;
 
-                case ToolKind.SporeDish:
-                    physarum.SpawnAgents(localDirection, Mathf.Max(angularRadius, 0.02f), config.sporeCount);
+                case ToolKind.Settlers:
+                    physarum.SpawnAgents(localDirection, Mathf.Max(angularRadius, 0.02f), config.settlerCount);
                     break;
 
                 case ToolKind.Meteor:
@@ -617,6 +618,7 @@ namespace Terrarium.Interaction
             FieldProbe.Request(fieldSet.Get(FieldId.Climate).Current, texel, value => climateValue = value);
             FieldProbe.Request(fieldSet.Get(FieldId.Soil).Current, texel, value => soilValue = value);
             FieldProbe.Request(fieldSet.Get(FieldId.Trail).Current, texel, value => trailValue = value);
+            FieldProbe.Request(fieldSet.Get(FieldId.Land).Current, texel, value => landValue = value);
         }
 
         // While the lens button is held, show the temperature across the planet; restore the view afterwards.
@@ -727,7 +729,7 @@ namespace Terrarium.Interaction
                 $"temperature  {climateValue.x:0.0} C\n" +
                 $"moisture  {climateValue.y:0.00}\n" +
                 $"nutrients  {soilValue.x:0.00}   organic  {soilValue.y:0.00}\n" +
-                $"network  {trailValue.x:0.00}\n" +
+                $"road  {trailValue.x:0.00}   town  {landValue.x:0.00}   farm  {landValue.y:0.00}\n" +
                 $"{ground}\n" +
                 SeasonAt(hitLocal);
 

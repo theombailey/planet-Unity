@@ -4,13 +4,13 @@
 // Purpose : An automatic health check for the whole ecosystem. For each of a few
 //           world seeds it starts a new world, runs the clock at 16x for a number
 //           of sim years, writes down the populations every season, and decides
-//           whether the fungus, trees and birds all survived without the birds
+//           whether the people, trees and birds all survived without the birds
 //           exploding to fill their pool.
 // Idea    : It only watches. It reads EcosystemStats (the same numbers the panel
 //           shows) and never touches the simulation except to change the world
 //           seed and the clock speed, so what it proves is true of the real game.
 // Judging : After a short settling period (SettleYears), every sample must have
-//           fungus > 0, trees alive > 0 and birds > 0, and birds and fungus must stay below
+//           people > 0, trees alive > 0 and birds > 0, and birds and people must stay below
 //           MaxBirdPoolFraction of their pools. The seasonal cycle is reported as
 //           the spread of the mean leaf cover (max - min) over each run.
 // Parameters: seeds, yearsPerSeed, settleYears, MaxBirdPoolFraction (inspector).
@@ -37,7 +37,7 @@ namespace Terrarium
         [Tooltip("To know how big the bird pool is.")]
         [SerializeField] private BoidSystem boids;
 
-        [Tooltip("To know how big the fungus pool is.")]
+        [Tooltip("To know how big the people pool is.")]
         [SerializeField] private PhysarumSystem physarum;
 
         [Tooltip("Seeds to try.")]
@@ -172,10 +172,10 @@ namespace Terrarium
             if (years >= settleYears)
             {
                 int pool = boids != null ? boids.PoolSize : 0;
-                bool extinct = s.PhysarumAlive <= 0 || s.TreesAlive <= 0 || s.BoidsAlive <= 0;
-                int fungusPool = physarum != null ? physarum.PoolSize : 0;
+                bool extinct = s.PeopleAlive <= 0 || s.TreesAlive <= 0 || s.BoidsAlive <= 0;
+                int peoplePool = physarum != null ? physarum.PoolSize : 0;
                 bool exploded = (pool > 0 && s.BoidsAlive > maxBirdPoolFraction * pool)
-                             || (fungusPool > 0 && s.PhysarumAlive > maxBirdPoolFraction * fungusPool);
+                             || (peoplePool > 0 && s.PeopleAlive > maxBirdPoolFraction * peoplePool);
                 if (extinct || exploded)
                 {
                     seedFailed = true;
@@ -183,7 +183,7 @@ namespace Terrarium
                 }
             }
 
-            report.AppendLine($"  y{years:0.00}: fungus {s.PhysarumAlive}, trees {s.TreesAlive}, birds {s.BoidsAlive}, leaf {s.MeanLeafCover:0.00}, temp {s.MeanTemperature:0.0}{flag}");
+            report.AppendLine($"  y{years:0.00}: people {s.PeopleAlive}, houses {s.Houses}, farms {s.FarmFraction:P1}, trees {s.TreesAlive}, birds {s.BoidsAlive}, leaf {s.MeanLeafCover:0.00}, temp {s.MeanTemperature:0.0}{flag}");
         }
 
         private void FinishSeed()

@@ -2,7 +2,7 @@
 // FieldSet
 // -----------------------------------------------------------------------------
 // Purpose : Owns every simulation field: the GPU textures that hold terrain,
-//           climate, soil, the physarum trail and the transient brush layer.
+//           climate, soil, the people's paths (trail), towns and farms (land) and the transient brush layer.
 //
 // Idea    : Each field is a Texture2DArray with 6 slices (one per cube face,
 //           see CubeSphere) of N x N texels, N from the active quality preset.
@@ -20,7 +20,8 @@
 //   Terrain  RGBA  R height (-1..1, 0 = sea level), G rock hardness
 //   Climate  RGBA  R temperature, G moisture 0..1, B insolation 0..1     ping-pong
 //   Soil     RGBA  R nutrients, G organic matter, B canopy density       ping-pong
-//   Trail    R     physarum trail strength                               ping-pong
+//   Trail    R     path strength: where people walk, which become roads  ping-pong
+//   Land     RGBA  R town density, G farmland 0..1                       ping-pong
 //   Brush    RGBA  transient tool paint
 //
 // Lifetime: textures are created in Start (after SimRoot has chosen a preset).
@@ -30,7 +31,7 @@
 //           itself only stores; it does not know how terrain is made). They
 //           are released in OnDisable so Play mode never leaks GPU memory.
 // Shaders : the current textures are published as global shader textures
-//           (_TerrainField, _ClimateField, _SoilField, _TrailField) with
+//           (_TerrainField, _ClimateField, _SoilField, _TrailField, _LandField) with
 //           _FieldResolution, so the planet's surface shader can read them.
 // =============================================================================
 
@@ -51,8 +52,11 @@ namespace Terrarium.Sphere
         /// <summary>Nutrients, organic matter, canopy density.</summary>
         Soil,
 
-        /// <summary>Physarum trail strength.</summary>
+        /// <summary>Path strength: where people walk.</summary>
         Trail,
+
+        /// <summary>Town density and farmland.</summary>
+        Land,
 
         /// <summary>Transient tool paint.</summary>
         Brush,
@@ -145,6 +149,7 @@ namespace Terrarium.Sphere
         private static readonly int ClimateFieldId = Shader.PropertyToID("_ClimateField");
         private static readonly int SoilFieldId = Shader.PropertyToID("_SoilField");
         private static readonly int TrailFieldId = Shader.PropertyToID("_TrailField");
+        private static readonly int LandFieldId = Shader.PropertyToID("_LandField");
         private static readonly int FieldResolutionId = Shader.PropertyToID("_FieldResolution");
 
         [Tooltip("The simulation: gives the quality preset (field resolution) and the seed.")]
@@ -242,6 +247,7 @@ namespace Terrarium.Sphere
                 new Field(FieldId.Climate, Resolution, RenderTextureFormat.ARGBFloat, pingPong: true),
                 new Field(FieldId.Soil, Resolution, RenderTextureFormat.ARGBFloat, pingPong: true),
                 new Field(FieldId.Trail, Resolution, RenderTextureFormat.RFloat, pingPong: true),
+                new Field(FieldId.Land, Resolution, RenderTextureFormat.ARGBFloat, pingPong: true),
                 new Field(FieldId.Brush, Resolution, RenderTextureFormat.ARGBFloat, pingPong: false),
             };
 
@@ -292,6 +298,7 @@ namespace Terrarium.Sphere
             Shader.SetGlobalTexture(ClimateFieldId, Get(FieldId.Climate).Current);
             Shader.SetGlobalTexture(SoilFieldId, Get(FieldId.Soil).Current);
             Shader.SetGlobalTexture(TrailFieldId, Get(FieldId.Trail).Current);
+            Shader.SetGlobalTexture(LandFieldId, Get(FieldId.Land).Current);
             Shader.SetGlobalFloat(FieldResolutionId, Resolution);
         }
 

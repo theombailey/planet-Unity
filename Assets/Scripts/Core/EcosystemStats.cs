@@ -32,14 +32,23 @@ namespace Terrarium
         /// <summary>Average temperature per texel, deg C.</summary>
         public float MeanTemperature;
 
-        /// <summary>Average fungal trail per texel (the size and activity of the network).</summary>
-        public float MeanTrail;
+        /// <summary>Average path strength per texel (how much of the planet is criss-crossed by roads).</summary>
+        public float MeanRoad;
 
         /// <summary>Share of texels that are land, 0..1.</summary>
         public float LandFraction;
 
-        /// <summary>Living slime-mould agents.</summary>
-        public int PhysarumAlive;
+        /// <summary>Farmland as a share of the land, 0..1.</summary>
+        public float FarmFraction;
+
+        /// <summary>Land covered by towns (town density above 0.6) as a share of the land, 0..1.</summary>
+        public float TownFraction;
+
+        /// <summary>Living people.</summary>
+        public int PeopleAlive;
+
+        /// <summary>Houses standing (set by the town renderer; 0 until it reports).</summary>
+        public int Houses;
 
         /// <summary>Trees standing (including dead ones that have not collapsed).</summary>
         public int TreesStanding;

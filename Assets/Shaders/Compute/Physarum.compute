@@ -1,33 +1,36 @@
 // =============================================================================
 // Physarum.compute
 // -----------------------------------------------------------------------------
-// Purpose : The slime mould (physarum) agents that build the planet's fungal /
-//           root network, and the trail they leave. After Jeff Jones' agent
-//           model of Physarum polycephalum.
+// Purpose : The planet's people. Each agent is a walker who follows, and lays, a
+//           footpath; the paths that many walkers use become roads, and where roads
+//           meet on good land, towns grow (Settlement.compute). After Jeff Jones'
+//           agent model of Physarum polycephalum, the same rule that lets a slime mould
+//           link food sources with an efficient network (Tero et al., 2010, rebuilt the
+//           Tokyo rail map this way).
 //
 // Kernels :
-//   InitAgents       - scatters the starting population on land.
+//   InitAgents       - scatters the starting population on livable land.
 //   CopyAgents       - carries agents into a re-sized pool (quality preset change).
 //   ClearCounters    - zeroes the population counters before a step.
-//   AgentStep        - one step of every agent: sense, steer, move, deposit, eat,
-//                      pay upkeep, die or split.
+//   AgentStep        - one step of every agent: sense, steer, move, leave a path, earn
+//                      food, pay upkeep, die or split.
 //   TrailDiffuse     - adds this step's deposits to the trail, blurs it, fades it.
 //   ClearDeposit     - zeroes the deposit buffer.
-//   SpawnAgents      - the spore dish: starts agents inside a small circle.
+//   SpawnAgents      - settlers: starts agents inside a small circle (a tool), or at random
+//                      empty livable places (pioneers drifting in).
 //   KillAgents       - an impact: removes every agent inside a circle.
 //
 // Idea (the three rules that grow a network):
 //   1. SENSE  Each agent samples a "signal" at three points ahead of it: straight on, and
 //             left and right of that, at a fixed distance.
 //   2. STEER  It turns toward the strongest signal.
-//   3. LEAVE  It moves forward and adds a little trail where it lands.
-//   The trail is part of the signal, so agents follow trails that other agents (and they
-//   themselves) laid. A trail that is followed gets stronger, so it is followed more: positive
-//   feedback. Meanwhile the trail blurs and fades, so unused paths vanish. The result is a
-//   network of tubes that finds food and links it, with nobody drawing it.
-//   Here the signal also includes NUTRIENTS, so agents head for rich ground, and the OCEAN is
-//   strongly repulsive. Agents eat nutrients to live, so the population is not scripted: it
-//   grows where food is plentiful and dies back where it is not.
+//   3. LEAVE  It moves forward and adds a little path where it lands.
+//   The path is part of the signal, so walkers follow paths that others (and they themselves)
+//   laid. A path that is followed gets stronger, so it is followed more: positive feedback.
+//   Meanwhile it blurs and fades, so unused paths vanish. The result is a web of roads
+//   joining the places people want to be, with nobody drawing it.
+//   Here the signal also includes LIVABILITY (good ground: warm, wet, low, fertile; see
+//   Livability.hlsl) and existing TOWNS, and the OCEAN is strongly repulsive.
 //
 // Geometry on the sphere (pos is a unit vector, heading a unit vector at right angles to it):
 //   rotate heading about pos by angle a:   h' = h cos a + (pos x h) sin a
@@ -38,22 +41,23 @@
 //   Agents live in the planet's own frame, the same frame as the fields, so the spin of the
 //   planet does not matter here.
 //
-// Energy (per step of dt seconds; all rates per sim second):
-//   eat      e = min( nutrients here, eatRate * dt )          taken from the soil
-//   energy  += e * energyPerNutrient - upkeep * dt
+// Energy (per step of dt seconds; all rates per sim second; L = livability here, C = crowding (how many
+//   people are here now), S = town density (long memory), F = farmland 0..1 here, all from the Land field):
+//   income   = foodRate * L * (1 + farmBoost * F) / (1 + C / (capacityBase + capacityFarm * F))
+//   energy  += (income - upkeep) * dt
 //   energy  -= oceanPenalty * dt                  if the agent is over ocean
-//   energy  -= coldPenalty * dt * saturate((coldLimit - T) / 10)   in ground colder than coldLimit
-//   energy <= 0              -> dies; birthCost of body mass returns to the soil as organic matter
+//   energy <= 0              -> dies
 //   energy >  reproduceEnergy -> splits: both halves keep (energy - birthCost) / 2
-//   Population is never set by script: it settles where eating balances upkeep.
+//   Farms feed more people (the boost and the higher capacity); crowding feeds fewer. A town
+//   therefore grows until the land around it can hold no more. Population is never set by
+//   script: it settles where income balances upkeep.
+//   Walking slows in town: speed = speed * lerp(1, townSlowdown, saturate(S / townFull)), so
+//   people crowd and potter about instead of racing through.
 //
 // Concurrency (many agents act in the same moment; what is racy and why that is acceptable):
-//   - Trail deposits, nutrient eaten and organic returned are added with InterlockedAdd into
-//     per-texel integer buffers (fixed point), so no deposit is ever lost. They are applied after
-//     the step (TrailDiffuse here, ApplyEatReturn in Nutrients.compute).
-//   - Each agent reads the nutrient level before the others' eating is applied. If several agents
-//     share one texel they can together overdraw it slightly; the soil is then clamped at zero.
-//     The overdraw is at most (agents per texel) x eatRate x dt, tiny next to the nutrient levels.
+//   - Path deposits are added with InterlockedAdd into a per-texel integer buffer (fixed
+//     point), so no deposit is ever lost. They are applied after the step (TrailDiffuse here,
+//     LandStep in Settlement.compute).
 //   - A new agent takes a dead slot picked at random, claimed with InterlockedCompareExchange
 //     (0 dead -> 2 newborn). If that slot is taken the split simply waits for a later step. A
 //     newborn (state 2) is switched to alive (1) at the start of the next step, so it is never
@@ -64,7 +68,7 @@
 //   _Heading    float4   xyz heading (unit, tangent), w unused
 //   _Alive      uint     0 dead, 1 alive, 2 newborn
 //
-// Parameters: see the cbuffer-style variables below; they come from SimConfig "Physarum".
+// Parameters: see the variables below; they come from SimConfig "People".
 // =============================================================================
 
 #pragma kernel InitAgents
@@ -78,9 +82,9 @@
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 #include "Assets/Shaders/Include/Noise.hlsl"
+#include "Assets/Shaders/Include/Livability.hlsl"
 
 #define DEPOSIT_SCALE 4096.0
-#define NUTRIENT_SCALE 1048576.0
 
 RWStructuredBuffer<float4> _PosEnergy;
 RWStructuredBuffer<float4> _Heading;
@@ -90,15 +94,14 @@ RWStructuredBuffer<float4> _OldHeading;
 RWStructuredBuffer<uint> _OldAlive;
 
 RWStructuredBuffer<uint> _Deposit;              // per texel, fixed point (DEPOSIT_SCALE)
-RWStructuredBuffer<uint> _Eaten;                // per texel, fixed point (NUTRIENT_SCALE)
-RWStructuredBuffer<uint> _Returned;             // per texel, fixed point (NUTRIENT_SCALE)
 RWStructuredBuffer<uint> _Counters;             // [0] alive, [1] births, [2] deaths
 
 Texture2DArray<float> _TrailRead;
 RWTexture2DArray<float> _TrailWrite;
+Texture2DArray<float4> _Land;                   // R town density, G farmland, B crowding
 Texture2DArray<float4> _Soil;                   // R nutrients
 Texture2DArray<float4> _Terrain;                // R height
-Texture2DArray<float4> _Climate;                // R temperature
+Texture2DArray<float4> _Climate;                // R temperature, G moisture
 
 uint _PoolSize;
 uint _OldPoolSize;
@@ -117,22 +120,26 @@ float _DepositAmount;
 float _TrailDiffusion;
 float _TrailDecay;
 float _TrailMax;
-float _NutrientWeight;
-float _EatRate;
-float _EnergyPerNutrient;
+float _FoodWeight;
+float _TownWeight;
+float _FoodRate;
 float _Upkeep;
 float _StartEnergy;
 float _ReproduceEnergy;
 float _BirthCost;
 float _OceanPenalty;
-float _ColdLimit;
-float _ColdPenalty;
+float _FarmBoost;
+float _CapacityBase;
+float _CapacityFarm;
+float _TownSlowdown;
+float _TownFull;
 
 float3 _EventDirection;      // SpawnAgents / KillAgents: centre of the circle (unit vector, planet frame)
 float _EventRadius;          // ... and its radius in radians
 uint _SpawnCount;
+uint _SpawnAnywhere;         // 1: pioneers pick their own empty livable spot anywhere; 0: inside the circle
 
-static const float OCEAN_AVOIDANCE = 50.0;      // signal penalty for ocean: agents never choose to go there
+static const float OCEAN_AVOIDANCE = 50.0;      // signal penalty for ocean: people never choose to go there
 
 // ---- small helpers ----------------------------------------------------------------
 
@@ -162,17 +169,29 @@ uint TexelIndex(int3 texel)
     return (uint)((texel.z * _Resolution + texel.y) * _Resolution + texel.x);
 }
 
-// The strength of the signal at a point: trail + nutrients, minus a huge penalty over ocean.
-float Signal(float3 location)
+// Livability of the ground at a texel (0 in the ocean).
+float LivabilityAt(uint3 texel)
 {
-    int3 texel = CS_DirToTexel(location, _Resolution);
-    float signal = _TrailRead[uint3(texel)] + _NutrientWeight * _Soil[uint3(texel)].r;
-    if (_Terrain[uint3(texel)].r < 0.0)
+    float height = _Terrain[texel].r;
+    if (height < 0.0)
     {
-        signal -= OCEAN_AVOIDANCE;
+        return 0.0;
     }
 
-    return signal;
+    float4 climate = _Climate[texel];
+    return Livability(climate.r, climate.g, height, _Soil[texel].r);
+}
+
+// The strength of the signal at a point: path + good ground + towns, minus a huge penalty over ocean.
+float Signal(float3 location)
+{
+    uint3 texel = uint3(CS_DirToTexel(location, _Resolution));
+    if (_Terrain[texel].r < 0.0)
+    {
+        return -OCEAN_AVOIDANCE;
+    }
+
+    return _TrailRead[texel] + _FoodWeight * LivabilityAt(texel) + _TownWeight * saturate(_Land[texel].r);
 }
 
 // Random unit vector on the sphere.
@@ -214,13 +233,13 @@ void InitAgents(uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    // Try a few random spots until one is dry land (about 40% of the planet is).
+    // Try a few random spots until one is livable land.
     uint state = HashUint(index * 2654435761u + asuint(_Seed) + 12345u);
-    for (int attempt = 0; attempt < 12; attempt++)
+    for (int attempt = 0; attempt < 24; attempt++)
     {
         float3 direction = RandomDirection(state);
-        int3 texel = CS_DirToTexel(direction, _Resolution);
-        if (_Terrain[uint3(texel)].r > 0.0)
+        uint3 texel = uint3(CS_DirToTexel(direction, _Resolution));
+        if (LivabilityAt(texel) > 0.3)
         {
             _PosEnergy[index] = float4(direction, _StartEnergy);
             _Heading[index] = float4(RandomHeading(direction, state), 0.0);
@@ -307,8 +326,9 @@ void AgentStep(uint3 id : SV_DispatchThreadID)
 
     heading = RotateAbout(position, heading, turn);
 
-    // 3. MOVE along the sphere and carry the heading with us.
-    float arc = _Speed * _DeltaTime;
+    // 3. MOVE along the sphere and carry the heading with us. People slow down in a town.
+    float townHere = _Land[uint3(CS_DirToTexel(position, _Resolution))].r;
+    float arc = _Speed * lerp(1.0, _TownSlowdown, saturate(townHere / _TownFull)) * _DeltaTime;
     float s, c;
     sincos(arc, s, c);
     float3 newPosition = normalize(position * c + heading * s);
@@ -325,32 +345,24 @@ void AgentStep(uint3 id : SV_DispatchThreadID)
     uint3 texelIndex3 = uint3(texel);
     uint texelIndex = TexelIndex(texel);
 
-    // 4. LEAVE trail.
+    // 4. LEAVE a path.
     InterlockedAdd(_Deposit[texelIndex], (uint)(_DepositAmount * DEPOSIT_SCALE));
 
-    // 5. EAT and pay the costs of living.
-    float nutrients = _Soil[texelIndex3].r;
-    float eaten = min(nutrients, _EatRate * _DeltaTime);
-    if (eaten > 0.0)
-    {
-        InterlockedAdd(_Eaten[texelIndex], (uint)(eaten * NUTRIENT_SCALE));
-    }
-
-    energy += eaten * _EnergyPerNutrient - _Upkeep * _DeltaTime;
+    // 5. EARN food and pay the costs of living.
+    float4 land = _Land[texelIndex3];
+    float capacity = _CapacityBase + _CapacityFarm * land.g;
+    float income = _FoodRate * LivabilityAt(texelIndex3) * (1.0 + _FarmBoost * land.g) / (1.0 + land.b / capacity);
+    energy += (income - _Upkeep) * _DeltaTime;
 
     if (_Terrain[texelIndex3].r < 0.0)
     {
         energy -= _OceanPenalty * _DeltaTime;
     }
 
-    float temperature = _Climate[texelIndex3].r;
-    energy -= _ColdPenalty * _DeltaTime * saturate((_ColdLimit - temperature) / 10.0);
-
     // 6. LIFE CYCLE.
     if (energy <= 0.0)
     {
         _Alive[index] = 0u;
-        InterlockedAdd(_Returned[texelIndex], (uint)(_BirthCost * NUTRIENT_SCALE));
         InterlockedAdd(_Counters[2], 1u);
         return;
     }
@@ -417,8 +429,11 @@ void ClearDeposit(uint3 id : SV_DispatchThreadID)
     }
 }
 
-// Spore dish: each thread starts one agent at a random point inside the circle, in a random dead slot
-// claimed with the same compare-exchange used for births. If the slot is taken the spore is simply lost.
+// Settlers: each thread starts one person in a random dead slot, claimed with the same compare-exchange
+// used for births. If the slot is taken the settler is simply lost.
+//   _SpawnAnywhere = 0 (a tool): at a random point inside the circle, wherever it is.
+//   _SpawnAnywhere = 1 (pioneers): the thread tries a few random places on the planet and settles at the first
+//   that is good, empty ground, so new people found new villages instead of piling into old ones.
 [numthreads(64, 1, 1)]
 void SpawnAgents(uint3 id : SV_DispatchThreadID)
 {
@@ -428,8 +443,36 @@ void SpawnAgents(uint3 id : SV_DispatchThreadID)
     }
 
     uint rng = HashUint(id.x * 2654435761u + _Frame * 747796405u + 977u);
-    uint slot = HashUint(rng) % _PoolSize;
 
+    float3 position = float3(0, 1, 0);
+    if (_SpawnAnywhere != 0u)
+    {
+        bool found = false;
+        for (int attempt = 0; attempt < 8 && !found; attempt++)
+        {
+            float3 candidate = RandomDirection(rng);
+            uint3 texel = uint3(CS_DirToTexel(candidate, _Resolution));
+            if (LivabilityAt(texel) > 0.35 && _Land[texel].r < 0.05)
+            {
+                position = candidate;
+                found = true;
+            }
+        }
+
+        if (!found)
+        {
+            return;
+        }
+    }
+    else
+    {
+        // A uniform random point in the circle: the distance is radius * sqrt(u), the direction is random.
+        float3 outward = RandomHeading(_EventDirection, rng);
+        float distance = _EventRadius * sqrt(Random01(rng));
+        position = Ahead(_EventDirection, outward, distance);
+    }
+
+    uint slot = HashUint(rng) % _PoolSize;
     uint previous;
     InterlockedCompareExchange(_Alive[slot], 0u, 2u, previous);
     if (previous != 0u)
@@ -437,17 +480,12 @@ void SpawnAgents(uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    // A uniform random point in the circle: the distance is radius * sqrt(u), the direction is random.
-    float3 outward = RandomHeading(_EventDirection, rng);
-    float distance = _EventRadius * sqrt(Random01(rng));
-    float3 position = Ahead(_EventDirection, outward, distance);
-
     _PosEnergy[slot] = float4(position, _StartEnergy);
     _Heading[slot] = float4(RandomHeading(position, rng), 0.0);
     InterlockedAdd(_Counters[1], 1u);
 }
 
-// An impact: every living agent within the circle dies, and its body mass joins the soil as organic matter.
+// An impact: every living person within the circle dies.
 [numthreads(64, 1, 1)]
 void KillAgents(uint3 id : SV_DispatchThreadID)
 {
@@ -465,6 +503,5 @@ void KillAgents(uint3 id : SV_DispatchThreadID)
     }
 
     _Alive[index] = 0u;
-    InterlockedAdd(_Returned[TexelIndex(CS_DirToTexel(position, _Resolution))], (uint)(_BirthCost * NUTRIENT_SCALE));
     InterlockedAdd(_Counters[2], 1u);
 }

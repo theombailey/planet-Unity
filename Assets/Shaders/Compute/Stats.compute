@@ -8,7 +8,7 @@
 //
 // Kernels :
 //   ClearStats   - zeroes the accumulator buffer.
-//   ReduceFields - adds up the soil, climate, trail and terrain fields over every texel.
+//   ReduceFields - adds up the soil, climate, road, land-use and terrain fields over every texel.
 //   ReduceBoids  - adds up the live boids' count, speed, energy and seed carriers.
 //
 // Idea (a "reduction"): many threads must add into the same few totals. Doing that with
@@ -29,7 +29,8 @@
 //   over texels". That is fine for a trend; it is not an exact planetary average.
 //
 // Accumulator layout (uint per slot):
-//   fields: 0 nutrients, 1 organic, 2 canopy, 3 temperature (offset +100), 4 trail, 5 land texels
+//   fields: 0 nutrients, 1 organic, 2 canopy, 3 temperature (offset +100), 4 road (trail), 5 land texels,
+//           6 farmland (sum over land), 7 town texels (town density above 0.6)
 //   boids : 8 live count, 9 speed sum, 10 energy sum, 11 seed carriers
 // =============================================================================
 
@@ -50,6 +51,7 @@ Texture2DArray<float4> _Soil;
 Texture2DArray<float4> _Climate;
 Texture2DArray<float4> _Terrain;
 Texture2DArray<float> _Trail;
+Texture2DArray<float4> _Land;
 
 StructuredBuffer<float4> _PosEnergy;
 StructuredBuffer<float4> _VelSeed;
@@ -72,7 +74,7 @@ void ClearStats(uint3 id : SV_DispatchThreadID)
 [numthreads(8, 8, 1)]
 void ReduceFields(uint3 id : SV_DispatchThreadID, uint group : SV_GroupIndex)
 {
-    if (group < 6u)
+    if (group < 8u)
     {
         gs[group] = 0u;
     }
@@ -93,13 +95,19 @@ void ReduceFields(uint3 id : SV_DispatchThreadID, uint group : SV_GroupIndex)
         InterlockedAdd(gs[4], (uint)(clamp(trail, 0.0, 8.0) * FIELD_SCALE));
         if (height > 0.0)
         {
+            float4 land = _Land[id];
             InterlockedAdd(gs[5], 1u);
+            InterlockedAdd(gs[6], (uint)(clamp(land.g, 0.0, 1.0) * FIELD_SCALE));
+            if (land.r > 0.6)
+            {
+                InterlockedAdd(gs[7], 1u);
+            }
         }
     }
 
     GroupMemoryBarrierWithGroupSync();
 
-    if (group < 6u)
+    if (group < 8u)
     {
         InterlockedAdd(_StatsAcc[group], gs[group]);
     }

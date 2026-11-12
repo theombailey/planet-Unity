@@ -12,10 +12,10 @@
 // Rules   :
 //     SEASON     the year phase is split in four (0-.25 spring, .25-.5 summer, .5-.75 autumn, .75-1 winter);
 //                a new season prints a three-line block: the year and season, the populations and the temperature.
-//     MILESTONE  trees, birds and fungus each print once when they first pass a milestone, and again (as a fall)
+//     MILESTONE  trees, birds, people and houses each print once when they first pass a milestone, and again (as a fall)
 //                when they drop back below the one under it. Milestones are kept apart by a margin so a population
 //                wobbling around a number does not print over and over.
-//     FADING     fungus below 100 prints "FUNGUS FADING"; back above 1000 prints "FUNGUS RECOVERS".
+//     FADING     people below 20 prints "PEOPLE DYING OUT"; back above 100 prints "PEOPLE RECOVER".
 // =============================================================================
 
 using System.Collections.Generic;
@@ -28,13 +28,15 @@ namespace Terrarium.Workshop
         private static readonly string[] SeasonNames = { "SPRING", "SUMMER", "AUTUMN", "WINTER" };
         private static readonly int[] TreeMilestones = { 50, 100, 250, 500, 750, 1000 };
         private static readonly int[] BirdMilestones = { 500, 1000, 2000, 5000 };
-        private static readonly int[] FungusMilestones = { 1000, 10000, 100000 };
+        private static readonly int[] PeopleMilestones = { 100, 500, 1000, 2500, 5000, 10000 };
+        private static readonly int[] HouseMilestones = { 10, 50, 150, 400, 1000 };
 
         private int lastSeason = -1;
         private int treeLevel;
         private int birdLevel;
-        private int fungusLevel;
-        private bool fungusFading;
+        private int peopleLevel;
+        private int houseLevel;
+        private bool peopleFading;
         private bool primed;
 
         /// <summary>The season index 0..3 for a year phase (0 = spring equinox).</summary>
@@ -56,8 +58,9 @@ namespace Terrarium.Workshop
             lastSeason = -1;
             treeLevel = 0;
             birdLevel = 0;
-            fungusLevel = 0;
-            fungusFading = false;
+            peopleLevel = 0;
+            houseLevel = 0;
+            peopleFading = false;
             primed = false;
         }
 
@@ -76,7 +79,8 @@ namespace Terrarium.Workshop
             int season = SeasonOf(stats.YearPhase);
             int trees = stats.TreesAlive;
             int birds = stats.BoidsAlive;
-            int fungus = stats.PhysarumAlive;
+            int people = stats.PeopleAlive;
+            int houses = stats.Houses;
 
             if (!primed)
             {
@@ -84,8 +88,9 @@ namespace Terrarium.Workshop
                 lastSeason = season;
                 treeLevel = LevelOf(trees, TreeMilestones);
                 birdLevel = LevelOf(birds, BirdMilestones);
-                fungusLevel = LevelOf(fungus, FungusMilestones);
-                fungusFading = fungus < 100;
+                peopleLevel = LevelOf(people, PeopleMilestones);
+                houseLevel = LevelOf(houses, HouseMilestones);
+                peopleFading = people < 20;
                 lines.Add($"-- YEAR {stats.Year} {SeasonName(season)} --");
                 return;
             }
@@ -95,22 +100,23 @@ namespace Terrarium.Workshop
                 lastSeason = season;
                 lines.Add($"-- YEAR {stats.Year} {SeasonName(season)} --");
                 lines.Add($"TREES {trees} BIRDS {birds}");
-                lines.Add($"FUNGUS {Short(fungus)} TEMP {stats.MeanTemperature:0.0}C");
+                lines.Add($"PEOPLE {Short(people)} {stats.MeanTemperature:0.0}C");
             }
 
             Milestones("TREES", trees, TreeMilestones, ref treeLevel, lines);
             Milestones("BIRDS", birds, BirdMilestones, ref birdLevel, lines);
-            Milestones("FUNGUS", fungus, FungusMilestones, ref fungusLevel, lines);
+            Milestones("PEOPLE", people, PeopleMilestones, ref peopleLevel, lines);
+            Milestones("HOUSES", houses, HouseMilestones, ref houseLevel, lines);
 
-            if (!fungusFading && fungus < 100)
+            if (!peopleFading && people < 20)
             {
-                fungusFading = true;
-                lines.Add("FUNGUS FADING");
+                peopleFading = true;
+                lines.Add("PEOPLE DYING OUT");
             }
-            else if (fungusFading && fungus > 1000)
+            else if (peopleFading && people > 100)
             {
-                fungusFading = false;
-                lines.Add("FUNGUS RECOVERS");
+                peopleFading = false;
+                lines.Add("PEOPLE RECOVER");
             }
         }
 

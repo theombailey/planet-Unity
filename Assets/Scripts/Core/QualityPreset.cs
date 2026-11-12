@@ -25,8 +25,8 @@ namespace Terrarium
         [Tooltip("Texels along one edge of each of the 6 cube-sphere faces (N). Fields are N x N x 6. Use 128, 256 or 512.")]
         [Range(64, 1024)] public int fieldResolution = 256;
 
-        [Tooltip("Size of the physarum (slime mould) agent pool. The living population emerges below this cap.")]
-        [Range(50_000, 2_000_000)] public int physarumAgents = 400_000;
+        [Tooltip("Size of the pool of people (the physarum walkers). The living population emerges below this cap.")]
+        [Range(1_000, 200_000)] public int physarumAgents = 24_000;
 
         [Tooltip("Size of the boid pool. The living population emerges below this cap.")]
         [Range(2_000, 100_000)] public int boidCount = 15_000;

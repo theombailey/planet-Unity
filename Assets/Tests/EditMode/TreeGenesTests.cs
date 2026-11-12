@@ -37,7 +37,7 @@ namespace Terrarium.Tests
 
         private static TreeEnvironment Environment(float temperature, float moisture = 0.8f)
         {
-            return new TreeEnvironment { Temperature = temperature, Moisture = moisture, Nutrients = 0.5f, Trail = 0f, Crowding = 0f };
+            return new TreeEnvironment { Temperature = temperature, Moisture = moisture, Nutrients = 0.5f, Cleared = 0f, Crowding = 0f };
         }
 
         [Test]

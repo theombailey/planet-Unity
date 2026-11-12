@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // Purpose : Makes all the sound in the game, live, from maths. There are no audio
 //           files. What you hear is the ecosystem: more birds means busier song,
-//           more fungus means a fuller drone, leaves rustle, wind follows the
+//           more people means a fuller village hum, leaves rustle, wind follows the
 //           weather, and the tools make their own small sounds.
 // Idea    : The audio thread (OnAudioFilterRead) calls us with a block of samples
 //           to fill, thousands of times a second. We add up a few simple layers:
@@ -11,9 +11,9 @@
 //                      slow "gust" wobble. Colder planets whistle (brighter noise).
 //             rain     bright noise (white noise minus its own low-pass), louder the
 //                      harder it rains where the camera stands.
-//             drone    three slightly detuned sine waves (A1, A1+, E2) whose
-//                      loudness follows the fungus count and whose slow tremolo
-//                      follows the network's trail density.
+//             hum      a soft open chord of three slightly detuned sine waves (A2, E3, A3)
+//                      whose loudness follows the number of people and whose slow
+//                      tremolo follows how much of the planet roads cover.
 //             flock    short bell-like notes (a sine plus a quiet octave) picked
 //                      at random from a pentatonic scale, which cannot sound
 //                      wrong. Notes arrive at random (Poisson) times; the rate
@@ -21,7 +21,7 @@
 //             leaves   tiny noise ticks whose rate follows trees alive x leaf
 //                      cover (bare winter trees are silent).
 //             tools    held tools hum or hiss while used; one-shot tools play a
-//                      short event (spore pop, meteor thud, seed plink, bird
+//                      short event (settlers' bell, meteor thud, seed plink, bird
 //                      flutter).
 //           Everything is mixed, scaled by the master volume, and squashed with
 //           tanh so it can never clip.
@@ -49,7 +49,7 @@ namespace Terrarium.Audio
     {
         private const int VoiceCount = 8;
         private const int EventNone = 0;
-        private const int EventSpore = 1;
+        private const int EventSettlers = 1;
         private const int EventMeteor = 2;
         private const int EventSeed = 3;
         private const int EventFlock = 4;
@@ -69,7 +69,7 @@ namespace Terrarium.Audio
         [Tooltip("How loud the wind layer can get.")]
         [Range(0f, 0.3f)] [SerializeField] private float windLevel = 0.12f;
 
-        [Tooltip("How loud the fungus drone can get.")]
+        [Tooltip("How loud the village hum can get.")]
         [Range(0f, 0.2f)] [SerializeField] private float droneLevel = 0.06f;
 
         [Tooltip("How loud the bird notes are.")]
@@ -164,7 +164,7 @@ namespace Terrarium.Audio
                 case ToolKind.CompostScoop: heldTool = 2; heldTimer = 0.15f; break;
                 case ToolKind.HeatLamp: heldTool = 3; heldTimer = 0.15f; break;
                 case ToolKind.FrostSpray: heldTool = 4; heldTimer = 0.15f; break;
-                case ToolKind.SporeDish: Trigger(EventSpore); break;
+                case ToolKind.Settlers: Trigger(EventSettlers); break;
                 case ToolKind.Meteor: Trigger(EventMeteor); break;
                 case ToolKind.SeedJar: Trigger(EventSeed); break;
                 case ToolKind.BoidCage: Trigger(EventFlock); break;
@@ -203,8 +203,8 @@ namespace Terrarium.Audio
             float bare = 1f - Mathf.Clamp01(s.MeanLeafCover);
             targetWind = Mathf.Lerp(0.4f, 1f, bare) * (1f - 0.4f * targetNight);
             targetBright = 1f - Mathf.Clamp01((s.MeanTemperature + 10f) / 40f);
-            targetDrone = Mathf.Clamp01(Mathf.Log10(1f + s.PhysarumAlive) / 5.2f);
-            targetTremolo = Mathf.Clamp01(s.MeanTrail);
+            targetDrone = Mathf.Clamp01(Mathf.Log10(1f + s.PeopleAlive) / 4.2f);
+            targetTremolo = Mathf.Clamp01(s.MeanRoad);
             targetFlockRate = (0.15f + 1.85f * Mathf.Clamp01(Mathf.Log10(1f + s.BoidsAlive) / 4f)) * (1f - 0.7f * targetNight);
             targetLeafRate = 12f * Mathf.Clamp01(s.TreesAlive / 300f) * Mathf.Clamp01(s.MeanLeafCover);
         }
@@ -255,13 +255,13 @@ namespace Terrarium.Audio
                     right += Noise() * rainGain * rainLevel * 0.5f + rainSample * 0.5f;
                 }
 
-                // ---- Fungus drone: three detuned sines with a slow tremolo ----
+                // ---- Village hum: an open chord of three detuned sines with a slow tremolo ----
                 tremPhase += TwoPi * 0.17f * invRate;
                 if (tremPhase > TwoPi) tremPhase -= TwoPi;
                 float tremGain = 1f - 0.4f * tremolo * (0.5f + 0.5f * Mathf.Sin(tremPhase));
-                dronePhaseA = Advance(dronePhaseA, 55f, invRate);
-                dronePhaseB = Advance(dronePhaseB, 55.4f, invRate);
-                dronePhaseC = Advance(dronePhaseC, 82.5f, invRate);
+                dronePhaseA = Advance(dronePhaseA, 110f, invRate);
+                dronePhaseB = Advance(dronePhaseB, 110.5f, invRate);
+                dronePhaseC = Advance(dronePhaseC, 164.8f, invRate);
                 float drone = (Mathf.Sin(dronePhaseA) + Mathf.Sin(dronePhaseB) + 0.6f * Mathf.Sin(dronePhaseC)) * 0.33f;
                 float droneSample = drone * droneGain * droneLevel * tremGain * (1f + 0.5f * night);
                 left += droneSample;
@@ -400,10 +400,11 @@ namespace Terrarium.Audio
 
             switch (eventPlaying)
             {
-                case EventSpore: // a soft downward pop
-                    eventPhase = Advance(eventPhase, Mathf.Lerp(700f, 220f, Mathf.Clamp01(t / 0.15f)), invRate);
-                    sample = Mathf.Sin(eventPhase) * Mathf.Exp(-t * 22f) * 0.5f;
-                    done = t > 0.4f;
+                case EventSettlers: // a little two-note bell: a rising fourth, the second note just after the first
+                    float bellTime = t < 0.14f ? t : t - 0.14f;
+                    eventPhase = Advance(eventPhase, t < 0.14f ? 659f : 880f, invRate);
+                    sample = (Mathf.Sin(eventPhase) + 0.3f * Mathf.Sin(2f * eventPhase)) * Mathf.Exp(-bellTime * 10f) * 0.3f;
+                    done = t > 0.9f;
                     break;
 
                 case EventMeteor: // low thud plus a rumble of filtered noise

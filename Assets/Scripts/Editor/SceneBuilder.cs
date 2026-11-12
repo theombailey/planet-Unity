@@ -73,7 +73,7 @@ namespace Terrarium.EditorTools
             new PropSpec("Tool_WateringCan", PrimitiveType.Cylinder, new Vector3(0.20f, 0.14f, 0.20f), new Color(0.30f, 0.45f, 0.60f), ToolKind.WateringCan),
             new PropSpec("Tool_CompostScoop", PrimitiveType.Cube, new Vector3(0.28f, 0.10f, 0.16f), new Color(0.35f, 0.25f, 0.15f), ToolKind.CompostScoop),
             new PropSpec("Tool_SeedJar", PrimitiveType.Cylinder, new Vector3(0.15f, 0.13f, 0.15f), new Color(0.60f, 0.65f, 0.45f), ToolKind.SeedJar),
-            new PropSpec("Tool_SporeDish", PrimitiveType.Cylinder, new Vector3(0.22f, 0.02f, 0.22f), new Color(0.75f, 0.72f, 0.60f), ToolKind.SporeDish),
+            new PropSpec("Tool_Settlers", PrimitiveType.Cylinder, new Vector3(0.22f, 0.02f, 0.22f), new Color(0.75f, 0.72f, 0.60f), ToolKind.Settlers),
             new PropSpec("Tool_BoidCage", PrimitiveType.Cube, new Vector3(0.22f, 0.24f, 0.22f), new Color(0.50f, 0.50f, 0.52f), ToolKind.BoidCage),
             new PropSpec("Tool_HeatLamp", PrimitiveType.Capsule, new Vector3(0.12f, 0.14f, 0.12f), new Color(0.80f, 0.40f, 0.20f), ToolKind.HeatLamp),
             new PropSpec("Tool_FrostSpray", PrimitiveType.Capsule, new Vector3(0.11f, 0.15f, 0.11f), new Color(0.65f, 0.80f, 0.90f), ToolKind.FrostSpray),
@@ -243,6 +243,7 @@ namespace Terrarium.EditorTools
             SetReference(physarum, "simRoot", simRoot);
             SetReference(physarum, "fieldSet", fieldSet);
             SetReference(physarum, "physarumShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Physarum.compute"));
+            SetReference(physarum, "settlementShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Settlement.compute"));
             SetReference(physarum, "nutrientShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Nutrients.compute"));
 
             var trees = host.AddComponent<TreeManager>();
@@ -263,12 +264,22 @@ namespace Terrarium.EditorTools
             SetReference(boids, "trees", trees);
             SetReference(boids, "boidMaterial", GetOrCreateMaterial("Boids", "Terrarium/Boids"));
 
+            var towns = host.AddComponent<Terrarium.Towns.TownRenderer>();
+            SetReference(towns, "simRoot", simRoot);
+            SetReference(towns, "fieldSet", fieldSet);
+            SetReference(towns, "people", physarum);
+            SetReference(towns, "planet", planet.transform);
+            SetReference(towns, "houseShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Houses.compute"));
+            SetReference(towns, "houseMaterial", GetOrCreateMaterial("Houses", "Terrarium/Houses"));
+            SetReference(towns, "personMaterial", GetOrCreateMaterial("People", "Terrarium/People"));
+
             var stats = host.AddComponent<StatsSystem>();
             SetReference(stats, "simRoot", simRoot);
             SetReference(stats, "fieldSet", fieldSet);
             SetReference(stats, "statsShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Stats.compute"));
             SetReference(stats, "boids", boids);
             SetReference(stats, "physarum", physarum);
+            SetReference(stats, "towns", towns);
             SetReference(stats, "trees", trees);
 
             var stability = host.AddComponent<StabilityRunner>();

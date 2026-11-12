@@ -1,0 +1,134 @@
+// =============================================================================
+// Settlement.compute
+// -----------------------------------------------------------------------------
+// Purpose : Turns where people walk into towns and farms. Keeps the Land field:
+//           R = town density (slow: a place remembers being busy), G = farmland (0..1),
+//           B = crowding (fast: how many people are here right now).
+//
+// Kernels :
+//   LandStep - one step of the Land field. One thread per texel.
+//
+// Idea (towns): a town is where many people spend time. Every step, each walker's
+//   presence is added to the texel it stands on. That gives the CROWDING C in channel B, which follows
+//   the people closely (it is what food income is shared by: a lagging value would let the
+//   population overshoot and crash):
+//        count  = path deposited here this step / depositAmount        (people here now)
+//        C'     = lerp(C, mean of the 3x3 around it, spread) + crowdRate * (count - C) * dt
+//   The count is scaled by (resolution / 256)^2 so that a "person per texel" means the same on
+//   every field size. At rest, C is about the local number of people per texel.
+//   The TOWN density S (channel R) remembers the busiest that a place has been: it rises to the
+//   crowding at once and fades only slowly after, so a town survives a bad spell and does not
+//   appear just because a crowd passed through:
+//        S'     = max( lerp(S, mean of the 3x3 around it, spread) * (1 - decay * dt),  C' )
+//
+// Idea (farms): people cultivate the good ground around a town, not under it and not far
+//   from it. Farmland grows toward a target set by how much town is nearby (S, which has
+//   spread outward into a halo) and how good the ground is:
+//        target = livability * smoothstep(farmStart, farmFull, S) * (1 - smoothstep(coreStart, coreFull, S))
+//        F'     = F + (target - F) * rate * dt          rate = farmGrowth if growing, farmAbandon if not
+//   Where S is high (the core) the land is built over and farms give way; where S is low
+//   they are too far away to work; and where the ground is poor, cold or dry nothing grows.
+//   A ring of fields round each town, then, with nobody drawing it.
+//
+// Parameters: _TownDecay, _TownSpread, _FarmStart, _FarmFull, _CoreStart, _CoreFull,
+//   _FarmGrowth, _FarmAbandon, _CrowdRate (SimConfig "Towns and farms"), _TrafficScale, _DepositAmount.
+//
+// Buffers & textures (slice = cube face):
+//   _LandRead  read   R town density, G farmland, B crowding, A unused
+//   _LandWrite write  same layout (ping-pong: neighbours are read)
+//   _Deposit   read   per-texel fixed-point path deposited this step (filled by Physarum.compute)
+//   _Terrain, _Climate, _Soil  read
+// =============================================================================
+
+#pragma kernel LandStep
+
+#include "Assets/Shaders/Include/CubeSphere.hlsl"
+#include "Assets/Shaders/Include/Livability.hlsl"
+
+#define DEPOSIT_SCALE 4096.0
+#define TOWN_MAX 6.0
+
+Texture2DArray<float4> _LandRead;
+RWTexture2DArray<float4> _LandWrite;
+StructuredBuffer<uint> _Deposit;
+Texture2DArray<float4> _Terrain;
+Texture2DArray<float4> _Climate;
+Texture2DArray<float4> _Soil;
+
+int _Resolution;
+float _DeltaTime;
+float _DepositAmount;
+float _TrafficScale;
+float _TownDecay;
+float _TownSpread;
+float _FarmStart;
+float _FarmFull;
+float _CoreStart;
+float _CoreFull;
+float _FarmGrowth;
+float _FarmAbandon;
+float _CrowdRate;
+
+uint TexelIndex(int3 texel)
+{
+    return (uint)((texel.z * _Resolution + texel.y) * _Resolution + texel.x);
+}
+
+[numthreads(8, 8, 1)]
+void LandStep(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    float4 terrain = _Terrain[id];
+    if (terrain.r < 0.0)
+    {
+        _LandWrite[id] = float4(0, 0, 0, 0);    // nobody lives at sea
+        return;
+    }
+
+    int3 texel = int3(id);
+    float4 here = _LandRead[id];
+
+    // Town density: spread over the 3x3 neighbourhood (land only), then add today's presence and fade.
+    float sum = here.r;
+    float crowdSum = here.b;
+    float samples = 1.0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            if (dx == 0 && dy == 0)
+            {
+                continue;
+            }
+
+            uint3 neighbour = uint3(CS_NeighbourTexel(texel, int2(dx, dy), _Resolution));
+            if (_Terrain[neighbour].r >= 0.0)
+            {
+                float4 other = _LandRead[neighbour];
+                sum += other.r;
+                crowdSum += other.b;
+                samples += 1.0;
+            }
+        }
+    }
+
+    float count = _Deposit[TexelIndex(texel)] * (1.0 / DEPOSIT_SCALE) / max(_DepositAmount, 1e-4) * _TrafficScale;
+    float crowd = lerp(here.b, crowdSum / samples, _TownSpread) + _CrowdRate * (count - here.b) * _DeltaTime;
+    crowd = clamp(crowd, 0.0, TOWN_MAX);
+
+    float remembered = lerp(here.r, sum / samples, _TownSpread) * (1.0 - saturate(_TownDecay * _DeltaTime));
+    float town = clamp(max(remembered, crowd), 0.0, TOWN_MAX);
+
+    // Farmland.
+    float4 climate = _Climate[id];
+    float livability = Livability(climate.r, climate.g, terrain.r, _Soil[id].r);
+    float target = livability * smoothstep(_FarmStart, _FarmFull, town) * (1.0 - smoothstep(_CoreStart, _CoreFull, town));
+    float rate = target > here.g ? _FarmGrowth : _FarmAbandon;
+    float farm = saturate(here.g + (target - here.g) * saturate(rate * _DeltaTime));
+
+    _LandWrite[id] = float4(town, farm, crowd, 0.0);
+}

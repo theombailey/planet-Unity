@@ -42,7 +42,10 @@ namespace Terrarium
         [Tooltip("Boids to count (optional).")]
         [SerializeField] private BoidSystem boids;
 
-        [Tooltip("Physarum agents to count (optional).")]
+        [Tooltip("The houses to count (optional).")]
+        [SerializeField] private Terrarium.Towns.TownRenderer towns;
+
+        [Tooltip("The people to count (optional).")]
         [SerializeField] private PhysarumSystem physarum;
 
         [Tooltip("Trees to count (optional).")]
@@ -112,6 +115,7 @@ namespace Terrarium
             statsShader.SetTexture(fields, "_Climate", fieldSet.Get(FieldId.Climate).Current);
             statsShader.SetTexture(fields, "_Terrain", fieldSet.Get(FieldId.Terrain).Current);
             statsShader.SetTexture(fields, "_Trail", fieldSet.Get(FieldId.Trail).Current);
+            statsShader.SetTexture(fields, "_Land", fieldSet.Get(FieldId.Land).Current);
             statsShader.Dispatch(fields, groups, groups, CubeSphere.FaceCount);
 
             BoidSimulation boidSimulation = boids != null ? boids.Simulation : null;
@@ -149,8 +153,10 @@ namespace Terrarium
                 MeanOrganic = acc[1] / (FieldScale * texels),
                 MeanCanopy = acc[2] / (FieldScale * texels),
                 MeanTemperature = acc[3] / (TempScale * texels) - 100f,
-                MeanTrail = acc[4] / (FieldScale * texels),
+                MeanRoad = acc[4] / (FieldScale * texels),
                 LandFraction = acc[5] / texels,
+                FarmFraction = acc[5] > 0 ? acc[6] / (FieldScale * acc[5]) : 0f,
+                TownFraction = acc[5] > 0 ? (float)acc[7] / acc[5] : 0f,
                 BoidsAlive = (int)acc[8],
                 BoidMeanSpeed = acc[8] > 0 ? acc[9] / (SpeedScale * acc[8]) : 0f,
                 BoidMeanEnergy = acc[8] > 0 ? acc[10] / (EnergyScale * acc[8]) : 0f,
@@ -160,7 +166,12 @@ namespace Terrarium
 
             if (physarum != null)
             {
-                stats.PhysarumAlive = (int)physarum.AliveCount;
+                stats.PeopleAlive = (int)physarum.AliveCount;
+            }
+
+            if (towns != null)
+            {
+                stats.Houses = towns.HouseCount;
             }
 
             if (boids != null)
@@ -190,8 +201,8 @@ namespace Terrarium
 
             GUILayout.Label($"Year {latest.Year}, {latest.YearPhase:P0} through   land {latest.LandFraction:P0}");
             GUILayout.Label($"  temperature {latest.MeanTemperature:0.0} C   nutrients {latest.MeanNutrients:0.000}   organic {latest.MeanOrganic:0.000}");
-            GUILayout.Label($"  canopy {latest.MeanCanopy:0.000}   network {latest.MeanTrail:0.000}");
-            GUILayout.Label($"  life: {latest.PhysarumAlive:N0} fungus, {latest.TreesAlive} trees, {latest.BoidsAlive:N0} birds");
+            GUILayout.Label($"  canopy {latest.MeanCanopy:0.000}   roads {latest.MeanRoad:0.000}   farms {latest.FarmFraction:P1} of land   towns {latest.TownFraction:P1}");
+            GUILayout.Label($"  life: {latest.PeopleAlive:N0} people, {latest.TreesAlive} trees, {latest.BoidsAlive:N0} birds");
             GUILayout.Label($"  birds: speed {latest.BoidMeanSpeed:0.000}, energy {latest.BoidMeanEnergy:0.0}, carrying {latest.BoidsCarryingSeeds}");
         }
     }

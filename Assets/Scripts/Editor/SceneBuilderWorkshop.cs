@@ -14,7 +14,7 @@
 //           shelf   centre x = 2.0, z = 1.35, 2.4 wide, 1.6 tall, two boards of tools, light on top
 //           console centre x = -2.0, z = -1.25, 2.35 wide, face sloping up toward the back
 //           Row layout on the console face (z across the slope: + is toward the back / top of screen):
-//             z = +0.33  nixie tubes (year, temperature, trees, birds, fungus), plates at z = +0.215
+//             z = +0.33  nixie tubes (year, temperature, trees, birds, people), plates at z = +0.215
 //             z = -0.02  paper roll (left) and the three dials (right), plates at z = -0.17
 //             z = -0.38  push buttons, plates at z = -0.47
 // =============================================================================
@@ -46,7 +46,7 @@ namespace Terrarium.EditorTools
             ("Tool_WateringCan", 1, -0.88f),
             ("Tool_CompostScoop", 1, -0.44f),
             ("Tool_SeedJar", 1, 0.00f),
-            ("Tool_SporeDish", 1, 0.40f),
+            ("Tool_Settlers", 1, 0.40f),
             ("Tool_BoidCage", 1, 0.86f),
             ("Tool_HeatLamp", 0, -0.80f),
             ("Tool_FrostSpray", 0, -0.35f),
@@ -203,7 +203,7 @@ namespace Terrarium.EditorTools
             // ---- Nixie readouts across the top of the face.
             var groups = new (string Label, int Tubes, int Decimals)[]
             {
-                ("YEAR", 3, 0), ("TEMP C", 4, 1), ("TREES", 4, 0), ("BIRDS", 5, 0), ("FUNGUS K", 4, 1),
+                ("YEAR", 3, 0), ("TEMP C", 4, 1), ("TREES", 4, 0), ("BIRDS", 5, 0), ("PEOPLE", 4, 0),
             };
 
             var displays = new NixieDisplay[groups.Length];
@@ -295,7 +295,7 @@ namespace Terrarium.EditorTools
             SetReference(readouts, "temperature", displays[1]);
             SetReference(readouts, "trees", displays[2]);
             SetReference(readouts, "birds", displays[3]);
-            SetReference(readouts, "fungus", displays[4]);
+            SetReference(readouts, "people", displays[4]);
             SetReference(readouts, "paper", roll);
         }
 

@@ -41,7 +41,7 @@ The camera moves between two modes that blend smoothly:
 | Mode | What it is for |
 |---|---|
 | **Desk view** | See the whole planet on the desk, orbit it, and read the tools. This is the default. |
-| **Surface view** | Stand on the ground and walk over the terrain, trees, and fungus. Reached by zooming in past the closest desk distance. |
+| **Surface view** | Stand on the ground and walk over the terrain, trees, farms and villages. Reached by zooming in past the closest desk distance. |
 
 Zooming in past the closest desk distance flies the camera down to the surface point under the mouse. Zooming out past the highest surface height flies you back to the desk.
 
@@ -78,7 +78,7 @@ Nine tools sit on the desk. Hover one to highlight it (it gets a thick ink outli
 
 **Using a tool**
 - Hold the **left button** over the planet to use a continuous tool (watering can, compost scoop, heat lamp, frost spray, field lens).
-- **Click** to use a one-shot tool (spore dish, meteor, seed jar, bird cage).
+- **Click** to use a one-shot tool (settlers, meteor, seed jar, bird cage).
 - After you pick a tool up, release the button once before it starts working, so the click that grabbed it does not also fire it.
 - The brush size depends on your distance from the ground. From the desk a tool covers a wide area; up close it becomes small.
 - Hold a tool and move the mouse: it floats over the cursor, or over the planet's surface point if the cursor is on the planet.
@@ -90,10 +90,10 @@ Nine tools sit on the desk. Hover one to highlight it (it gets a thick ink outli
 | **Compost scoop** | Adds nutrients and organic matter. | Hold left button over the planet. |
 | **Heat lamp** | Warms the ground. | Hold left button over the planet. |
 | **Frost spray** | Chills the ground. | Hold left button over the planet. |
-| **Spore dish** | Scatters fungal spores (physarum agents) that spread along the ground and carry nutrients. | Click on the planet. |
-| **Meteor** | Digs a crater, throws up dust, and kills life inside the blast (fungus and trees). It has a short cooldown. | Click on the planet. |
+| **Settlers** | Sends a small party of people to the spot. They wander, follow paths, and found a village if the ground can feed them. | Click on the planet. |
+| **Meteor** | Digs a crater, throws up dust, and kills life inside the blast (people, trees and birds). It has a short cooldown. | Click on the planet. |
 | **Seed jar** | Plants a tree seed. It only grows if the spot allows (dry land, not too cold or hot). If the spot is wrong, a message tells you why. | Click on dry land. |
-| **Field lens** | Reads the ground under the cursor (height, climate, soil, fungal trail). Hold the left button to see temperature shown over the planet. | Hover to read; hold to see the temperature overlay. |
+| **Field lens** | Reads the ground under the cursor (height, climate, soil, and how much road, town and farm there is). Hold the left button to see temperature shown over the planet. | Hover to read; hold to see the temperature overlay. |
 | **Bird cage** | Releases a flock of birds (boids) at the clicked spot, all starting out heading the same way. They then follow their own rules. | Click on the planet. |
 
 ---
@@ -139,7 +139,7 @@ Press **F1** to open the panel on the left side of the screen. It is for develop
 - **Quality preset** toolbar: switches between the Low, Medium and High presets. Fields are resampled, so the world does not reset when you change presets.
 - **Painterly effects**: toggles for Bands, Hatching, Outlines, Paper and Boil (the hand-drawn look).
 - **Terrain and climate**: sliders for the land/sea balance, climate settings, and the terrain tools.
-- **Physarum network**: population readout.
+- **People, roads and farms**: population readout.
 - **Forest**: tree count, living and dead trees, leaf cover, and growth readout.
 - **Boids**: birds alive out of the pool, births and deaths in the last step, seeds dropped so far, and a *Re-scatter boids* button.
 - **Field view** and **debug brush** controls (see the next section).
@@ -165,7 +165,12 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 
 - **Climate.** The lamp is the planet's sun: parallel light from the lamp's direction, so exactly half the planet is lit and the day/night line is a clean circle. The lit side warms, and warmth spreads and fades slowly. The axial tilt means the seasons turn over the year.
 - **Water and nutrients.** Moisture and nutrients move around and get used up or stored in the soil.
-- **Fungus (physarum).** Fungal agents follow the soil's nutrients and moisture, make trails, and carry nutrients along those trails. Spores from the spore dish start new agents.
+- **People, roads, towns and farms (physarum).** The planet's people are the physarum agents (after Jeff Jones' slime-mould model; the same rule rebuilt the Tokyo rail map in a famous experiment). Each walker follows the paths other people have worn, lays a little more as they go, and is drawn toward good ground (warm, wet, low, fertile: the *livability* of a place). Paths that are used get stronger and unused ones fade, so a web of roads forms between the good places with nobody drawing it.
+  - **Towns.** A place that stays crowded remembers it: its *town density* rises to the crowd and fades only slowly after, so a town survives a bad spell. People walk slowly in a town. Houses appear one by one as the density rises (a village starts as a handful, a town fills in toward its centre), and every house is styled by the climate where it stands: timber and steep dark roofs with snow in the cold, flat adobe in the heat, thatch where it is wet, plaster and terracotta in between. At night the windows glow.
+  - **Farms.** Round a town, on good ground, people cultivate: the land is cut into small fields, each with its own crop tone and tilled in rows, so farmed ground is darker and ruled with lines. Farms feed more people, and a crowded place feeds fewer, so a town grows until the land round it can hold no more. Nothing is built under the town centre and nothing farmed far from a town.
+  - **Pioneers and settlers.** A faint trickle of pioneers settles empty, good ground far from any town, so a whole world can be settled over time. The *Settlers* tool sends a party of your own.
+  - **Trees and people.** Land that people have built over or farmed starves the trees on it, and seeds do not germinate there. There is no deforestation beyond that. The old fungal link (trees feeding better beside a fungal network) is gone.
+  - **A deliberate change from the spec.** The spec's fungal / root network (physarum, section 6.1) is now the people. It is the same physarum algorithm written from scratch, with a different story and different consequences: roads, towns and farms instead of mycelium and nutrient pipes.
 - **Trees.** A seed takes root where the soil and temperature allow. A tree grows a branch network from the space colonization method. Its trunk and branches thicken as it grows, and its crown leans toward the lamp.
   - Trees grow faster in warm, moist, nutrient-rich soil, and slower in shade from other trees.
   - **Genes and kinds.** Every tree carries six inherited traits: the temperature it grows best at, crown shape (broad dome to narrow cone), height, leaf size, how evergreen it is, and a leaf-colour drift. A seed inherits its parent's traits with a small random change, and each trait has a cost (cold-adapted trees grow slower, evergreens grow slower, tall trees need wetter ground), so no tree wins everywhere. Climate then selects: cold ground ends up with cold-adapted conifers and warm wet ground with broad leafy trees, with nobody assigning a species to a place. The F1 panel shows how many kinds exist.
@@ -189,7 +194,7 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 
 ## Tuning and presets
 
-- Every number you can tune lives in the **SimConfig** asset (`Assets/Settings/Terrarium/SimConfig.asset`), grouped by area (camera, climate, physarum, trees, tools, and so on). Edit them in the Inspector, then press Play to see the change.
+- Every number you can tune lives in the **SimConfig** asset (`Assets/Settings/Terrarium/SimConfig.asset`), grouped by area (camera, climate, people, towns and farms, trees, tools, and so on). Edit them in the Inspector, then press Play to see the change.
 - The **quality presets** (Low, Medium, High) scale things like resolution and particle counts for different machines. You can switch them in the F1 panel.
 - The **climate presets** *Lush* (warm, wet, rich soil), *Harsh* (cold, dry, poor soil) and *Fresh start* (code defaults) are buttons in the F1 panel. They reset the config and start a new world with the same seed.
 - The seed is fixed by default, so the same config gives the same planet. Use *Randomise seed* or **R** for a new one.
@@ -198,14 +203,14 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 
 ## Sound
 
-All sound is generated live from maths (no audio files) and follows the ecosystem: wind (stronger when trees are bare, whistlier when cold), a fungus drone, pentatonic bird notes (busier with more birds, an octave lower at night), leaf rustle, a rain hiss when you stand in rain on the surface, and a sound for each tool. The F1 panel has a volume slider.
+All sound is generated live from maths (no audio files) and follows the ecosystem: wind (stronger when trees are bare, whistlier when cold), a soft village hum that swells with the number of people, pentatonic bird notes (busier with more birds, an octave lower at night), leaf rustle, a rain hiss when you stand in rain on the surface, and a sound for each tool. The F1 panel has a volume slider.
 
 ---
 
 ## Developer notes
 
 - **Requirements:** Unity 6000.1.14f1, URP 17.1, Forward+, new Input System only. No asset-store packages.
-- **Tests:** run them from the Unity Test Runner (EditMode); all 192 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs fungus, trees and birds every season and reports PASS or FAIL.
+- **Tests:** run them from the Unity Test Runner (EditMode); all 197 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs people, houses, farms, trees and birds every season and reports PASS or FAIL (it passes on all 5 seeds).
 - **Building the game:** in Unity choose **Terrarium > Build Windows Player**. It writes `Builds/Terrarium/Terrarium.exe` (about 94 MB). Press **F3** in the built game for demo mode.
 - **Editor bridge:** a file-based command bridge (`Assets/Scripts/Editor/DevBridge.cs`) lets scripts drive the open editor (play, capture screenshots, snap the camera, use tools). It is editor-only and is not part of the game.
 - **Scene and assets:** `SceneBuilder` (editor menu) rebuilds the desk, planet, tools, and dials from code.
@@ -217,14 +222,15 @@ All sound is generated live from maths (no audio files) and follows the ecosyste
 | `Assets/Scripts/Core` | Sim root, clock, config, quality presets, F1 panel |
 | `Assets/Scripts/Sphere` | Cube-sphere fields and the debug view |
 | `Assets/Scripts/Climate` | Lamp, temperature, moisture, terrain |
-| `Assets/Scripts/Physarum` | Fungal agents and nutrient transport |
+| `Assets/Scripts/Physarum` | The people (physarum walkers), roads, towns and farms, and nutrient transport |
+| `Assets/Scripts/Towns` | The house and person meshes, and the renderer that draws every house and person |
 | `Assets/Scripts/Trees` | Space colonization, tree mesher, tree life, tree manager |
 | `Assets/Scripts/Workshop` | The console: nixie tubes, paper roll, bitmap font, buttons, name plates, and the code that hides the workshop on the surface |
 | `Assets/Scripts/Audio` | Generative sound (`OnAudioFilterRead`) |
 | `Assets/Scripts/Boids` | Boid simulation (GPU buffers, spatial hash grid) and the scene glue that draws them and carries seeds to the trees |
 | `Assets/Scripts/Interaction` | Input, camera rig, tools, dials, surface navigation |
 | `Assets/Scripts/Rendering` | Painterly settings, ink pass, planet mesh, and the sky / atmosphere / cloud controller |
-| `Assets/Shaders` | Compute shaders (fields, physarum, trees, boids), painterly surface shaders, and the Sky, Atmosphere and Clouds shaders |
+| `Assets/Shaders` | Compute shaders (fields, physarum, settlement, houses, trees, boids), painterly surface shaders, and the Sky, Atmosphere and Clouds shaders |
 | `Assets/Tests/EditMode` | Unit and GPU tests |
 
 ---

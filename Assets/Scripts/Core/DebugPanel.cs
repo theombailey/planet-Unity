@@ -47,7 +47,7 @@ namespace Terrarium
         [Tooltip("The terrain and climate controls shown on the panel (optional).")]
         [SerializeField] private ClimateController climate;
 
-        [Tooltip("The physarum population readout shown on the panel (optional).")]
+        [Tooltip("The people (physarum) readout shown on the panel (optional).")]
         [SerializeField] private PhysarumSystem physarum;
 
         [Tooltip("The tree readout shown on the panel (optional).")]
@@ -206,7 +206,7 @@ namespace Terrarium
 
             if (physarum != null)
             {
-                GUILayout.Label("Physarum network");
+                GUILayout.Label("People, roads and farms");
                 physarum.OnDebugGui();
             }
 
@@ -304,7 +304,7 @@ namespace Terrarium
                 $"Axis lean {clock.LeanRadians * Mathf.Rad2Deg:+0.0;-0.0} deg\n" +
                 $"Sim steps this frame {simRoot.StepsLastFrame}\n" +
                 $"Seed {simRoot.ActiveSeed}\n" +
-                $"Preset {preset.label}: field {preset.fieldResolution}, physarum {preset.physarumAgents:N0},\n" +
+                $"Preset {preset.label}: field {preset.fieldResolution}, people {preset.physarumAgents:N0},\n" +
                 $"  boids {preset.boidCount:N0}, trees {preset.maxTrees}";
         }
     }

@@ -7,7 +7,7 @@
 //           - the pixel font covers the characters the console prints and draws dots where
 //             a glyph has them,
 //           - the paper log prints the right lines at the right times (first snapshot,
-//             a new season, milestones going up and down, fungus fading and recovering),
+//             a new season, milestones going up and down, people fading and recovering),
 //           - pausing the clock remembers the speed it had,
 //           - the volume dial maps its angle to a volume and back,
 //           - the console's wedge mesh has outward-facing faces.
@@ -114,9 +114,9 @@ namespace Terrarium.Tests
 
         // ---------------------------------------------------------- paper log
 
-        private static EcosystemStats Stats(int year, float phase, int trees, int birds, int fungus)
+        private static EcosystemStats Stats(int year, float phase, int trees, int birds, int people, int houses = 0)
         {
-            return new EcosystemStats { Valid = true, Year = year, YearPhase = phase, TreesAlive = trees, BoidsAlive = birds, PhysarumAlive = fungus, MeanTemperature = 15f };
+            return new EcosystemStats { Valid = true, Year = year, YearPhase = phase, TreesAlive = trees, BoidsAlive = birds, PeopleAlive = people, Houses = houses, MeanTemperature = 15f };
         }
 
         [Test]
@@ -169,19 +169,32 @@ namespace Terrarium.Tests
         }
 
         [Test]
-        public void PaperLog_FungusFading_ThenRecovering()
+        public void PaperLog_PeopleDyingOut_ThenRecovering()
         {
             var log = new PaperLog();
             var lines = new List<string>();
             log.Poll(Stats(1, 0.10f, 100, 800, 5000), lines);
             lines.Clear();
 
-            log.Poll(Stats(1, 0.11f, 100, 800, 60), lines);
-            CollectionAssert.Contains(lines, "FUNGUS FADING");
+            log.Poll(Stats(1, 0.11f, 100, 800, 10), lines);
+            CollectionAssert.Contains(lines, "PEOPLE DYING OUT");
 
             lines.Clear();
-            log.Poll(Stats(1, 0.12f, 100, 800, 2500), lines);
-            CollectionAssert.Contains(lines, "FUNGUS RECOVERS");
+            log.Poll(Stats(1, 0.12f, 100, 800, 400), lines);
+            CollectionAssert.Contains(lines, "PEOPLE RECOVER");
+        }
+
+        [Test]
+        public void PaperLog_Houses_PrintAsATownGrows()
+        {
+            var log = new PaperLog();
+            var lines = new List<string>();
+            log.Poll(Stats(1, 0.10f, 100, 800, 500, houses: 0), lines);
+            lines.Clear();
+
+            log.Poll(Stats(1, 0.11f, 100, 800, 500, houses: 60), lines);
+            CollectionAssert.Contains(lines, "HOUSES PASS 10");
+            CollectionAssert.Contains(lines, "HOUSES PASS 50");
         }
 
         [Test]

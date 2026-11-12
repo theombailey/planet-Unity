@@ -29,7 +29,7 @@ namespace Terrarium.Sphere
         private static readonly int ShowBoundariesId = Shader.PropertyToID("_ShowBoundaries");
         private static readonly int ShowGridId = Shader.PropertyToID("_ShowGrid");
 
-        private static readonly string[] FieldNames = { "Terrain", "Climate", "Soil", "Trail", "Brush" };
+        private static readonly string[] FieldNames = { "Terrain", "Climate", "Soil", "Trail", "Land", "Brush" };
         private static readonly string[] ChannelNames = { "R", "G", "B", "A", "RGB" };
 
         [Tooltip("Provides the field textures.")]

@@ -57,29 +57,45 @@ MonoBehaviour:
   climateSpinUpSeconds: 600
   spinUpResolution: 64
   climateSettleSeconds: 20
-  physarumStartAgents: 30000
+  physarumStartAgents: 500
   physarumSensorAngleDegrees: 35
-  physarumSensorDistance: 0.03
+  physarumSensorDistance: 0.02
   physarumTurnSpeed: 20
-  physarumSpeed: 0.25
+  physarumSpeed: 0.05
   physarumDepositAmount: 0.5
   physarumTrailDiffusion: 0.3
-  physarumTrailDecay: 0.9
+  physarumTrailDecay: 0.25
   physarumTrailMax: 10
-  physarumNutrientWeight: 3
-  physarumEatRate: 0.005
-  physarumEnergyPerNutrient: 40
-  physarumUpkeep: 0.13
+  physarumFoodWeight: 3
+  physarumTownWeight: 1
+  physarumFoodRate: 0.25
+  physarumUpkeep: 0.12
   physarumStartEnergy: 1
   physarumReproduceEnergy: 2
   physarumBirthCost: 0.5
   physarumOceanPenalty: 2
-  physarumColdLimit: -10
-  physarumColdPenalty: 0.4
-  physarumSporeRain: 6
+  peopleArrivalRate: 0.5
+  townDecay: 0.03
+  crowdingRate: 0.15
+  townSpread: 0.2
+  townSlowdown: 0.35
+  townFull: 1
+  townCapacity: 0.16
+  farmCapacity: 0.8
+  farmBoost: 1.5
+  farmStart: 0.12
+  farmFull: 0.45
+  coreStart: 1.4
+  coreFull: 2.4
+  farmGrowth: 0.03
+  farmAbandon: 0.05
+  houseThreshold: 0.6
+  houseCandidates: 200000
+  houseSize: 0.0032
+  houseMinPixels: 1.6
+  personSize: 0.0022
+  personVisibleDistance: 1.6
   nutrientDiffusion: 0.00002
-  nutrientNetworkDiffusion: 0.0002
-  nutrientTrailSaturation: 2
   decompositionRate: 0.02
   treeStartSeeds: 400
   treeSegmentFraction: 0.045
@@ -105,7 +121,8 @@ MonoBehaviour:
   treeMoistureMin: 0.12
   treeMoistureSpan: 0.35
   treeNutrientHalf: 0.12
-  treeMycorrhizaBoost: 2
+  treeClearedLimit: 0.3
+  treeClearingStress: 0.7
   treeShadeStrength: 1.2
   treeStarveBelow: 0.04
   treeStarveRate: 0.004
@@ -189,7 +206,7 @@ MonoBehaviour:
   compostOrganicRate: 0.6
   heatRate: 60
   frostRate: 60
-  sporeCount: 400
+  settlerCount: 60
   meteorRadius: 0.1
   meteorDepth: 0.4
   meteorRimHeight: 0.12

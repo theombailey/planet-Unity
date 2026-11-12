@@ -23,7 +23,8 @@
 //           fly surface|desk [land|x y z]     smooth camera flight to / from the surface
 //           record frames                     record the camera path to check a flight is smooth
 //           camera yaw pitch distance         jump the desk camera
-//           physarum                          living agent count (Play mode)
+//           physarum                          living people count (Play mode)
+//           town [rank]                       direction and density of the Nth densest town (Play mode)
 //           status                            play / pause state, frame count and frame time
 //           timescale 0|0.25|1|4|16          set the sim speed (Play mode)
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
@@ -135,7 +136,7 @@ namespace Terrarium.EditorTools
                     var physarumSystem = UnityEngine.Object.FindFirstObjectByType<Terrarium.Physarum.PhysarumSystem>();
                     WriteResult(physarumSystem == null
                         ? "error: no PhysarumSystem in the open scene"
-                        : $"ok: physarum alive {physarumSystem.AliveCount} of {physarumSystem.PoolSize}, born {physarumSystem.BornLastStep}, died {physarumSystem.DiedLastStep} (last step)");
+                        : $"ok: people alive {physarumSystem.AliveCount} of {physarumSystem.PoolSize}, born {physarumSystem.BornLastStep}, died {physarumSystem.DiedLastStep} (last step)");
                     break;
 
                 case "boids":
@@ -151,9 +152,9 @@ namespace Terrarium.EditorTools
                     }
 
                     EcosystemStats e = statsSystem.Latest;
-                    WriteResult($"eco year={e.Year} phase={e.YearPhase:0.00} fungus={e.PhysarumAlive} trees={e.TreesAlive}/{e.TreesStanding} birds={e.BoidsAlive} " +
+                    WriteResult($"eco year={e.Year} phase={e.YearPhase:0.00} people={e.PeopleAlive} houses={e.Houses} farms={e.FarmFraction:0.000} towns={e.TownFraction:0.000} trees={e.TreesAlive}/{e.TreesStanding} birds={e.BoidsAlive} " +
                                 $"leaf={e.MeanLeafCover:0.00} canopy={e.MeanCanopy:0.000} temp={e.MeanTemperature:0.0} nutrients={e.MeanNutrients:0.000} " +
-                                $"organic={e.MeanOrganic:0.000} trail={e.MeanTrail:0.000} birdEnergy={e.BoidMeanEnergy:0.0} valid={e.Valid}");
+                                $"organic={e.MeanOrganic:0.000} trail={e.MeanRoad:0.000} birdEnergy={e.BoidMeanEnergy:0.0} valid={e.Valid}");
                     break;
 
                 case "stability":
@@ -235,6 +236,10 @@ namespace Terrarium.EditorTools
 
                 case "trees":
                     WriteResult(TreesReport());
+                    break;
+
+                case "town":
+                    WriteResult(TownReport(parts.Length > 1 && int.TryParse(parts[1], out int rank) ? rank : 0));
                     break;
 
                 case "mouse":
@@ -458,7 +463,7 @@ namespace Terrarium.EditorTools
             if (controller == null || fieldSet == null || planetMotion == null || parts.Length < 3 || !EditorApplication.isPlaying
                 || !System.Enum.TryParse(parts[1], true, out Terrarium.Interaction.ToolKind kind))
             {
-                return "error: usage 'tool kind land|x y z [seconds]' in Play mode (kinds: WateringCan CompostScoop HeatLamp FrostSpray SporeDish Meteor SeedJar BoidCage)";
+                return "error: usage 'tool kind land|x y z [seconds]' in Play mode (kinds: WateringCan CompostScoop HeatLamp FrostSpray Settlers Meteor SeedJar BoidCage)";
             }
 
             var culture = System.Globalization.CultureInfo.InvariantCulture;
@@ -597,6 +602,74 @@ namespace Terrarium.EditorTools
         /// "boids [detail]": the boid counters from the last readback; with "detail", also reads the boid buffers right now
         /// (a blocking read, fine for an editor tool) and reports energies, heights and the number of broken (NaN) boids.
         /// </summary>
+        // The Nth densest town texel (0 = densest): "town x y z" for use with the look/surface commands, plus its density
+        // and farmland. Texels within 0.15 rad of an earlier pick are skipped, so ranks 0, 1, 2 are different towns.
+        private static string TownReport(int rank)
+        {
+            var fields = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldSet>();
+            if (fields == null || !EditorApplication.isPlaying || fields.Resolution == 0)
+            {
+                return "error: needs Play mode and a FieldSet";
+            }
+
+            RenderTexture land = fields.Get(Terrarium.Sphere.FieldId.Land).Current;
+            int n = fields.Resolution;
+            AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(land, 0);
+            request.WaitForCompletion();
+            if (request.hasError)
+            {
+                return "error: readback failed";
+            }
+
+            var picks = new System.Collections.Generic.List<Vector3>();
+            string result = "error: no town yet";
+            for (int pick = 0; pick <= rank; pick++)
+            {
+                float best = 0.05f;
+                Vector3 bestDirection = Vector3.zero;
+                float bestFarm = 0f;
+                for (int face = 0; face < Terrarium.Sphere.CubeSphere.FaceCount; face++)
+                {
+                    Unity.Collections.NativeArray<float> slice = request.GetData<float>(face);
+                    for (int y = 0; y < n; y++)
+                    {
+                        for (int x = 0; x < n; x++)
+                        {
+                            int i = (y * n + x) * 4;
+                            if (slice[i] <= best)
+                            {
+                                continue;
+                            }
+
+                            Vector3 direction = Terrarium.Sphere.CubeSphere.TexelCentreDir(face, x, y, n);
+                            bool taken = false;
+                            foreach (Vector3 earlier in picks)
+                            {
+                                taken |= Vector3.Dot(earlier, direction) > Mathf.Cos(0.15f);
+                            }
+
+                            if (!taken)
+                            {
+                                best = slice[i];
+                                bestDirection = direction;
+                                bestFarm = slice[i + 1];
+                            }
+                        }
+                    }
+                }
+
+                if (bestDirection == Vector3.zero)
+                {
+                    return pick == 0 ? "error: no town yet" : "error: no town of that rank";
+                }
+
+                picks.Add(bestDirection);
+                result = $"ok: town {bestDirection.x:0.000} {bestDirection.y:0.000} {bestDirection.z:0.000} density {best:0.00} farm {bestFarm:0.00}";
+            }
+
+            return result;
+        }
+
         private static string BoidsReport(bool detail)
         {
             var system = UnityEngine.Object.FindFirstObjectByType<Terrarium.Boids.BoidSystem>();
