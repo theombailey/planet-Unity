@@ -83,18 +83,41 @@ MonoBehaviour:
   townCapacity: 0.16
   farmCapacity: 0.8
   farmBoost: 1.5
-  farmStart: 0.12
-  farmFull: 0.45
+  farmStart: 0.07
+  farmFull: 0.32
   coreStart: 1.4
   coreFull: 2.4
   farmGrowth: 0.03
   farmAbandon: 0.05
-  houseThreshold: 0.6
+  houseThreshold: 0.7
   houseCandidates: 200000
   houseSize: 0.0032
   houseMinPixels: 1.6
   personSize: 0.0022
   personVisibleDistance: 1.6
+  waterFieldReach: 0.25
+  houseWaterReach: 0.07
+  houseWetMoisture: 0.7
+  houseTempMinTent: 4
+  houseTempMinMud: -4
+  houseTempMinBrick: -12
+  houseTempMax: 38
+  houseTempMargin: 6
+  houseBuildSeconds: 15
+  houseAbandonSeconds: 90
+  houseUpgradeSeconds: 60
+  houseThresholdSpread: 1.2
+  houseWaterBonus: 1
+  houseRoadBonus: 1.2
+  irrigationMoisture: 0.5
+  irrigationReach: 0.15
+  pavingThreshold: 0.8
+  pavingSeconds: 120
+  pavingFadeSeconds: 1200
+  roadAttraction: 0
+  roadSpeedBoost: 0.5
+  knowledgeRate: 0.5
+  eurekaDiscount: 0.5
   nutrientDiffusion: 0.00002
   decompositionRate: 0.02
   treeStartSeeds: 400

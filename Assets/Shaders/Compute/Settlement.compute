@@ -6,7 +6,8 @@
 //           B = crowding (fast: how many people are here right now).
 //
 // Kernels :
-//   LandStep - one step of the Land field. One thread per texel.
+//   LandStep   - one step of the Land field. One thread per texel.
+//   WaterRelax - one relaxation step of the Water field (proximity to water). One thread per texel.
 //
 // Idea (towns): a town is where many people spend time. Every step, each walker's
 //   presence is added to the texel it stands on. That gives the CROWDING C in channel B, which follows
@@ -28,19 +29,34 @@
 //        F'     = F + (target - F) * rate * dt          rate = farmGrowth if growing, farmAbandon if not
 //   Where S is high (the core) the land is built over and farms give way; where S is low
 //   they are too far away to work; and where the ground is poor, cold or dry nothing grows.
-//   A ring of fields round each town, then, with nobody drawing it.
+//   A ring of fields round each town, then, with nobody drawing it. Once irrigation is learnt, ground near
+//   water counts as wetter than the weather (see Livability.hlsl), so the ring reaches into drier country.
+//
+// Idea (roads): a path that is walked a lot HARDENS. Where the path is stronger than a threshold the
+//   permanent road (channel A) builds up, and it wears away only very slowly once nobody walks it:
+//        A'  = A + paveRate * saturate(trail - threshold) * dt - fadeRate * A * dt          0..1
+//   so a worn track becomes a lasting road that the people then prefer to walk on (Physarum.compute).
+//
+// Idea (water): the Water field holds each place's PROXIMITY to water: 1 at the sea or a lake, falling
+//   by a fixed amount per texel of distance to 0 at the configured reach. It is relaxed a few texels a
+//   step rather than computed in one go, so it follows the coast when a meteor makes a new lake:
+//        p'  = 1                                         where the ground is below sea level
+//        p'  = max( 0, max over the 8 neighbours of ( p_n - step * fall ) )      otherwise
+//   where step is 1 for a side neighbour and 1.41 for a diagonal one, and fall is texel angle / reach.
 //
 // Parameters: _TownDecay, _TownSpread, _FarmStart, _FarmFull, _CoreStart, _CoreFull,
-//   _FarmGrowth, _FarmAbandon, _CrowdRate (SimConfig "Towns and farms"), _TrafficScale, _DepositAmount.
+//   _FarmGrowth, _FarmAbandon, _CrowdRate (SimConfig "Towns and farms"), _TrafficScale, _DepositAmount,
+//   _PaveThreshold, _PaveRate, _PaveFade, _WaterFall.
 //
 // Buffers & textures (slice = cube face):
-//   _LandRead  read   R town density, G farmland, B crowding, A unused
+//   _LandRead  read   R town density, G farmland, B crowding, A permanent road
 //   _LandWrite write  same layout (ping-pong: neighbours are read)
 //   _Deposit   read   per-texel fixed-point path deposited this step (filled by Physarum.compute)
 //   _Terrain, _Climate, _Soil  read
 // =============================================================================
 
 #pragma kernel LandStep
+#pragma kernel WaterRelax
 
 #include "Assets/Shaders/Include/CubeSphere.hlsl"
 #include "Assets/Shaders/Include/Livability.hlsl"
@@ -54,6 +70,10 @@ StructuredBuffer<uint> _Deposit;
 Texture2DArray<float4> _Terrain;
 Texture2DArray<float4> _Climate;
 Texture2DArray<float4> _Soil;
+Texture2DArray<float> _Trail;
+Texture2DArray<float> _Water;          // LandStep: proximity to water, read
+Texture2DArray<float> _WaterRead;      // WaterRelax: read
+RWTexture2DArray<float> _WaterWrite;   // WaterRelax: write
 
 int _Resolution;
 float _DeltaTime;
@@ -68,6 +88,10 @@ float _CoreFull;
 float _FarmGrowth;
 float _FarmAbandon;
 float _CrowdRate;
+float _PaveThreshold;
+float _PaveRate;
+float _PaveFade;
+float _WaterFall;
 
 uint TexelIndex(int3 texel)
 {
@@ -125,10 +149,48 @@ void LandStep(uint3 id : SV_DispatchThreadID)
 
     // Farmland.
     float4 climate = _Climate[id];
-    float livability = Livability(climate.r, climate.g, terrain.r, _Soil[id].r);
+    float moisture = IrrigatedMoisture(climate.g, _Water[id]);
+    float livability = Livability(climate.r, moisture, terrain.r, _Soil[id].r);
     float target = livability * smoothstep(_FarmStart, _FarmFull, town) * (1.0 - smoothstep(_CoreStart, _CoreFull, town));
     float rate = target > here.g ? _FarmGrowth : _FarmAbandon;
     float farm = saturate(here.g + (target - here.g) * saturate(rate * _DeltaTime));
 
-    _LandWrite[id] = float4(town, farm, crowd, 0.0);
+    // Permanent road: hardens under a busy path, wears away very slowly.
+    float paved = saturate(here.a + _PaveRate * saturate(_Trail[id] - _PaveThreshold) * _DeltaTime - _PaveFade * here.a * _DeltaTime);
+
+    _LandWrite[id] = float4(town, farm, crowd, paved);
+}
+
+[numthreads(8, 8, 1)]
+void WaterRelax(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_Resolution || id.y >= (uint)_Resolution)
+    {
+        return;
+    }
+
+    if (_Terrain[id].r < 0.0)
+    {
+        _WaterWrite[id] = 1.0;
+        return;
+    }
+
+    int3 texel = int3(id);
+    float best = 0.0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            if (dx == 0 && dy == 0)
+            {
+                continue;
+            }
+
+            float step = (dx != 0 && dy != 0) ? 1.41421356 : 1.0;
+            uint3 neighbour = uint3(CS_NeighbourTexel(texel, int2(dx, dy), _Resolution));
+            best = max(best, _WaterRead[neighbour] - step * _WaterFall);
+        }
+    }
+
+    _WaterWrite[id] = best;
 }

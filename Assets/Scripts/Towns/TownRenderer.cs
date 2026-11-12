@@ -4,11 +4,12 @@
 // Purpose : Puts the settlements on screen: the houses of every town, and the people
 //           walking between them.
 // Idea    : Both are drawn by the GPU straight from simulation data, with no CPU copy.
-//             Houses  Houses.compute decides, spot by spot, whether a house stands there (from
-//                     the town density in the Land field) and appends it to a list; the
-//                     houses are then drawn with one indirect instanced call, whose instance
-//                     count is copied from the list's own counter. The list is rebuilt a few
-//                     times a second, since towns change slowly.
+//             Houses  Houses.compute keeps a remembered state for every possible spot and, a couple
+//                     of times a second, moves each one by the rules (water to hand, weather the
+//                     style can stand, not on a farm, people who need a home; see Houses.compute).
+//                     The standing houses are appended to a list and drawn with one indirect instanced
+//                     call, whose instance count is copied from the list's own counter. The state
+//                     moves by SIM time, so a paused world builds nothing and a fast one builds quickly.
 //             People  the people simulation's own buffers (position, heading, alive) are the
 //                     instance data, so one instanced call draws the whole pool; the shader
 //                     skips the dead and the far away.
@@ -29,10 +30,9 @@ namespace Terrarium.Towns
     /// <summary>Draws the houses and people of the planet's towns.</summary>
     public sealed class TownRenderer : MonoBehaviour
     {
-        private const int MaxHouses = 24000;
-        private const int HouseStride = 48;
         private const float RebuildIntervalSeconds = 0.5f;
         private const int ThreadGroupSize = 64;
+        private const float MaxSimSecondsPerRebuild = 40f;
 
         [Tooltip("The simulation: config and preset.")]
         [SerializeField] private SimRoot simRoot;
@@ -57,11 +57,10 @@ namespace Terrarium.Towns
 
         private Mesh houseMesh;
         private Mesh personMesh;
-        private ComputeBuffer houses;
-        private ComputeBuffer arguments;
+        private HouseSimulation simulation;
         private MaterialPropertyBlock houseBlock;
         private MaterialPropertyBlock personBlock;
-        private readonly uint[] argumentData = new uint[5];
+        private double lastSimTime = double.MaxValue;
         private float timer;
         private bool readbackPending;
 
@@ -77,23 +76,28 @@ namespace Terrarium.Towns
                 return;
             }
 
+            fieldSet.WorldReset += HandleWorldReset;
             houseBlock = new MaterialPropertyBlock();
             personBlock = new MaterialPropertyBlock();
             houseMesh = TownMeshes.BuildHouse();
             personMesh = TownMeshes.BuildPerson();
 
-            houses = new ComputeBuffer(MaxHouses, HouseStride, ComputeBufferType.Append);
-            houses.SetCounterValue(0);
-            arguments = new ComputeBuffer(1, argumentData.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
-            argumentData[0] = houseMesh.GetIndexCount(0);
-            argumentData[1] = 0;
-            arguments.SetData(argumentData);
+            simulation = new HouseSimulation(houseShader, simRoot.Config, houseMesh.GetIndexCount(0));
+        }
+
+        private void HandleWorldReset()
+        {
+            simulation?.Reset();
         }
 
         private void OnDestroy()
         {
-            houses?.Release();
-            arguments?.Release();
+            if (fieldSet != null)
+            {
+                fieldSet.WorldReset -= HandleWorldReset;
+            }
+
+            simulation?.Dispose();
             if (houseMesh != null)
             {
                 Destroy(houseMesh);
@@ -124,7 +128,7 @@ namespace Terrarium.Towns
             if (!readbackPending)
             {
                 readbackPending = true;
-                AsyncGPUReadback.Request(arguments, OnArgumentsRead);
+                AsyncGPUReadback.Request(simulation.Arguments, OnArgumentsRead);
             }
         }
 
@@ -138,58 +142,49 @@ namespace Terrarium.Towns
             SimConfig config = simRoot.Config;
             var bounds = new Bounds(planet.position, Vector3.one * 8f);
 
-            houseBlock.SetBuffer("_Houses", houses);
+            if (simulation.Houses == null)
+            {
+                return;   // the first update has not run yet
+            }
+
+            houseBlock.SetBuffer("_Houses", simulation.Houses);
             houseBlock.SetMatrix("_PlanetLocalToWorld", planet.localToWorldMatrix);
             houseBlock.SetFloat("_HouseMinPixels", config.houseMinPixels);
-            Graphics.DrawMeshInstancedIndirect(houseMesh, 0, houseMaterial, bounds, arguments, 0, houseBlock, ShadowCastingMode.Off, false);
+            Graphics.DrawMeshInstancedIndirect(houseMesh, 0, houseMaterial, bounds, simulation.Arguments, 0, houseBlock, ShadowCastingMode.Off, false);
 
-            PhysarumSimulation simulation = people.Simulation;
-            if (simulation != null && simulation.IsAllocated)
+            PhysarumSimulation peopleSimulation = people.Simulation;
+            if (peopleSimulation != null && peopleSimulation.IsAllocated)
             {
-                personBlock.SetBuffer("_PersonPosEnergy", simulation.PosEnergy);
-                personBlock.SetBuffer("_PersonHeading", simulation.Heading);
-                personBlock.SetBuffer("_PersonAlive", simulation.Alive);
+                personBlock.SetBuffer("_PersonPosEnergy", peopleSimulation.PosEnergy);
+                personBlock.SetBuffer("_PersonHeading", peopleSimulation.Heading);
+                personBlock.SetBuffer("_PersonAlive", peopleSimulation.Alive);
                 personBlock.SetMatrix("_PlanetLocalToWorld", planet.localToWorldMatrix);
                 personBlock.SetFloat("_PersonSize", config.personSize);
                 personBlock.SetFloat("_PersonVisibleDistance", config.personVisibleDistance);
-                Graphics.DrawMeshInstancedProcedural(personMesh, 0, personMaterial, bounds, simulation.PoolSize, personBlock, ShadowCastingMode.Off, false);
+                Graphics.DrawMeshInstancedProcedural(personMesh, 0, personMaterial, bounds, peopleSimulation.PoolSize, personBlock, ShadowCastingMode.Off, false);
             }
         }
 
-        // Runs Houses.compute: every candidate spot decides whether it holds a house, and the survivors are appended
-        // to the list. The list's counter is then copied into the draw call's instance count.
+        // Moves the houses' remembered state by the sim time that has passed, and rebuilds the draw list.
         private void RebuildHouses()
         {
-            SimConfig config = simRoot.Config;
-            int kernel = houseShader.FindKernel("BuildHouses");
-            int candidates = Mathf.Max(1000, config.houseCandidates);
+            // Sim time since the last rebuild (zero while paused, and across a new world).
+            double now = simRoot.Clock.SimTimeSeconds;
+            float deltaSeconds = now < lastSimTime ? 0f : Mathf.Min((float)(now - lastSimTime), MaxSimSecondsPerRebuild);
+            lastSimTime = now;
 
-            houses.SetCounterValue(0);
-            houseShader.SetBuffer(kernel, "_Houses", houses);
-            houseShader.SetTexture(kernel, "_Land", fieldSet.Get(FieldId.Land).Current);
-            houseShader.SetTexture(kernel, "_Terrain", fieldSet.Get(FieldId.Terrain).Current);
-            houseShader.SetTexture(kernel, "_Climate", fieldSet.Get(FieldId.Climate).Current);
-            houseShader.SetInt("_CandidateCount", candidates);
-            houseShader.SetInt("_Resolution", fieldSet.Resolution);
-            houseShader.SetFloat("_HouseThreshold", config.houseThreshold);
-            houseShader.SetFloat("_CoreFull", config.coreFull);
-            houseShader.SetFloat("_HouseSize", config.houseSize);
-            houseShader.SetFloat("_HeightScale", config.terrainHeightScale);
-            houseShader.Dispatch(kernel, (candidates + ThreadGroupSize - 1) / ThreadGroupSize, 1, 1);
-
-            ComputeBuffer.CopyCount(houses, arguments, sizeof(uint));
+            simulation.Update(people.Fields, people.Rules, fieldSet.Resolution, deltaSeconds);
         }
-
         private void OnArgumentsRead(AsyncGPUReadbackRequest request)
         {
             readbackPending = false;
-            if (request.hasError || arguments == null)
+            if (request.hasError || simulation == null)
             {
                 return;
             }
 
             NativeArray<uint> data = request.GetData<uint>();
-            HouseCount = (int)Mathf.Min(data[1], MaxHouses);
+            HouseCount = (int)data[1];
         }
     }
 }

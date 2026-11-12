@@ -243,10 +243,10 @@ namespace Terrarium
         [Range(0f, 5f)] public float farmBoost = 1.5f;
 
         [Tooltip("Town density where farms start to appear.")]
-        [Range(0f, 2f)] public float farmStart = 0.12f;
+        [Range(0f, 2f)] public float farmStart = 0.07f;
 
         [Tooltip("Town density where farms are at full strength.")]
-        [Range(0f, 2f)] public float farmFull = 0.45f;
+        [Range(0f, 2f)] public float farmFull = 0.32f;
 
         [Tooltip("Town density where farms start to give way to buildings.")]
         [Range(0f, 5f)] public float coreStart = 1.4f;
@@ -261,7 +261,7 @@ namespace Terrarium
         [Range(0.001f, 1f)] public float farmAbandon = 0.05f;
 
         [Tooltip("Town density above which a house may stand. Each house also has its own threshold between this and the core, so a town thins out toward its edge.")]
-        [Range(0.01f, 2f)] public float houseThreshold = 0.6f;
+        [Range(0.01f, 2f)] public float houseThreshold = 0.7f;
 
         [Tooltip("How many candidate spots are scattered evenly over the planet for houses. A house stands at a spot when the town density there is high enough, so this sets the most houses a place can hold: 1 per candidate.")]
         [Range(10_000, 200_000)] public int houseCandidates = 200_000;
@@ -277,6 +277,76 @@ namespace Terrarium
 
         [Tooltip("Camera distance (world units) beyond which individual people are not drawn.")]
         [Range(0.2f, 6f)] public float personVisibleDistance = 1.6f;
+
+        [Header("Rules for houses, roads and irrigation (see Houses.compute, Settlement.compute; technologies change these)")]
+        [Tooltip("How far from water the water-proximity field reaches, in radians. It is 1 at the water and falls to 0 at this distance; every water rule is a distance inside it.")]
+        [Range(0.05f, 0.6f)] public float waterFieldReach = 0.25f;
+
+        [Tooltip("How far from water a house may stand, in radians, before wells are learnt.")]
+        [Range(0.01f, 0.5f)] public float houseWaterReach = 0.07f;
+
+        [Tooltip("Moisture at which ground counts as having water to hand (rain-fed streams), whatever the distance to the sea.")]
+        [Range(0.2f, 1f)] public float houseWetMoisture = 0.7f;
+
+        [Tooltip("Coldest temperature, in deg C, in which people build tents. Colder than this, houses are not started.")]
+        [Range(-30f, 30f)] public float houseTempMinTent = 4f;
+
+        [Tooltip("Coldest temperature for mud-wall houses, deg C.")]
+        [Range(-30f, 30f)] public float houseTempMinMud = -4f;
+
+        [Tooltip("Coldest temperature for brick houses, deg C.")]
+        [Range(-40f, 30f)] public float houseTempMinBrick = -12f;
+
+        [Tooltip("Hottest temperature in which houses are built, deg C.")]
+        [Range(20f, 60f)] public float houseTempMax = 38f;
+
+        [Tooltip("How far past its limits the weather may go before a standing house is abandoned, deg C.")]
+        [Range(0f, 20f)] public float houseTempMargin = 6f;
+
+        [Tooltip("Sim seconds a house takes to build once it is wanted and allowed.")]
+        [Range(1f, 120f)] public float houseBuildSeconds = 15f;
+
+        [Tooltip("Sim seconds for a house to be given up once it is no longer allowed or wanted.")]
+        [Range(5f, 600f)] public float houseAbandonSeconds = 90f;
+
+        [Tooltip("Average sim seconds before a house is rebuilt in the next, better style once that style is known.")]
+        [Range(5f, 600f)] public float houseUpgradeSeconds = 60f;
+
+        [Tooltip("How widely houses' thresholds are spread: each house wants a different amount of demand, so houses appear one by one as a place fills.")]
+        [Range(0.05f, 4f)] public float houseThresholdSpread = 1.2f;
+
+        [Tooltip("How much standing by water makes a spot more wanted (0 = no pull).")]
+        [Range(0f, 4f)] public float houseWaterBonus = 1f;
+
+        [Tooltip("How much standing by a worn road makes a spot more wanted (0 = no pull).")]
+        [Range(0f, 4f)] public float houseRoadBonus = 1.2f;
+
+        [Tooltip("The moisture that irrigated ground is treated as having, once irrigation is learnt.")]
+        [Range(0.1f, 1f)] public float irrigationMoisture = 0.5f;
+
+        [Tooltip("How far from water irrigation carries it, in radians.")]
+        [Range(0.01f, 0.5f)] public float irrigationReach = 0.15f;
+
+        [Tooltip("A path stronger than this starts to harden into a permanent road.")]
+        [Range(0.1f, 6f)] public float pavingThreshold = 0.8f;
+
+        [Tooltip("Sim seconds a busy path must be walked to harden into a road.")]
+        [Range(10f, 2000f)] public float pavingSeconds = 120f;
+
+        [Tooltip("Sim seconds a road takes to wear away once nobody uses it.")]
+        [Range(60f, 20000f)] public float pavingFadeSeconds = 1200f;
+
+        [Tooltip("How strongly walkers are drawn to a permanent road, compared with a path (a path counts 1). Zero by default: a pull strong enough to matter drags people off good land onto roads, and a whole population starved that way in testing.")]
+        [Range(0f, 10f)] public float roadAttraction = 0f;
+
+        [Tooltip("How much faster people walk on a permanent road: speed x (1 + this x road).")]
+        [Range(0f, 3f)] public float roadSpeedBoost = 0.5f;
+
+        [Tooltip("Knowledge the people gain per sim second per sqrt(1000 people) plus per 400 houses; spent on the technology being researched.")]
+        [Range(0.01f, 10f)] public float knowledgeRate = 0.5f;
+
+        [Tooltip("Share of a technology's cost that is saved once its eureka condition is met (0.5 = half price).")]
+        [Range(0f, 0.9f)] public float eurekaDiscount = 0.5f;
 
         [Header("Nutrient transport (see Nutrients.compute)")]
         [Tooltip("Plain spreading of nutrients through the soil, in radians squared per sim second.")]

@@ -391,9 +391,11 @@ namespace Terrarium.Tests
             // With the default config the population should rise from its start, then settle at what the land can
             // feed: food limits it, not the pool. The pool is deliberately larger than the settled population, so
             // reaching it would mean food is not limiting.
-            const int pool = 30_000;
+            // Run at the field size and pool the game uses on its Medium setting (a field of 64 has too little land for
+            // the density rules to mean the same thing).
+            const int pool = 24_000;
 
-            using (var world = new WorldHarness(Resolution))
+            using (var world = new WorldHarness(128))
             {
                 world.Generate(seed: 3, landFraction: 0.4f, spinUp: true);
                 var physarum = world.CreatePhysarum(pool);

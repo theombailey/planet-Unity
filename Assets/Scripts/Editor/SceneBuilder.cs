@@ -280,6 +280,11 @@ namespace Terrarium.EditorTools
             SetReference(stats, "boids", boids);
             SetReference(stats, "physarum", physarum);
             SetReference(stats, "towns", towns);
+
+            var techSystem = host.AddComponent<Terrarium.Tech.TechSystem>();
+            SetReference(techSystem, "simRoot", simRoot);
+            SetReference(techSystem, "stats", stats);
+            SetReference(physarum, "tech", techSystem);
             SetReference(stats, "trees", trees);
 
             var stability = host.AddComponent<StabilityRunner>();

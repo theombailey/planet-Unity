@@ -43,6 +43,9 @@ namespace Terrarium.Physarum
         [Tooltip("Nutrients.compute.")]
         [SerializeField] private ComputeShader nutrientShader;
 
+        [Tooltip("The technology the people have learnt (sets what they are allowed to do). Optional: without it the starting rules apply.")]
+        [SerializeField] private Terrarium.Tech.TechSystem tech;
+
         private PhysarumSimulation simulation;
         private bool needsSeeding;
         private float pioneerBacklog;
@@ -63,6 +66,20 @@ namespace Terrarium.Physarum
 
         /// <summary>The running simulation (null until the first step). For drawing the people, the DevBridge and tests.</summary>
         public PhysarumSimulation Simulation => simulation;
+
+        /// <summary>What the people may do right now (from their technology; the starting rules without a tech tree).</summary>
+        public SettlementRules Rules => tech != null ? tech.Rules : SettlementRules.Start;
+
+        /// <summary>The fields the people's simulation works on (valid once the fields exist).</summary>
+        public PhysarumFields Fields => new PhysarumFields
+        {
+            Trail = fieldSet.Get(FieldId.Trail),
+            Land = fieldSet.Get(FieldId.Land),
+            Water = fieldSet.Get(FieldId.Water),
+            Soil = fieldSet.Get(FieldId.Soil),
+            Terrain = fieldSet.Get(FieldId.Terrain).Current,
+            Climate = fieldSet.Get(FieldId.Climate).Current,
+        };
 
         private void Awake()
         {
@@ -146,15 +163,12 @@ namespace Terrarium.Physarum
                 simulation.Allocate(preset.physarumAgents, fieldSet.Resolution);
             }
 
-            Field terrain = fieldSet.Get(FieldId.Terrain);
-            Field land = fieldSet.Get(FieldId.Land);
-            Field soil = fieldSet.Get(FieldId.Soil);
-            Field trail = fieldSet.Get(FieldId.Trail);
-            RenderTexture climate = fieldSet.Get(FieldId.Climate).Current;
+            PhysarumFields fields = Fields;
+            SettlementRules rules = Rules;
 
             if (needsSeeding)
             {
-                simulation.SeedAgents(land, soil, terrain.Current, climate, simRoot.ActiveSeed, config.physarumStartAgents);
+                simulation.SeedAgents(fields, rules, simRoot.ActiveSeed, config.physarumStartAgents);
                 pioneerBacklog = 0f;
                 needsSeeding = false;
             }
@@ -167,10 +181,10 @@ namespace Terrarium.Physarum
             {
                 int count = (int)pioneerBacklog;
                 pioneerBacklog -= count;
-                simulation.SpawnPioneers(land, soil, terrain.Current, climate, count);
+                simulation.SpawnPioneers(fields, rules, count);
             }
 
-            simulation.Step(trail, land, soil, terrain.Current, climate, deltaSeconds);
+            simulation.Step(fields, rules, deltaSeconds);
         }
         /// <summary>The settlers' jar: starts people at random points inside a circle on the planet.</summary>
         /// <param name="localDirection">Centre, a unit vector in the planet's local space.</param>
@@ -180,14 +194,7 @@ namespace Terrarium.Physarum
         {
             if (simulation != null && simulation.IsAllocated && fieldSet.Resolution > 0)
             {
-                simulation.SpawnAgents(
-                    fieldSet.Get(FieldId.Land),
-                    fieldSet.Get(FieldId.Soil),
-                    fieldSet.Get(FieldId.Terrain).Current,
-                    fieldSet.Get(FieldId.Climate).Current,
-                    localDirection,
-                    angularRadius,
-                    count);
+                simulation.SpawnAgents(Fields, Rules, localDirection, angularRadius, count);
             }
         }
 

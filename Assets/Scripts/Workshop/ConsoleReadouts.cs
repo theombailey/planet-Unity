@@ -8,7 +8,8 @@
 //           panel used) and writes them to the tubes. The same snapshot goes to a PaperLog,
 //           which decides whether anything is worth a line on the paper. It also prints a
 //           line when a world starts or a one-shot tool is used (meteor, settlers, seeds,
-//           birds), since those are events the player caused and wants to see logged.
+//           birds), since those are events the player caused and wants to see logged. Research
+//           events (a technology chosen, an eureka reached, a discovery made) are printed too.
 // Readings : YEAR (3 tubes), TEMP deg C (4 tubes, 1 decimal), TREES (4), BIRDS (5), PEOPLE (4).
 // =============================================================================
 
@@ -36,11 +37,54 @@ namespace Terrarium.Workshop
         [SerializeField] private NixieDisplay people;
         [SerializeField] private PaperRoll paper;
 
+        [Tooltip("The people's technology, whose events go on the paper (optional).")]
+        [SerializeField] private Terrarium.Tech.TechSystem tech;
+
         private readonly PaperLog log = new PaperLog();
         private readonly List<string> lines = new List<string>(8);
         private float timer;
         private double lastSimTime = double.MaxValue;
         private int lastSeed = int.MinValue;
+
+        private void OnEnable()
+        {
+            if (tech != null)
+            {
+                tech.Tree.ResearchStarted += HandleResearchStarted;
+                tech.Tree.EurekaReached += HandleEureka;
+                tech.Tree.Learnt += HandleLearnt;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (tech != null)
+            {
+                tech.Tree.ResearchStarted -= HandleResearchStarted;
+                tech.Tree.EurekaReached -= HandleEureka;
+                tech.Tree.Learnt -= HandleLearnt;
+            }
+        }
+
+        private string NameOf(Terrarium.Tech.TechId id)
+        {
+            return tech.Tree.Definitions[(int)id].Name.ToUpperInvariant();
+        }
+
+        private void HandleResearchStarted(Terrarium.Tech.TechId id)
+        {
+            paper?.Print("RESEARCH " + NameOf(id));
+        }
+
+        private void HandleEureka(Terrarium.Tech.TechId id)
+        {
+            paper?.Print("EUREKA! " + NameOf(id));
+        }
+
+        private void HandleLearnt(Terrarium.Tech.TechId id)
+        {
+            paper?.Print("LEARNT " + NameOf(id));
+        }
 
         private void Update()
         {

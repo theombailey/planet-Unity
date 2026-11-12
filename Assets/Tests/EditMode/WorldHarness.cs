@@ -56,11 +56,13 @@ namespace Terrarium.Tests
             Soil = new Field(FieldId.Soil, resolution, RenderTextureFormat.ARGBFloat, pingPong: true);
             Trail = new Field(FieldId.Trail, resolution, RenderTextureFormat.RFloat, pingPong: true);
             Land = new Field(FieldId.Land, resolution, RenderTextureFormat.ARGBFloat, pingPong: true);
+            Water = new Field(FieldId.Water, resolution, RenderTextureFormat.RFloat, pingPong: true);
             Clear(Terrain);
             Clear(Climate);
             Clear(Soil);
             Clear(Trail);
             Clear(Land);
+            Clear(Water);
         }
 
         public SimConfig Config { get; }
@@ -82,6 +84,19 @@ namespace Terrarium.Tests
         public Field Trail { get; }
 
         public Field Land { get; }
+
+        public Field Water { get; }
+
+        /// <summary>The fields the people's simulation works on.</summary>
+        public PhysarumFields PeopleFields => new PhysarumFields
+        {
+            Trail = Trail,
+            Land = Land,
+            Water = Water,
+            Soil = Soil,
+            Terrain = Terrain.Current,
+            Climate = Climate.Current,
+        };
 
         /// <summary>Creates a physarum simulation on this world's resolution. Released with the harness.</summary>
         public PhysarumSimulation CreatePhysarum(int poolSize)
@@ -127,7 +142,7 @@ namespace Terrarium.Tests
         /// <summary>Scatters the starting people on livable land.</summary>
         public void SeedPeople(PhysarumSimulation physarum, int seed, int count)
         {
-            physarum.SeedAgents(Land, Soil, Terrain.Current, Climate.Current, seed, count);
+            physarum.SeedAgents(PeopleFields, SettlementRules.Start, seed, count);
         }
 
         /// <summary>Runs physarum steps of <paramref name="stepSeconds"/> each.</summary>
@@ -135,7 +150,7 @@ namespace Terrarium.Tests
         {
             for (int i = 0; i < steps; i++)
             {
-                physarum.Step(Trail, Land, Soil, Terrain.Current, Climate.Current, stepSeconds);
+                physarum.Step(PeopleFields, SettlementRules.Start, stepSeconds);
             }
         }
 
@@ -239,6 +254,7 @@ namespace Terrarium.Tests
             Soil.Release();
             Trail.Release();
             Land.Release();
+            Water.Release();
             UnityEngine.Object.DestroyImmediate(Config);
         }
 

@@ -30,7 +30,7 @@
 //   Meanwhile it blurs and fades, so unused paths vanish. The result is a web of roads
 //   joining the places people want to be, with nobody drawing it.
 //   Here the signal also includes LIVABILITY (good ground: warm, wet, low, fertile; see
-//   Livability.hlsl) and existing TOWNS, and the OCEAN is strongly repulsive.
+//   Livability.hlsl), existing TOWNS and permanent ROADS, and the OCEAN is strongly repulsive.
 //
 // Geometry on the sphere (pos is a unit vector, heading a unit vector at right angles to it):
 //   rotate heading about pos by angle a:   h' = h cos a + (pos x h) sin a
@@ -52,7 +52,8 @@
 //   therefore grows until the land around it can hold no more. Population is never set by
 //   script: it settles where income balances upkeep.
 //   Walking slows in town: speed = speed * lerp(1, townSlowdown, saturate(S / townFull)), so
-//   people crowd and potter about instead of racing through.
+//   people crowd and potter about instead of racing through; and quickens on a permanent road (P, 0..1):
+//   speed = speed * (1 + roadSpeedBoost * P).
 //
 // Concurrency (many agents act in the same moment; what is racy and why that is acceptable):
 //   - Path deposits are added with InterlockedAdd into a per-texel integer buffer (fixed
@@ -98,7 +99,8 @@ RWStructuredBuffer<uint> _Counters;             // [0] alive, [1] births, [2] de
 
 Texture2DArray<float> _TrailRead;
 RWTexture2DArray<float> _TrailWrite;
-Texture2DArray<float4> _Land;                   // R town density, G farmland, B crowding
+Texture2DArray<float4> _Land;                   // R town density, G farmland, B crowding, A permanent road
+Texture2DArray<float> _Water;                   // proximity to water
 Texture2DArray<float4> _Soil;                   // R nutrients
 Texture2DArray<float4> _Terrain;                // R height
 Texture2DArray<float4> _Climate;                // R temperature, G moisture
@@ -133,6 +135,8 @@ float _CapacityBase;
 float _CapacityFarm;
 float _TownSlowdown;
 float _TownFull;
+float _RoadWeight;
+float _RoadSpeed;
 
 float3 _EventDirection;      // SpawnAgents / KillAgents: centre of the circle (unit vector, planet frame)
 float _EventRadius;          // ... and its radius in radians
@@ -179,7 +183,7 @@ float LivabilityAt(uint3 texel)
     }
 
     float4 climate = _Climate[texel];
-    return Livability(climate.r, climate.g, height, _Soil[texel].r);
+    return Livability(climate.r, IrrigatedMoisture(climate.g, _Water[texel]), height, _Soil[texel].r);
 }
 
 // The strength of the signal at a point: path + good ground + towns, minus a huge penalty over ocean.
@@ -191,7 +195,8 @@ float Signal(float3 location)
         return -OCEAN_AVOIDANCE;
     }
 
-    return _TrailRead[texel] + _FoodWeight * LivabilityAt(texel) + _TownWeight * saturate(_Land[texel].r);
+    float4 land = _Land[texel];
+    return _TrailRead[texel] + _FoodWeight * LivabilityAt(texel) + _TownWeight * saturate(land.r) + _RoadWeight * saturate(land.a);
 }
 
 // Random unit vector on the sphere.
@@ -327,8 +332,8 @@ void AgentStep(uint3 id : SV_DispatchThreadID)
     heading = RotateAbout(position, heading, turn);
 
     // 3. MOVE along the sphere and carry the heading with us. People slow down in a town.
-    float townHere = _Land[uint3(CS_DirToTexel(position, _Resolution))].r;
-    float arc = _Speed * lerp(1.0, _TownSlowdown, saturate(townHere / _TownFull)) * _DeltaTime;
+    float4 landHere = _Land[uint3(CS_DirToTexel(position, _Resolution))];
+    float arc = _Speed * lerp(1.0, _TownSlowdown, saturate(landHere.r / _TownFull)) * (1.0 + _RoadSpeed * saturate(landHere.a)) * _DeltaTime;
     float s, c;
     sincos(arc, s, c);
     float3 newPosition = normalize(position * c + heading * s);

@@ -25,6 +25,7 @@
 //           camera yaw pitch distance         jump the desk camera
 //           physarum                          living people count (Play mode)
 //           town [rank]                       direction and density of the Nth densest town (Play mode)
+//           tech                              what the people have learnt and are researching (Play mode)
 //           status                            play / pause state, frame count and frame time
 //           timescale 0|0.25|1|4|16          set the sim speed (Play mode)
 //           preset <index>                  switch quality preset (0 Low, 1 Medium, 2 High)
@@ -236,6 +237,10 @@ namespace Terrarium.EditorTools
 
                 case "trees":
                     WriteResult(TreesReport());
+                    break;
+
+                case "tech":
+                    WriteResult(TechReport());
                     break;
 
                 case "town":
@@ -602,6 +607,29 @@ namespace Terrarium.EditorTools
         /// "boids [detail]": the boid counters from the last readback; with "detail", also reads the boid buffers right now
         /// (a blocking read, fine for an editor tool) and reports energies, heights and the number of broken (NaN) boids.
         /// </summary>
+        // The people's technology: what is learnt, what is being researched, progress and eurekas (Play mode).
+        private static string TechReport()
+        {
+            var system = UnityEngine.Object.FindFirstObjectByType<Terrarium.Tech.TechSystem>();
+            var sim = UnityEngine.Object.FindFirstObjectByType<SimRoot>();
+            if (system == null || sim == null || !EditorApplication.isPlaying)
+            {
+                return "error: needs Play mode and a TechSystem";
+            }
+
+            var text = new StringBuilder("ok: tech");
+            Terrarium.Tech.TechTree tree = system.Tree;
+            foreach (Terrarium.Tech.TechDefinition definition in tree.Definitions)
+            {
+                string state = tree.IsLearnt(definition.Id) ? "LEARNT" : (tree.Researching == definition ? "researching" : (tree.IsAvailable(definition.Id) ? "available" : "locked"));
+                text.Append($" | {definition.Name}: {state} {tree.Progress01(definition.Id, sim.Config):P0}{(tree.HasEureka(definition.Id) ? " eureka" : string.Empty)}");
+            }
+
+            Terrarium.Physarum.SettlementRules rules = system.Rules;
+            text.Append($" | rules: tier {rules.BuildingTier}, roads {rules.RoadTier}, irrigation {rules.Irrigation}, water x{rules.WaterReachScale:0}, banked {tree.Banked:0}");
+            return text.ToString();
+        }
+
         // The Nth densest town texel (0 = densest): "town x y z" for use with the look/surface commands, plus its density
         // and farmland. Texels within 0.15 rad of an earlier pick are skipped, so ranks 0, 1, 2 are different towns.
         private static string TownReport(int rank)

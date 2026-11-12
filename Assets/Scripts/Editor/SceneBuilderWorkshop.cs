@@ -2,9 +2,10 @@
 // SceneBuilder (workshop part)
 // -----------------------------------------------------------------------------
 // Purpose : Builds the workshop furniture the player uses: a SHELF at the back right
-//           with its own light, holding the nine tools; and a CONSOLE at the front left
+//           with its own light, holding the nine tools; a CONSOLE at the front left
 //           with the nixie-tube readouts, the paper roll, the three dials (time, spin,
-//           volume) and the push buttons (pause, new world, three climate presets).
+//           volume) and the push buttons (pause, new world, three climate presets); and the
+//           EUREKA tech board standing at the back left, with one button per technology.
 // Idea    : Everything is a primitive cube, cylinder or quad, or a small mesh made by code,
 //           with materials from the same painterly shaders as the rest of the scene, so
 //           the room still reads as one drawing. The console's controls sit on a sloping
@@ -13,6 +14,7 @@
 // Layout (desk top is y = 0, camera looks along +z from -z):
 //           shelf   centre x = 2.0, z = 1.35, 2.4 wide, 1.6 tall, two boards of tools, light on top
 //           console centre x = -2.0, z = -1.25, 2.35 wide, face sloping up toward the back
+//           tech board centre x = -2.55, z = 1.35, 1.7 wide, 1.55 tall, turned a little toward the planet
 //           Row layout on the console face (z across the slope: + is toward the back / top of screen):
 //             z = +0.33  nixie tubes (year, temperature, trees, birds, people), plates at z = +0.215
 //             z = -0.02  paper roll (left) and the three dials (right), plates at z = -0.17
@@ -39,6 +41,7 @@ namespace Terrarium.EditorTools
 
         private static readonly Vector3 ShelfCentre = new Vector3(2.0f, 0f, 1.35f);
         private static readonly Vector3 ConsoleCentre = new Vector3(-2.0f, 0f, -1.25f);
+        private static readonly Vector3 TechBoardCentre = new Vector3(-2.55f, 0f, 1.35f);
 
         // Where each tool stands on the shelf: which board (0 = lower, 1 = upper) and x across the shelf.
         private static readonly (string Name, int Board, float X)[] ShelfSlots =
@@ -105,6 +108,7 @@ namespace Terrarium.EditorTools
 
             BuildShelf(workshop, toolsRoot);
             BuildConsole(workshop, simRoot);
+            BuildTechBoard(workshop, simRoot);
         }
 
         // ---------------------------------------------------------------- shelf
@@ -297,6 +301,104 @@ namespace Terrarium.EditorTools
             SetReference(readouts, "birds", displays[3]);
             SetReference(readouts, "people", displays[4]);
             SetReference(readouts, "paper", roll);
+        }
+
+        // ------------------------------------------------------------ tech board
+
+        // Where each technology's button sits on the board (x across, y up), in display order of TechId.
+        private static readonly (Terrarium.Tech.TechId Id, string Label, Vector2 Position, Color Colour)[] TechNodes =
+        {
+            (Terrarium.Tech.TechId.Irrigation, "IRRIGATION", new Vector2(-0.52f, 1.30f), new Color(0.30f, 0.55f, 0.75f)),
+            (Terrarium.Tech.TechId.MudWalls, "MUD WALLS", new Vector2(0.00f, 1.30f), new Color(0.58f, 0.42f, 0.28f)),
+            (Terrarium.Tech.TechId.Bricks, "BRICKS", new Vector2(-0.30f, 0.62f), new Color(0.65f, 0.30f, 0.22f)),
+            (Terrarium.Tech.TechId.Wells, "WELLS", new Vector2(0.52f, 1.30f), new Color(0.30f, 0.62f, 0.60f)),
+            (Terrarium.Tech.TechId.StoneRoads, "STONE ROADS", new Vector2(0.30f, 0.62f), new Color(0.62f, 0.62f, 0.58f)),
+        };
+
+        private static void BuildTechBoard(Transform workshop, SimRoot simRoot)
+        {
+            var techSystem = simRoot.GetComponent<Terrarium.Tech.TechSystem>();
+            var board = new GameObject("TechBoard").transform;
+            board.SetParent(workshop, worldPositionStays: false);
+            board.position = TechBoardCentre;
+            board.rotation = Quaternion.Euler(0f, -20f, 0f);   // the face (toward -z) turns a little toward the planet
+
+            Quaternion none = Quaternion.identity;
+            Material wood = GetMaterial("TechBoardWood", new Color(0.36f, 0.23f, 0.13f));
+            Material panelMaterial = GetMaterial("TechBoardPanel", new Color(0.10f, 0.12f, 0.10f), outlineScale: 0.6f);
+            Material plateMaterial = GetTextMaterial("ConsolePlate", Color.white, paper: false);
+            Material barMaterial = GetMaterial("TechBar", new Color(0.95f, 0.75f, 0.25f), glow: 0.5f, outlineScale: 0.3f);
+            Material trackMaterial = GetMaterial("TechBarTrack", new Color(0.04f, 0.04f, 0.04f), outlineScale: 0.3f);
+            Material lineMaterial = GetMaterial("TechLine", new Color(0.55f, 0.50f, 0.38f), outlineScale: 0.3f);
+            Material bezelMaterial = GetMaterial("TechBezel", new Color(0.05f, 0.05f, 0.05f), outlineScale: 0.5f);
+
+            // The stand: a base, two posts, a wooden frame and the dark panel.
+            AddPart("Base", PrimitiveType.Cube, board, new Vector3(0f, 0.03f, 0.1f), none, new Vector3(1.9f, 0.06f, 0.5f), wood);
+            AddPart("PostLeft", PrimitiveType.Cube, board, new Vector3(-0.72f, 0.14f, 0.04f), none, new Vector3(0.07f, 0.2f, 0.07f), wood);
+            AddPart("PostRight", PrimitiveType.Cube, board, new Vector3(0.72f, 0.14f, 0.04f), none, new Vector3(0.07f, 0.2f, 0.07f), wood);
+            AddPart("Frame", PrimitiveType.Cube, board, new Vector3(0f, 1.02f, 0.045f), none, new Vector3(1.82f, 1.64f, 0.05f), wood);
+            AddPart("Panel", PrimitiveType.Cube, board, new Vector3(0f, 1.02f, 0.0f), none, new Vector3(1.7f, 1.52f, 0.05f), panelMaterial);
+
+            // The title.
+            AddBoardPlate(board, "EUREKA", new Vector3(0f, 1.70f, -0.03f), plateMaterial, 1.8f);
+
+            // Lines from each technology to the ones it needs, drawn first so the buttons sit on top of them.
+            foreach (var node in TechNodes)
+            {
+                Terrarium.Tech.TechId[] needs = new Terrarium.Tech.TechTree().Definitions[(int)node.Id].Requires;
+                foreach (Terrarium.Tech.TechId need in needs)
+                {
+                    Vector2 from = System.Array.Find(TechNodes, n => n.Id == need).Position + new Vector2(0f, -0.36f);
+                    Vector2 to = node.Position + new Vector2(0f, 0.17f);
+                    Vector3 start = new Vector3(from.x, from.y, -0.03f);
+                    Vector3 end = new Vector3(to.x, to.y, -0.03f);
+                    Vector3 span = end - start;
+                    AddPart("Line_" + need + "_" + node.Id, PrimitiveType.Cylinder, board, (start + end) * 0.5f, Quaternion.FromToRotation(Vector3.up, span.normalized),
+                        new Vector3(0.018f, span.magnitude * 0.5f, 0.018f), lineMaterial);
+                }
+            }
+
+            // One button per technology.
+            Quaternion faceOn = Quaternion.Euler(90f, 0f, 0f);   // a cylinder's axis along z, toward the viewer
+            foreach (var node in TechNodes)
+            {
+                var root = new GameObject("Tech_" + node.Id);
+                root.transform.SetParent(board, worldPositionStays: false);
+                root.transform.localPosition = new Vector3(node.Position.x, node.Position.y, -0.04f);
+
+                AddPart("Bezel", PrimitiveType.Cylinder, root.transform, Vector3.zero, faceOn, new Vector3(0.27f, 0.008f, 0.27f), bezelMaterial);
+                GameObject cap = AddPart("Cap", PrimitiveType.Cylinder, root.transform, new Vector3(0f, 0f, -0.02f), faceOn, new Vector3(0.21f, 0.02f, 0.21f), GetMaterial("Tech_" + node.Id, node.Colour));
+                cap.AddComponent<BoxCollider>();
+
+                GameObject led = AddPart("Indicator", PrimitiveType.Sphere, root.transform, new Vector3(0.14f, 0.14f, -0.03f), none, Vector3.one * 0.04f, GetMaterial("TechLed_" + node.Id, node.Colour, glow: 0f, outlineScale: 0.4f));
+                GameObject lamp = AddPart("EurekaLamp", PrimitiveType.Sphere, root.transform, new Vector3(-0.14f, 0.14f, -0.03f), none, Vector3.one * 0.036f, GetMaterial("TechEureka", new Color(1.0f, 0.85f, 0.25f), glow: 0f, outlineScale: 0.4f));
+
+                AddBoardPlate(root.transform, node.Label, new Vector3(0f, -0.2f, 0.0f), plateMaterial, 1f);
+
+                AddPart("BarTrack", PrimitiveType.Quad, root.transform, new Vector3(0f, -0.285f, 0.0f), none, new Vector3(0.36f, 0.034f, 1f), trackMaterial);
+                var pivot = new GameObject("BarPivot").transform;
+                pivot.SetParent(root.transform, worldPositionStays: false);
+                pivot.localPosition = new Vector3(-0.17f, -0.285f, -0.004f);
+                AddPart("Bar", PrimitiveType.Quad, pivot, new Vector3(0.17f, 0f, 0f), none, new Vector3(0.34f, 0.022f, 1f), barMaterial);
+
+                root.AddComponent<ConsoleControl>().ConfigureResearch(node.Id, simRoot, techSystem, cap.transform,
+                    led.GetComponent<MeshRenderer>(), pivot, lamp.GetComponent<MeshRenderer>(), Vector3.forward);
+            }
+
+            // The paper roll prints research events.
+            GameObject consoleObject = GameObject.Find("Console");
+            if (consoleObject != null)
+            {
+                SetReference(consoleObject.GetComponent<ConsoleReadouts>(), "tech", techSystem);
+            }
+        }
+
+        // A nameplate on the board's upright face (a quad that looks toward -z), optionally larger than the console's.
+        private static void AddBoardPlate(Transform parent, string text, Vector3 localPosition, Material plateMaterial, float scale)
+        {
+            var size = new Vector2(LabelPlate.WidthFor(text) * PlateTexel * scale, LabelPlate.HeightPixels * PlateTexel * scale);
+            GameObject quad = AddPart("Plate_" + text, PrimitiveType.Quad, parent, localPosition, Quaternion.identity, new Vector3(size.x, size.y, 1f), plateMaterial);
+            quad.AddComponent<LabelPlate>().Configure(text, quad.GetComponent<MeshRenderer>(), new Color(0.07f, 0.07f, 0.06f), new Color(0.86f, 0.76f, 0.54f));
         }
 
         // Saves a code-made mesh as an asset (replacing the old one) so the scene can refer to it.

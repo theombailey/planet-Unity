@@ -141,7 +141,7 @@ namespace Terrarium.Tests
                 world.SeedPeople(physarum, seed: 1, count: 0);
 
                 Vector3 centre = new Vector3(0f, 1f, 1f).normalized;
-                physarum.SpawnAgents(world.Land, world.Soil, world.Terrain.Current, world.Climate.Current, centre, 0.15f, 300);
+                physarum.SpawnAgents(world.PeopleFields, Terrarium.Physarum.SettlementRules.Start, centre, 0.15f, 300);
 
                 uint[] alive = WorldHarness.ReadBuffer<uint>(physarum.Alive);
                 Vector4[] bodies = WorldHarness.ReadBuffer<Vector4>(physarum.PosEnergy);

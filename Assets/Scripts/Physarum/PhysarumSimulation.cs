@@ -10,11 +10,15 @@
 //             2. TrailDiffuse      the deposits are added to the path field, which is
 //                                  blurred and faded (reads Current, writes Next, swap)
 //             3. LandStep          the deposits also feed the town density, from which farms
-//                                  follow (Settlement.compute; reads Land.Current, writes Next, swap)
+//                                  follow, and busy paths harden into permanent roads
+//                                  (Settlement.compute; reads Land.Current, writes Next, swap)
 //             4. ClearDeposit      the deposit buffer is emptied
-//             5. NutrientTransport nutrients spread through the soil (sub-stepped)
+//             5. WaterRelax        the water-proximity field relaxes a few texels (a few passes)
+//             6. NutrientTransport nutrients spread through the soil (sub-stepped)
 //           Every stage is a GPU dispatch; nothing is read back to the CPU
 //           (the population count is read back asynchronously by PhysarumSystem).
+// Rules   : what the people may do (irrigation, road hardness) comes in as a SettlementRules value,
+//           set by their technology, and is handed to the shaders each step.
 // Agent storage: three buffers, one element per pool slot (see Physarum.compute):
 //           position + energy, heading, alive flag. A dead slot is free for a
 //           newborn, so the pool size caps the population but does not set it.
@@ -30,13 +34,37 @@ using UnityEngine;
 
 namespace Terrarium.Physarum
 {
-    /// <summary>Runs the walkers, the path field, the towns and farms and the nutrient transport on the GPU.</summary>
+    /// <summary>The fields the people's simulation reads and writes.</summary>
+    public struct PhysarumFields
+    {
+        /// <summary>Path strength (ping-pong).</summary>
+        public Field Trail;
+
+        /// <summary>Town density, farmland, crowding, permanent road (ping-pong).</summary>
+        public Field Land;
+
+        /// <summary>Proximity to water (ping-pong).</summary>
+        public Field Water;
+
+        /// <summary>Nutrients and organic matter (ping-pong).</summary>
+        public Field Soil;
+
+        /// <summary>Terrain texture (read).</summary>
+        public RenderTexture Terrain;
+
+        /// <summary>Climate texture (read).</summary>
+        public RenderTexture Climate;
+    }
+
+    /// <summary>Runs the walkers, the path field, the towns, farms and roads and the nutrient transport on the GPU.</summary>
     public sealed class PhysarumSimulation : IDisposable
     {
         private const int AgentGroupSize = 64;
         private const int TexelGroupSize = 8;
         private const int CounterCount = 4;
         private const float MaxExchangePerSubStep = 0.2f;
+        private const int WaterPassesPerStep = 4;
+        private const int WaterPassesAtStart = 200;
 
         /// <summary>Field size at which one "person per texel" is the reference density for towns.</summary>
         private const float ReferenceResolution = 256f;
@@ -53,6 +81,7 @@ namespace Terrarium.Physarum
         private readonly int trailKernel;
         private readonly int clearDepositKernel;
         private readonly int landKernel;
+        private readonly int waterKernel;
         private readonly int transportKernel;
         private readonly int spawnKernel;
         private readonly int killKernel;
@@ -81,6 +110,7 @@ namespace Terrarium.Physarum
             spawnKernel = physarum.FindKernel("SpawnAgents");
             killKernel = physarum.FindKernel("KillAgents");
             landKernel = settlement.FindKernel("LandStep");
+            waterKernel = settlement.FindKernel("WaterRelax");
             transportKernel = nutrients.FindKernel("NutrientTransport");
         }
 
@@ -162,20 +192,22 @@ namespace Terrarium.Physarum
             Resolution = resolution;
         }
 
-        /// <summary>Replaces the population with <paramref name="startAgents"/> people scattered at random on livable land.</summary>
-        public void SeedAgents(Field land, Field soil, RenderTexture terrain, RenderTexture climate, int seed, int startAgents)
+        /// <summary>
+        /// Replaces the population with <paramref name="startAgents"/> people scattered at random on livable land.
+        /// The water-proximity field is brought up to date first, since livability may depend on it.
+        /// </summary>
+        public void SeedAgents(PhysarumFields fields, SettlementRules rules, int seed, int startAgents)
         {
-            SetPhysarumParameters(0f);
+            RelaxWater(fields, WaterPassesAtStart);
+
+            SetPhysarumParameters(0f, rules);
             physarum.SetInt(StartAgentsId, Mathf.Min(startAgents, PoolSize));
             physarum.SetFloat(SeedId, seed);
 
             physarum.SetBuffer(initKernel, PosEnergyId, posEnergy);
             physarum.SetBuffer(initKernel, HeadingId, heading);
             physarum.SetBuffer(initKernel, AliveId, alive);
-            physarum.SetTexture(initKernel, LandId, land.Current);
-            physarum.SetTexture(initKernel, SoilId, soil.Current);
-            physarum.SetTexture(initKernel, TerrainId, terrain);
-            physarum.SetTexture(initKernel, ClimateId, climate);
+            BindWorld(initKernel, fields);
             physarum.Dispatch(initKernel, Groups(PoolSize, AgentGroupSize), 1, 1);
         }
 
@@ -186,18 +218,18 @@ namespace Terrarium.Physarum
         /// <param name="localDirection">Centre of the circle, a unit vector in the planet's local space.</param>
         /// <param name="angularRadius">Radius of the circle in radians.</param>
         /// <param name="count">How many people to try to start.</param>
-        public void SpawnAgents(Field land, Field soil, RenderTexture terrain, RenderTexture climate, Vector3 localDirection, float angularRadius, int count)
+        public void SpawnAgents(PhysarumFields fields, SettlementRules rules, Vector3 localDirection, float angularRadius, int count)
         {
-            DispatchSpawn(land, soil, terrain, climate, localDirection, angularRadius, count, anywhere: false);
+            DispatchSpawn(fields, rules, localDirection, angularRadius, count, anywhere: false);
         }
 
         /// <summary>
         /// Pioneers: tries to start up to <paramref name="count"/> people, each at the first good, empty
         /// place it finds anywhere on the planet.
         /// </summary>
-        public void SpawnPioneers(Field land, Field soil, RenderTexture terrain, RenderTexture climate, int count)
+        public void SpawnPioneers(PhysarumFields fields, SettlementRules rules, int count)
         {
-            DispatchSpawn(land, soil, terrain, climate, Vector3.up, 0f, count, anywhere: true);
+            DispatchSpawn(fields, rules, Vector3.up, 0f, count, anywhere: true);
         }
 
         /// <summary>An impact: kills every person inside a circle.</summary>
@@ -217,18 +249,18 @@ namespace Terrarium.Physarum
         }
 
         /// <summary>Runs one simulation step of <paramref name="deltaSeconds"/> sim seconds.</summary>
-        /// <param name="trail">Path field (ping-pong; swapped).</param>
-        /// <param name="land">Land field: town density and farmland (ping-pong; swapped).</param>
-        /// <param name="soil">Soil field (R nutrients, G organic matter; ping-pong; swapped by transport).</param>
-        /// <param name="terrain">Terrain texture (read).</param>
-        /// <param name="climate">Climate texture (read).</param>
+        /// <param name="fields">The fields to read and write (ping-pong fields are swapped).</param>
+        /// <param name="rules">What the people are currently allowed to do.</param>
         /// <param name="deltaSeconds">Step length in sim seconds.</param>
-        public void Step(Field trail, Field land, Field soil, RenderTexture terrain, RenderTexture climate, float deltaSeconds)
+        public void Step(PhysarumFields fields, SettlementRules rules, float deltaSeconds)
         {
             frame++;
-            SetPhysarumParameters(deltaSeconds);
+            SetPhysarumParameters(deltaSeconds, rules);
             int texelGroups = Groups(Resolution, TexelGroupSize);
             int texelCount = Resolution * Resolution * CubeSphere.FaceCount;
+            Field trail = fields.Trail;
+            Field land = fields.Land;
+            Field soil = fields.Soil;
 
             // 1. Walkers.
             physarum.SetBuffer(clearCountersKernel, CountersId, counters);
@@ -240,10 +272,7 @@ namespace Terrarium.Physarum
             physarum.SetBuffer(agentKernel, DepositId, deposit);
             physarum.SetBuffer(agentKernel, CountersId, counters);
             physarum.SetTexture(agentKernel, TrailReadId, trail.Current);
-            physarum.SetTexture(agentKernel, LandId, land.Current);
-            physarum.SetTexture(agentKernel, SoilId, soil.Current);
-            physarum.SetTexture(agentKernel, TerrainId, terrain);
-            physarum.SetTexture(agentKernel, ClimateId, climate);
+            BindWorld(agentKernel, fields);
             physarum.Dispatch(agentKernel, Groups(PoolSize, AgentGroupSize), 1, 1);
 
             // 2. Paths: add deposits, blur, fade.
@@ -253,7 +282,7 @@ namespace Terrarium.Physarum
             physarum.Dispatch(trailKernel, texelGroups, texelGroups, CubeSphere.FaceCount);
             trail.Swap();
 
-            // 3. Towns and farms.
+            // 3. Towns, farms and permanent roads.
             float referenceArea = Resolution / ReferenceResolution;
             settlement.SetInt(ResolutionId, Resolution);
             settlement.SetFloat(DeltaTimeId, deltaSeconds);
@@ -268,12 +297,21 @@ namespace Terrarium.Physarum
             settlement.SetFloat(FarmGrowthId, config.farmGrowth);
             settlement.SetFloat(FarmAbandonId, config.farmAbandon);
             settlement.SetFloat(CrowdRateId, config.crowdingRate);
+            SetRuleValues(settlement, rules);
+
+            float roadHardness = 1f + 2f * rules.RoadTier;
+            settlement.SetFloat(PaveThresholdId, config.pavingThreshold);
+            settlement.SetFloat(PaveRateId, roadHardness / config.pavingSeconds);
+            settlement.SetFloat(PaveFadeId, 1f / (config.pavingFadeSeconds * roadHardness));
+
             settlement.SetBuffer(landKernel, DepositId, deposit);
             settlement.SetTexture(landKernel, LandReadId, land.Current);
             settlement.SetTexture(landKernel, LandWriteId, land.Next);
-            settlement.SetTexture(landKernel, TerrainId, terrain);
-            settlement.SetTexture(landKernel, ClimateId, climate);
+            settlement.SetTexture(landKernel, TerrainId, fields.Terrain);
+            settlement.SetTexture(landKernel, ClimateId, fields.Climate);
             settlement.SetTexture(landKernel, SoilId, soil.Current);
+            settlement.SetTexture(landKernel, TrailId, trail.Current);
+            settlement.SetTexture(landKernel, WaterId, fields.Water.Current);
             settlement.Dispatch(landKernel, texelGroups, texelGroups, CubeSphere.FaceCount);
             land.Swap();
 
@@ -282,7 +320,10 @@ namespace Terrarium.Physarum
             physarum.SetBuffer(clearDepositKernel, DepositId, deposit);
             physarum.Dispatch(clearDepositKernel, Groups(texelCount, AgentGroupSize), 1, 1);
 
-            // 5. Transport nutrients, in enough sub-steps to stay stable.
+            // 5. Keep the water-proximity field up to date.
+            RelaxWater(fields, WaterPassesPerStep);
+
+            // 6. Transport nutrients, in enough sub-steps to stay stable.
             float texelAngle = Mathf.PI * 0.5f / Resolution;
             float rate = config.nutrientDiffusion * deltaSeconds / (texelAngle * texelAngle);
             int subSteps = Mathf.Max(1, Mathf.CeilToInt(rate / MaxExchangePerSubStep));
@@ -291,8 +332,8 @@ namespace Terrarium.Physarum
             nutrients.SetFloat(DeltaTimeId, deltaSeconds / subSteps);
             nutrients.SetFloat(DiffusionId, config.nutrientDiffusion);
             nutrients.SetFloat(DecompositionRateId, config.decompositionRate);
-            nutrients.SetTexture(transportKernel, TerrainId, terrain);
-            nutrients.SetTexture(transportKernel, ClimateId, climate);
+            nutrients.SetTexture(transportKernel, TerrainId, fields.Terrain);
+            nutrients.SetTexture(transportKernel, ClimateId, fields.Climate);
 
             for (int i = 0; i < subSteps; i++)
             {
@@ -300,6 +341,27 @@ namespace Terrarium.Physarum
                 nutrients.SetTexture(transportKernel, SoilWriteId, soil.Next);
                 nutrients.Dispatch(transportKernel, texelGroups, texelGroups, CubeSphere.FaceCount);
                 soil.Swap();
+            }
+        }
+
+        /// <summary>
+        /// Relaxes the water-proximity field by <paramref name="passes"/> texels (1 at water, falling to 0 at the
+        /// configured reach). A step does a few passes; a new world does enough to cover the whole reach.
+        /// </summary>
+        public void RelaxWater(PhysarumFields fields, int passes)
+        {
+            int texelGroups = Groups(Resolution, TexelGroupSize);
+            float texelAngle = Mathf.PI * 0.5f / Resolution;
+            settlement.SetInt(ResolutionId, Resolution);
+            settlement.SetFloat(WaterFallId, texelAngle / config.waterFieldReach);
+            settlement.SetTexture(waterKernel, TerrainId, fields.Terrain);
+
+            for (int i = 0; i < passes; i++)
+            {
+                settlement.SetTexture(waterKernel, WaterReadId, fields.Water.Current);
+                settlement.SetTexture(waterKernel, WaterWriteId, fields.Water.Next);
+                settlement.Dispatch(waterKernel, texelGroups, texelGroups, CubeSphere.FaceCount);
+                fields.Water.Swap();
             }
         }
 
@@ -317,10 +379,10 @@ namespace Terrarium.Physarum
 
         // ------------------------------------------------------------------ internals
 
-        private void DispatchSpawn(Field land, Field soil, RenderTexture terrain, RenderTexture climate, Vector3 localDirection, float angularRadius, int count, bool anywhere)
+        private void DispatchSpawn(PhysarumFields fields, SettlementRules rules, Vector3 localDirection, float angularRadius, int count, bool anywhere)
         {
             frame++;
-            SetPhysarumParameters(0f);
+            SetPhysarumParameters(0f, rules);
             physarum.SetInt(SpawnCountId, count);
             physarum.SetInt(SpawnAnywhereId, anywhere ? 1 : 0);
             physarum.SetVector(EventDirectionId, localDirection.normalized);
@@ -330,14 +392,29 @@ namespace Terrarium.Physarum
             physarum.SetBuffer(spawnKernel, HeadingId, heading);
             physarum.SetBuffer(spawnKernel, AliveId, alive);
             physarum.SetBuffer(spawnKernel, CountersId, counters);
-            physarum.SetTexture(spawnKernel, LandId, land.Current);
-            physarum.SetTexture(spawnKernel, SoilId, soil.Current);
-            physarum.SetTexture(spawnKernel, TerrainId, terrain);
-            physarum.SetTexture(spawnKernel, ClimateId, climate);
+            BindWorld(spawnKernel, fields);
             physarum.Dispatch(spawnKernel, Groups(count, AgentGroupSize), 1, 1);
         }
 
-        private void SetPhysarumParameters(float deltaSeconds)
+        // The textures a kernel of Physarum.compute reads about the world.
+        private void BindWorld(int kernel, PhysarumFields fields)
+        {
+            physarum.SetTexture(kernel, LandId, fields.Land.Current);
+            physarum.SetTexture(kernel, WaterId, fields.Water.Current);
+            physarum.SetTexture(kernel, SoilId, fields.Soil.Current);
+            physarum.SetTexture(kernel, TerrainId, fields.Terrain);
+            physarum.SetTexture(kernel, ClimateId, fields.Climate);
+        }
+
+        // The irrigation values Livability.hlsl reads, on whichever compute shader includes it.
+        private void SetRuleValues(ComputeShader shader, SettlementRules rules)
+        {
+            shader.SetFloat(IrrigationOnId, rules.Irrigation ? 1f : 0f);
+            shader.SetFloat(IrrigationMoistureId, config.irrigationMoisture);
+            shader.SetFloat(IrrigationNearId, rules.IrrigationProximity(config));
+        }
+
+        private void SetPhysarumParameters(float deltaSeconds, SettlementRules rules)
         {
             physarum.SetInt(PoolSizeId, PoolSize);
             physarum.SetInt(ResolutionId, Resolution);
@@ -365,6 +442,9 @@ namespace Terrarium.Physarum
             physarum.SetFloat(CapacityFarmId, config.farmCapacity);
             physarum.SetFloat(TownSlowdownId, config.townSlowdown);
             physarum.SetFloat(TownFullId, config.townFull);
+            physarum.SetFloat(RoadWeightId, config.roadAttraction * (1f + 0.5f * rules.RoadTier));
+            physarum.SetFloat(RoadSpeedId, config.roadSpeedBoost * (1f + 0.5f * rules.RoadTier));
+            SetRuleValues(physarum, rules);
         }
 
         private static int Groups(int count, int groupSize)
@@ -412,9 +492,13 @@ namespace Terrarium.Physarum
         private static readonly int CountersId = Shader.PropertyToID("_Counters");
         private static readonly int TrailReadId = Shader.PropertyToID("_TrailRead");
         private static readonly int TrailWriteId = Shader.PropertyToID("_TrailWrite");
+        private static readonly int TrailId = Shader.PropertyToID("_Trail");
         private static readonly int LandId = Shader.PropertyToID("_Land");
         private static readonly int LandReadId = Shader.PropertyToID("_LandRead");
         private static readonly int LandWriteId = Shader.PropertyToID("_LandWrite");
+        private static readonly int WaterId = Shader.PropertyToID("_Water");
+        private static readonly int WaterReadId = Shader.PropertyToID("_WaterRead");
+        private static readonly int WaterWriteId = Shader.PropertyToID("_WaterWrite");
         private static readonly int SoilId = Shader.PropertyToID("_Soil");
         private static readonly int SoilReadId = Shader.PropertyToID("_SoilRead");
         private static readonly int SoilWriteId = Shader.PropertyToID("_SoilWrite");
@@ -449,6 +533,8 @@ namespace Terrarium.Physarum
         private static readonly int CapacityFarmId = Shader.PropertyToID("_CapacityFarm");
         private static readonly int TownSlowdownId = Shader.PropertyToID("_TownSlowdown");
         private static readonly int TownFullId = Shader.PropertyToID("_TownFull");
+        private static readonly int RoadWeightId = Shader.PropertyToID("_RoadWeight");
+        private static readonly int RoadSpeedId = Shader.PropertyToID("_RoadSpeed");
         private static readonly int SpawnCountId = Shader.PropertyToID("_SpawnCount");
         private static readonly int SpawnAnywhereId = Shader.PropertyToID("_SpawnAnywhere");
         private static readonly int EventDirectionId = Shader.PropertyToID("_EventDirection");
@@ -465,5 +551,12 @@ namespace Terrarium.Physarum
         private static readonly int FarmGrowthId = Shader.PropertyToID("_FarmGrowth");
         private static readonly int FarmAbandonId = Shader.PropertyToID("_FarmAbandon");
         private static readonly int CrowdRateId = Shader.PropertyToID("_CrowdRate");
+        private static readonly int PaveThresholdId = Shader.PropertyToID("_PaveThreshold");
+        private static readonly int PaveRateId = Shader.PropertyToID("_PaveRate");
+        private static readonly int PaveFadeId = Shader.PropertyToID("_PaveFade");
+        private static readonly int WaterFallId = Shader.PropertyToID("_WaterFall");
+        private static readonly int IrrigationOnId = Shader.PropertyToID("_IrrigationOn");
+        private static readonly int IrrigationMoistureId = Shader.PropertyToID("_IrrigationMoisture");
+        private static readonly int IrrigationNearId = Shader.PropertyToID("_IrrigationNear");
     }
 }
