@@ -163,8 +163,8 @@ namespace Terrarium
         [Range(0f, 100f)] public float climateSettleSeconds = 20f;
 
         [Header("People: walkers who make roads (see Physarum.compute)")]
-        [Tooltip("People scattered on livable land when a world starts. The population then rises or falls with the food; the pool size comes from the quality preset.")]
-        [Range(10, 20_000)] public int physarumStartAgents = 500;
+        [Tooltip("Households scattered on livable land when humans are created. The population then rises or falls with the food; the pool size comes from the quality preset. Each walker is a household, not a single person.")]
+        [Range(10, 20_000)] public int physarumStartAgents = 120;
 
         [Tooltip("Angle between the forward sensor and each side sensor, in degrees.")]
         [Range(5f, 90f)] public float physarumSensorAngleDegrees = 35f;
@@ -179,7 +179,7 @@ namespace Terrarium
         [Range(0.005f, 0.5f)] public float physarumSpeed = 0.05f;
 
         [Tooltip("Path laid down by one walker per step.")]
-        [Range(0.01f, 5f)] public float physarumDepositAmount = 0.5f;
+        [Range(0.01f, 5f)] public float physarumDepositAmount = 2.5f;
 
         [Tooltip("How much of each step the path is blurred toward its 3x3 neighbourhood mean, 0..1. More = wider, smoother roads.")]
         [Range(0f, 1f)] public float physarumTrailDiffusion = 0.3f;
@@ -214,10 +214,13 @@ namespace Terrarium
         [Tooltip("Energy lost per sim second by a walker that ends up in the ocean.")]
         [Range(0f, 20f)] public float physarumOceanPenalty = 2f;
 
-        [Tooltip("Pioneers arriving at empty, livable places far from any town, per sim second. A faint supply, so a world whose people have died out can be settled again. Zero turns it off.")]
-        [Range(0f, 100f)] public float peopleArrivalRate = 0.5f;
+        [Tooltip("Pioneer households arriving at empty, livable places far from any town, per sim second. A faint supply, so a world whose people have died out can be settled again. Zero turns it off.")]
+        [Range(0f, 100f)] public float peopleArrivalRate = 0.1f;
 
         [Header("Towns and farms (see Settlement.compute)")]
+        [Tooltip("How many households one walker stands for in the crowding and town density. Walkers are few (each is a household), but the density numbers keep the scale that towns, farms and houses were tuned in: density = walkers per texel x this.")]
+        [Range(1f, 50f)] public float crowdWeight = 5f;
+
         [Tooltip("Fraction of a place's town density that fades per sim second once the crowd has gone. Small, so a town has a long memory: it takes about 1 / this many seconds to forget.")]
         [Range(0.001f, 1f)] public float townDecay = 0.03f;
 
@@ -261,10 +264,13 @@ namespace Terrarium
         [Range(0.001f, 1f)] public float farmAbandon = 0.05f;
 
         [Tooltip("Town density above which a house may stand. Each house also has its own threshold between this and the core, so a town thins out toward its edge.")]
-        [Range(0.01f, 2f)] public float houseThreshold = 0.7f;
+        [Range(0.01f, 2f)] public float houseThreshold = 1.0f;
 
-        [Tooltip("How many candidate spots are scattered evenly over the planet for houses. A house stands at a spot when the town density there is high enough, so this sets the most houses a place can hold: 1 per candidate.")]
-        [Range(10_000, 200_000)] public int houseCandidates = 200_000;
+        [Tooltip("The closest two houses can ever stand, in radians. The candidate spots are laid out so that no two are closer than this (a spiral lattice with only a small random nudge), and a house is never wider than 0.7 of it, so houses never overlap. It also sets how many candidate spots there are: about (2.4 / this) squared.")]
+        [Range(0.003f, 0.02f)] public float houseMinDistance = 0.0065f;
+
+        [Tooltip("Sim seconds a house takes to be taken down, once it has been given up. Scaffolding stands round it meanwhile.")]
+        [Range(1f, 120f)] public float houseDemolishSeconds = 10f;
 
         [Tooltip("Width of a house, as a fraction of the planet radius.")]
         [Range(0.001f, 0.02f)] public float houseSize = 0.0032f;
@@ -306,7 +312,7 @@ namespace Terrarium
         [Tooltip("Sim seconds a house takes to build once it is wanted and allowed.")]
         [Range(1f, 120f)] public float houseBuildSeconds = 15f;
 
-        [Tooltip("Sim seconds for a house to be given up once it is no longer allowed or wanted.")]
+        [Tooltip("Sim seconds a house stands unwanted or no longer allowed before it is taken down.")]
         [Range(5f, 600f)] public float houseAbandonSeconds = 90f;
 
         [Tooltip("Average sim seconds before a house is rebuilt in the next, better style once that style is known.")]
@@ -327,8 +333,8 @@ namespace Terrarium
         [Tooltip("How far from water irrigation carries it, in radians.")]
         [Range(0.01f, 0.5f)] public float irrigationReach = 0.15f;
 
-        [Tooltip("A path stronger than this starts to harden into a permanent road.")]
-        [Range(0.1f, 6f)] public float pavingThreshold = 0.8f;
+        [Tooltip("A path stronger than this, and standing up above its surroundings (a track, not a crowd), starts to harden into a permanent road.")]
+        [Range(0.1f, 6f)] public float pavingThreshold = 3.0f;
 
         [Tooltip("Sim seconds a busy path must be walked to harden into a road.")]
         [Range(10f, 2000f)] public float pavingSeconds = 120f;
@@ -342,7 +348,7 @@ namespace Terrarium
         [Tooltip("How much faster people walk on a permanent road: speed x (1 + this x road).")]
         [Range(0f, 3f)] public float roadSpeedBoost = 0.5f;
 
-        [Tooltip("Knowledge the people gain per sim second per sqrt(1000 people) plus per 400 houses; spent on the technology being researched.")]
+        [Tooltip("Knowledge the people gain per sim second: this x (sqrt(families / 200) + houses / 400); spent on the technology being researched.")]
         [Range(0.01f, 10f)] public float knowledgeRate = 0.5f;
 
         [Tooltip("Share of a technology's cost that is saved once its eureka condition is met (0.5 = half price).")]
@@ -689,8 +695,8 @@ namespace Terrarium
         [Tooltip("Temperature the frost spray removes per second at the brush centre, in deg C.")]
         [Range(1f, 300f)] public float frostRate = 60f;
 
-        [Tooltip("People the settlers' jar tries to start per click.")]
-        [Range(10, 5000)] public int settlerCount = 60;
+        [Tooltip("Households the settlers' jar tries to start per click.")]
+        [Range(2, 1000)] public int settlerCount = 12;
 
         [Tooltip("Radius of a meteor crater, in world units.")]
         [Range(0.03f, 0.6f)] public float meteorRadius = 0.10f;

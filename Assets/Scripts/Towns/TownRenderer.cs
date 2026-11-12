@@ -60,8 +60,13 @@ namespace Terrarium.Towns
         [Tooltip("Material using Terrarium/People.")]
         [SerializeField] private Material personMaterial;
 
+        [Tooltip("Material using Terrarium/Scaffolds.")]
+        [SerializeField] private Material scaffoldMaterial;
+
         private Mesh houseMesh;
         private Mesh personMesh;
+        private Mesh scaffoldMesh;
+        private MaterialPropertyBlock scaffoldBlock;
         private HouseSimulation simulation;
         private MaterialPropertyBlock houseBlock;
         private MaterialPropertyBlock personBlock;
@@ -74,7 +79,7 @@ namespace Terrarium.Towns
 
         private void Awake()
         {
-            if (simRoot == null || fieldSet == null || people == null || planet == null || houseShader == null || houseMaterial == null || personMaterial == null)
+            if (simRoot == null || fieldSet == null || people == null || planet == null || houseShader == null || houseMaterial == null || personMaterial == null || scaffoldMaterial == null)
             {
                 Debug.LogError("TownRenderer is missing a reference.", this);
                 enabled = false;
@@ -86,8 +91,10 @@ namespace Terrarium.Towns
             personBlock = new MaterialPropertyBlock();
             houseMesh = TownMeshes.BuildHouse();
             personMesh = TownMeshes.BuildPerson();
+            scaffoldMesh = TownMeshes.BuildScaffold();
+            scaffoldBlock = new MaterialPropertyBlock();
 
-            simulation = new HouseSimulation(houseShader, simRoot.Config, houseMesh.GetIndexCount(0));
+            simulation = new HouseSimulation(houseShader, simRoot.Config, houseMesh.GetIndexCount(0), scaffoldMesh.GetIndexCount(0));
         }
 
         private void HandleWorldReset()
@@ -111,6 +118,11 @@ namespace Terrarium.Towns
             if (personMesh != null)
             {
                 Destroy(personMesh);
+            }
+
+            if (scaffoldMesh != null)
+            {
+                Destroy(scaffoldMesh);
             }
         }
 
@@ -156,6 +168,12 @@ namespace Terrarium.Towns
             houseBlock.SetMatrix("_PlanetLocalToWorld", planet.localToWorldMatrix);
             houseBlock.SetFloat("_HouseMinPixels", config.houseMinPixels);
             Graphics.DrawMeshInstancedIndirect(houseMesh, 0, houseMaterial, bounds, simulation.Arguments, 0, houseBlock, ShadowCastingMode.Off, false);
+
+            // Scaffolding round whatever is being built, rebuilt or taken down.
+            scaffoldBlock.SetBuffer("_Scaffolds", simulation.Scaffolds);
+            scaffoldBlock.SetMatrix("_PlanetLocalToWorld", planet.localToWorldMatrix);
+            scaffoldBlock.SetFloat("_HouseMinPixels", config.houseMinPixels);
+            Graphics.DrawMeshInstancedIndirect(scaffoldMesh, 0, scaffoldMaterial, bounds, simulation.ScaffoldArguments, 0, scaffoldBlock, ShadowCastingMode.Off, false);
 
             PhysarumSimulation peopleSimulation = people.Simulation;
             if (peopleSimulation != null && peopleSimulation.IsAllocated)

@@ -10,9 +10,9 @@
 //           they can be built in, wells let houses stand further from water, stone roads make
 //           roads harder. Everything people build is still drawn procedurally; only the rules move.
 //
-//           KNOWLEDGE is earned by living: the more people there are, and the more houses they
+//           KNOWLEDGE is earned by living: the more families there are, and the more houses they
 //           have built, the faster it comes:
-//               gain per second = knowledgeRate * ( sqrt(people / 1000) + houses / 400 )
+//               gain per second = knowledgeRate * ( sqrt(families / 200) + houses / 400 )
 //           It all goes into the technology the player has chosen to research. Knowledge earned
 //           while nothing is chosen is kept and spent the moment something is chosen.
 //
@@ -104,12 +104,12 @@ namespace Terrarium.Tech
             {
                 new TechDefinition(TechId.Irrigation, "Irrigation", "farms and homes reach into drier land near water; channels", "farms already stand", 150f,
                     new TechId[0], stats => stats.FarmFraction >= 0.01f),
-                new TechDefinition(TechId.MudWalls, "Mud walls", "tents give way to mud-walled houses; colder places can be settled", "30 houses stand", 120f,
-                    new TechId[0], stats => stats.Houses >= 30),
-                new TechDefinition(TechId.Bricks, "Bricks", "brick houses; even colder places can be settled", "250 houses stand", 400f,
-                    new[] { TechId.MudWalls }, stats => stats.Houses >= 250),
-                new TechDefinition(TechId.Wells, "Wells", "houses can stand much further from water", "2500 people live", 200f,
-                    new TechId[0], stats => stats.PeopleAlive >= 2500),
+                new TechDefinition(TechId.MudWalls, "Mud walls", "tents give way to mud-walled houses; colder places can be settled", "20 houses stand", 120f,
+                    new TechId[0], stats => stats.Houses >= 20),
+                new TechDefinition(TechId.Bricks, "Bricks", "brick houses; even colder places can be settled", "150 houses stand", 400f,
+                    new[] { TechId.MudWalls }, stats => stats.Houses >= 150),
+                new TechDefinition(TechId.Wells, "Wells", "houses can stand much further from water", "500 families live", 200f,
+                    new TechId[0], stats => stats.PeopleAlive >= 500),
                 new TechDefinition(TechId.StoneRoads, "Stone roads", "roads harden faster and last longer", "towns cover 1.5% of the land", 300f,
                     new[] { TechId.MudWalls }, stats => stats.TownFraction >= 0.015f),
             };
@@ -214,10 +214,10 @@ namespace Terrarium.Tech
             researching = -1;
         }
 
-        /// <summary>The knowledge the people earn per sim second from how many of them there are and how much they have built.</summary>
+        /// <summary>The knowledge the people earn per sim second from how many families there are and how much they have built.</summary>
         public static float KnowledgePerSecond(EcosystemStats stats, SimConfig config)
         {
-            return config.knowledgeRate * (Mathf.Sqrt(Mathf.Max(0, stats.PeopleAlive) / 1000f) + Mathf.Max(0, stats.Houses) / 400f);
+            return config.knowledgeRate * (Mathf.Sqrt(Mathf.Max(0, stats.PeopleAlive) / 200f) + Mathf.Max(0, stats.Houses) / 400f);
         }
 
         /// <summary>Advances the tree by <paramref name="deltaSeconds"/> sim seconds, given how the world looks now.</summary>

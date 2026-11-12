@@ -98,9 +98,13 @@ Nine tools sit on the desk. Hover one to highlight it (it gets a thick ink outli
 
 ---
 
-## The Eureka board
+## The Divine Intervention board
 
-The board at the back left of the desk is where you steer what the people learn. Hover a button for what it does and what it costs; click to research it. See *Technology* under "What happens in the world" for how knowledge and eurekas work.
+The board at the back left of the desk is how you act on the world. Its first button, **Create humans**, brings the first households into a new world (a new world starts with nobody; the button pulses until you press it). The buttons below it are the technologies: hover one for what it does and what it costs, and click to research it. See *Technology* under "What happens in the world" for how knowledge and eurekas work.
+
+### Views
+
+Three small buttons on the front edge of the desk (**BOARD**, **CONSOLE**, **SHELF**) move the camera to frame a whole set of tools. Click again to go back to the planet. While a set is framed you can still orbit and zoom about it.
 
 ---
 
@@ -171,24 +175,24 @@ Everything in the world comes from local rules. Nothing is scripted to happen at
 
 - **Climate.** The lamp is the planet's sun: parallel light from the lamp's direction, so exactly half the planet is lit and the day/night line is a clean circle. The lit side warms, and warmth spreads and fades slowly. The axial tilt means the seasons turn over the year.
 - **Water and nutrients.** Moisture and nutrients move around and get used up or stored in the soil.
-- **People, roads, towns and farms (physarum).** The planet's people are the physarum agents (after Jeff Jones' slime-mould model; the same rule rebuilt the Tokyo rail map in a famous experiment). Each walker follows the paths other people have worn, lays a little more as they go, and is drawn toward good ground (warm, wet, low, fertile: the *livability* of a place). Paths that are used get stronger and unused ones fade, so a web of roads forms between the good places with nobody drawing it.
-  - **Towns and houses.** A place that stays crowded remembers it: its *town density* rises to the crowd and fades only slowly after, so a town survives a bad spell. People walk slowly in a town. Nobody places a house: every possible spot (200,000 of them, evenly scattered) keeps its own remembered state and builds when **all the rules hold**:
+- **People, roads, towns and farms (physarum).** The planet's people are the physarum agents, one walker per **household** (a few thousand at most, so the count is small and each walker is a family) (after Jeff Jones' slime-mould model; the same rule rebuilt the Tokyo rail map in a famous experiment). Each walker follows the paths other people have worn, lays a little more as they go, and is drawn toward good ground (warm, wet, low, fertile: the *livability* of a place). Paths that are used get stronger and unused ones fade, so a web of roads forms between the good places with nobody drawing it.
+  - **Towns and houses.** A place that stays crowded remembers it: its *town density* rises to the crowd and fades only slowly after, so a town survives a bad spell. People walk slowly in a town. Nobody places a house: every possible spot keeps its own remembered state and builds when **all the rules hold**:
     - it is dry land above the beach;
     - **water is to hand**: within reach of the sea or a lake (a field of "proximity to water" tracks this and follows the coast when a meteor makes a lake), or the ground is wet enough that streams run by;
     - the **temperature** suits the style it would be built in (tents need warmth; mud and brick houses cope with more cold). A standing house tolerates a few degrees beyond that before it is given up;
-    - it is not in a farmed field;
+    - it is not in the middle of a fully worked field (farmhouses stand among fields) and **not on a permanent road**;
     - **people need a home there**: the town density, made more or less attractive by water and by worn roads, beats the spot's own threshold.
-    Houses are therefore scattered along coasts and roads wherever they are needed, not in a round blob. Each takes time to build (it rises from the ground), is given up slowly when it is no longer needed or allowed, and is rebuilt in a better style once one is known. Every number is in SimConfig under *Rules for houses, roads and irrigation*.
-  - **Roads.** A footpath that has been walked a lot **hardens into a permanent road**, which wears away only very slowly after people stop using it, is drawn as a pale packed bed with a dark edge, makes people walk faster, and pulls houses toward it. Stone roads (a technology) harden faster and last longer.
+    Houses are therefore scattered along coasts and roads wherever they are needed, not in a round blob. **No two houses can be closer than the minimum distance**: the possible spots are a spiral lattice laid out from that distance (with only a small random nudge), and a house is never wider than 0.7 of it. Each house takes time to build (it rises from the ground), stands for a long while once unwanted, is then taken down, and is rebuilt in a better style once one is known. **Scaffolding** (poles, rails and braces, drawn by a shader) stands round a building whenever work is going on: a new build, a rebuild in a better style (which keeps its old look until the work is half done), and a demolition. Every number is in SimConfig under *Rules for houses, roads and irrigation*.
+  - **Roads.** A footpath that has been walked a lot **hardens into a permanent road** (only a track, not a crowd: paving responds to path that stands up above its surroundings, so roads are lines), which wears away only very slowly after people stop using it, is drawn as a pale packed bed with a dark edge, makes people walk faster, and pulls houses toward it. Stone roads (a technology) harden faster and last longer.
   - **Farms.** Round a town, on good ground, people cultivate: the land is cut into small fields, each with its own crop tone and tilled in rows, so farmed ground is darker and ruled with lines. Farms feed more people, and a crowded place feeds fewer, so a town grows until the land round it can hold no more. Nothing is built under the town centre and nothing farmed far from a town.
-  - **Technology: the Eureka board.** A board at the back left of the desk has one button for each technology. A technology changes **only the rules** above; it adds no models, and everything people build is still drawn by shaders from numbers. Click a button to research that technology (click again to stop; the light shows locked, ready, researching or learnt; the bar fills as knowledge goes in). **Knowledge is earned by living**: the more people and the more houses, the faster it comes. Each technology also has an **eureka** condition that the world itself can meet (for example, farms already stand); once it is met, a lamp lights and the technology costs half. The paper roll prints each choice, eureka and discovery.
+  - **Technology: the Divine Intervention board.** A board at the back left of the desk has Create humans at the top and one button for each technology under it. A technology changes **only the rules** above; it adds no models, and everything people build is still drawn by shaders from numbers. Click a button to research that technology (click again to stop; the light shows locked, ready, researching or learnt; the bar fills as knowledge goes in). **Knowledge is earned by living**: the more people and the more houses, the faster it comes. Each technology also has an **eureka** condition that the world itself can meet (for example, farms already stand); once it is met, a lamp lights and the technology costs half. The paper roll prints each choice, eureka and discovery. Technologies have nothing to research until humans exist.
 
     | Technology | Needs | What it changes | Eureka |
     |---|---|---|---|
     | **Irrigation** | nothing | Farms and homes spread into drier country near water, and thin blue channels run through the fields. | farms already stand |
-    | **Mud walls** | nothing | New houses are mud-walled instead of tents (and existing tents are rebuilt over time); colder places can be settled. | 30 houses stand |
-    | **Bricks** | Mud walls | Brick houses, with brick courses and tile or slate roofs; even colder places can be settled. | 250 houses stand |
-    | **Wells** | nothing | Houses may stand three times as far from water. | 2,500 people live |
+    | **Mud walls** | nothing | New houses are mud-walled instead of tents (and existing tents are rebuilt over time); colder places can be settled. | 20 houses stand |
+    | **Bricks** | Mud walls | Brick houses, with brick courses and tile or slate roofs; even colder places can be settled. | 150 houses stand |
+    | **Wells** | nothing | Houses may stand three times as far from water. | 500 families live |
     | **Stone roads** | Mud walls | Roads harden faster and last longer, and are drawn as grey stone. | towns cover 1.5% of the land |
 
     Houses start as **tents** (almost no wall, a steep cloth or hide A-frame), then mud, then brick: the same procedural house reshaped and recoloured by numbers.
@@ -234,7 +238,7 @@ All sound is generated live from maths (no audio files) and follows the ecosyste
 ## Developer notes
 
 - **Requirements:** Unity 6000.1.14f1, URP 17.1, Forward+, new Input System only. No asset-store packages.
-- **Tests:** run them from the Unity Test Runner (EditMode); all 213 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs people, houses, farms, trees and birds every season and reports PASS or FAIL (it passes on all 5 seeds).
+- **Tests:** run them from the Unity Test Runner (EditMode); all 217 pass. The ecosystem **stability check** (F1 panel, *Run stability check*) runs 5 seeds for 10 sim years at 16x, logs people, houses, farms, trees and birds every season and reports PASS or FAIL (it passes on all 5 seeds).
 - **Building the game:** in Unity choose **Terrarium > Build Windows Player**. It writes `Builds/Terrarium/Terrarium.exe` (about 94 MB). Press **F3** in the built game for demo mode.
 - **Editor bridge:** a file-based command bridge (`Assets/Scripts/Editor/DevBridge.cs`) lets scripts drive the open editor (play, capture screenshots, snap the camera, use tools). It is editor-only and is not part of the game.
 - **Scene and assets:** `SceneBuilder` (editor menu) rebuilds the desk, planet, tools, and dials from code.

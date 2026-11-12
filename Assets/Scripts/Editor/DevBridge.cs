@@ -243,6 +243,10 @@ namespace Terrarium.EditorTools
                     WriteResult(TechReport());
                     break;
 
+                case "housing":
+                    WriteResult(HousingReport());
+                    break;
+
                 case "town":
                     WriteResult(TownReport(parts.Length > 1 && int.TryParse(parts[1], out int rank) ? rank : 0));
                     break;
@@ -607,6 +611,71 @@ namespace Terrarium.EditorTools
         /// "boids [detail]": the boid counters from the last readback; with "detail", also reads the boid buffers right now
         /// (a blocking read, fine for an editor tool) and reports energies, heights and the number of broken (NaN) boids.
         /// </summary>
+        // Which house rule blocks building where the people are crowded: over every land texel with town density above the
+        // base threshold, counts how many fail each rule (water, weather, farm, road, demand). A texel can fail several.
+        private static string HousingReport()
+        {
+            var fields = UnityEngine.Object.FindFirstObjectByType<Terrarium.Sphere.FieldSet>();
+            var system = UnityEngine.Object.FindFirstObjectByType<Terrarium.Tech.TechSystem>();
+            var sim = UnityEngine.Object.FindFirstObjectByType<SimRoot>();
+            if (fields == null || system == null || sim == null || !EditorApplication.isPlaying || fields.Resolution == 0)
+            {
+                return "error: needs Play mode";
+            }
+
+            SimConfig config = sim.Config;
+            int n = fields.Resolution;
+            float[] Read(Terrarium.Sphere.FieldId id, int channels)
+            {
+                AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(fields.Get(id).Current, 0);
+                request.WaitForCompletion();
+                var data = new float[Terrarium.Sphere.CubeSphere.FaceCount * n * n * channels];
+                for (int face = 0; face < Terrarium.Sphere.CubeSphere.FaceCount; face++)
+                {
+                    Unity.Collections.NativeArray<float>.Copy(request.GetData<float>(face), 0, data, face * n * n * channels, n * n * channels);
+                }
+
+                return data;
+            }
+
+            float[] land = Read(Terrarium.Sphere.FieldId.Land, 4);
+            float[] terrain = Read(Terrarium.Sphere.FieldId.Terrain, 4);
+            float[] climate = Read(Terrarium.Sphere.FieldId.Climate, 4);
+            float[] water = Read(Terrarium.Sphere.FieldId.Water, 1);
+            float[] trail = Read(Terrarium.Sphere.FieldId.Trail, 1);
+
+            Terrarium.Physarum.SettlementRules rules = system.Rules;
+            float waterNeed = rules.HouseWaterProximity(config);
+            float tempMin = Terrarium.Physarum.SettlementRules.MinTemperature(rules.BuildingTier, config);
+            int crowded = 0, noLand = 0, noWater = 0, noWeather = 0, onFarm = 0, onRoad = 0, noDemand = 0, free = 0;
+            for (int i = 0; i < terrain.Length / 4; i++)
+            {
+                float s = land[i * 4];
+                if (s <= config.houseThreshold)
+                {
+                    continue;
+                }
+
+                crowded++;
+                bool landOk = terrain[i * 4] >= 0.04f;
+                bool waterOk = water[i] >= waterNeed || climate[i * 4 + 1] >= config.houseWetMoisture;
+                bool weatherOk = climate[i * 4] >= tempMin && climate[i * 4] <= config.houseTempMax;
+                bool farmOk = land[i * 4 + 1] < 0.95f;
+                bool roadOk = land[i * 4 + 3] < 0.35f;
+                float need = s * (0.5f + config.houseWaterBonus * water[i] + config.houseRoadBonus * Mathf.Clamp01(0.7f * trail[i] + 2f * land[i * 4 + 3]));
+                bool demandOk = need > config.houseThreshold + 0.5f * config.houseThresholdSpread;
+                noLand += landOk ? 0 : 1;
+                noWater += waterOk ? 0 : 1;
+                noWeather += weatherOk ? 0 : 1;
+                onFarm += farmOk ? 0 : 1;
+                onRoad += roadOk ? 0 : 1;
+                noDemand += demandOk ? 0 : 1;
+                free += (landOk && waterOk && weatherOk && farmOk && roadOk && demandOk) ? 1 : 0;
+            }
+
+            return $"ok: housing: {crowded} crowded texels; fail land {noLand}, water {noWater} (need proximity {waterNeed:0.00}), weather {noWeather}, farm {onFarm}, road {onRoad}, demand(mid) {noDemand}; pass all {free}";
+        }
+
         // The people's technology: what is learnt, what is being researched, progress and eurekas (Play mode).
         private static string TechReport()
         {

@@ -1,15 +1,19 @@
 // =============================================================================
 // HouseSimulation
 // -----------------------------------------------------------------------------
-// Purpose : The C# side of Houses.compute: owns the per-spot house state and the list of
-//           standing houses, and runs one update. Free of scene references, so tests can
-//           drive it directly and TownRenderer can draw what it produces.
+// Purpose : The C# side of Houses.compute: owns the per-spot house state and the lists of
+//           standing houses and of buildings under work, and runs one update. Free of scene
+//           references, so tests can drive it directly and TownRenderer can draw what it produces.
 // Idea    : Each possible house spot keeps a remembered state on the GPU (see Houses.compute).
 //           An update moves every spot's state by the rules for `deltaSeconds` of sim time and
-//           rewrites the list of houses that now stand. The list's length is copied into an
-//           indirect-draw argument buffer on the GPU, so the draw never waits for the count.
-// Parameters: houseCandidates, thresholds, bonuses, build / abandon / upgrade times, temperature limits
-//           (SimConfig "Towns and farms" and "Rules for houses ..."), and the people's current rules.
+//           rewrites the two lists: every house that stands, and every one that is being built,
+//           rebuilt or taken down (those get scaffolding). The lists' lengths are copied into
+//           indirect-draw argument buffers on the GPU, so a draw never waits for a count.
+// Lattice : the number of spots follows from the minimum distance wanted between houses, so that no two
+//           spots can be closer than it (see Houses.compute):  spots = (2.38 / minDistance)^2.
+// Parameters: houseMinDistance, thresholds, bonuses, build / abandon / demolish / upgrade times,
+//           temperature limits (SimConfig "Towns and farms" and "Rules for houses ..."), and the
+//           people's current rules.
 // =============================================================================
 
 using System;
@@ -22,8 +26,11 @@ namespace Terrarium.Towns
     /// <summary>Runs the house rules on the GPU.</summary>
     public sealed class HouseSimulation : IDisposable
     {
-        /// <summary>Bytes per house in the draw list (three float4).</summary>
+        /// <summary>Bytes per house in the draw lists (three float4).</summary>
         public const int HouseStride = 48;
+
+        /// <summary>Closest-pair distance of the spiral lattice, in units of 1 / sqrt(spots) radians, less the nudge (see Houses.compute).</summary>
+        public const float LatticeGapFactor = 2.38f;
 
         private const int ThreadGroupSize = 64;
 
@@ -32,34 +39,57 @@ namespace Terrarium.Towns
         private readonly int updateKernel;
         private readonly int clearKernel;
         private readonly uint[] argumentData = new uint[5];
+        private readonly uint[] scaffoldIndexCount;
 
         private ComputeBuffer houses;
+        private ComputeBuffer scaffolds;
         private ComputeBuffer state;
         private ComputeBuffer arguments;
+        private ComputeBuffer scaffoldArguments;
         private int candidates;
         private bool needsClear = true;
         private uint frame;
 
-        /// <summary>Creates a house simulation. <paramref name="indexCount"/> is the house mesh's index count (for the draw arguments).</summary>
-        public HouseSimulation(ComputeShader houseShader, SimConfig simConfig, uint indexCount)
+        /// <summary>
+        /// Creates a house simulation. <paramref name="houseIndexCount"/> and <paramref name="scaffoldIndexCount"/> are the
+        /// index counts of the house and scaffold meshes (for the draw arguments).
+        /// </summary>
+        public HouseSimulation(ComputeShader houseShader, SimConfig simConfig, uint houseIndexCount, uint scaffoldIndices)
         {
             shader = houseShader;
             config = simConfig;
             updateKernel = shader.FindKernel("UpdateHouses");
             clearKernel = shader.FindKernel("ClearHouseState");
+            scaffoldIndexCount = new[] { scaffoldIndices, 0u, 0u, 0u, 0u };
 
             arguments = new ComputeBuffer(1, argumentData.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
-            argumentData[0] = indexCount;
+            argumentData[0] = houseIndexCount;
             arguments.SetData(argumentData);
+
+            scaffoldArguments = new ComputeBuffer(1, argumentData.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
+            scaffoldArguments.SetData(scaffoldIndexCount);
+        }
+
+        /// <summary>The number of candidate spots that keep houses a given distance apart.</summary>
+        public static int CandidatesFor(float minDistance)
+        {
+            float perRadian = LatticeGapFactor / Mathf.Max(minDistance, 1e-4f);
+            return Mathf.Max(1000, Mathf.CeilToInt(perRadian * perRadian));
         }
 
         /// <summary>The list of standing houses (an append buffer, three float4 each). Null until the first update.</summary>
         public ComputeBuffer Houses => houses;
 
-        /// <summary>The indirect-draw arguments (index count, instance count, ...). The instance count is the house count.</summary>
+        /// <summary>The list of buildings being built, rebuilt or taken down (same layout). Null until the first update.</summary>
+        public ComputeBuffer Scaffolds => scaffolds;
+
+        /// <summary>The indirect-draw arguments for the houses (index count, instance count, ...). The instance count is the house count.</summary>
         public ComputeBuffer Arguments => arguments;
 
-        /// <summary>The per-spot state: float2 (progress, tier). For tests.</summary>
+        /// <summary>The indirect-draw arguments for the scaffolding. The instance count is the number of buildings under work.</summary>
+        public ComputeBuffer ScaffoldArguments => scaffoldArguments;
+
+        /// <summary>The per-spot state: float4 (progress, tier, previous tier, idle seconds). For tests.</summary>
         public ComputeBuffer State => state;
 
         /// <summary>How many candidate spots there are.</summary>
@@ -71,19 +101,21 @@ namespace Terrarium.Towns
             needsClear = true;
         }
 
-        /// <summary>Moves every spot's state by the rules for <paramref name="deltaSeconds"/> of sim time and rebuilds the draw list.</summary>
+        /// <summary>Moves every spot's state by the rules for <paramref name="deltaSeconds"/> of sim time and rebuilds the draw lists.</summary>
         public void Update(PhysarumFields fields, SettlementRules rules, int resolution, float deltaSeconds)
         {
-            int wanted = Mathf.Max(1000, config.houseCandidates);
+            int wanted = CandidatesFor(config.houseMinDistance);
 
-            // The state is a fixed length, so a changed candidate count starts the town over.
+            // The state is a fixed length, so a changed minimum distance starts the town over.
             if (state == null || candidates != wanted)
             {
-                // The draw list can hold one house per candidate spot, so its counter can never run past its end.
+                // The lists can hold one entry per candidate spot, so a counter can never run past its end.
                 state?.Release();
                 houses?.Release();
+                scaffolds?.Release();
                 houses = new ComputeBuffer(wanted, HouseStride, ComputeBufferType.Append);
-                state = new ComputeBuffer(wanted, 2 * sizeof(float));
+                scaffolds = new ComputeBuffer(wanted, HouseStride, ComputeBufferType.Append);
+                state = new ComputeBuffer(wanted, 4 * sizeof(float));
                 candidates = wanted;
                 needsClear = true;
             }
@@ -100,7 +132,9 @@ namespace Terrarium.Towns
 
             frame++;
             houses.SetCounterValue(0);
+            scaffolds.SetCounterValue(0);
             shader.SetBuffer(updateKernel, "_Houses", houses);
+            shader.SetBuffer(updateKernel, "_Scaffolds", scaffolds);
             shader.SetBuffer(updateKernel, "_State", state);
             shader.SetTexture(updateKernel, "_Land", fields.Land.Current);
             shader.SetTexture(updateKernel, "_Terrain", fields.Terrain);
@@ -115,6 +149,7 @@ namespace Terrarium.Towns
             shader.SetFloat("_WaterBonus", config.houseWaterBonus);
             shader.SetFloat("_RoadBonus", config.houseRoadBonus);
             shader.SetFloat("_HouseSize", config.houseSize);
+            shader.SetFloat("_MaxSize", 0.7f * config.houseMinDistance);
             shader.SetFloat("_HeightScale", config.terrainHeightScale);
             shader.SetFloat("_WaterNeed", rules.HouseWaterProximity(config));
             shader.SetFloat("_WetMoisture", config.houseWetMoisture);
@@ -126,23 +161,29 @@ namespace Terrarium.Towns
             shader.SetFloat("_TempMax", config.houseTempMax);
             shader.SetFloat("_TempMargin", config.houseTempMargin);
             shader.SetFloat("_BuildRate", 1f / config.houseBuildSeconds);
-            shader.SetFloat("_AbandonRate", 1f / config.houseAbandonSeconds);
+            shader.SetFloat("_AbandonSeconds", config.houseAbandonSeconds);
+            shader.SetFloat("_DemolishRate", 1f / config.houseDemolishSeconds);
             shader.SetFloat("_UpgradeRate", 1f / config.houseUpgradeSeconds);
             shader.SetInt("_BuildingTier", rules.BuildingTier);
             shader.Dispatch(updateKernel, groups, 1, 1);
 
             ComputeBuffer.CopyCount(houses, arguments, sizeof(uint));
+            ComputeBuffer.CopyCount(scaffolds, scaffoldArguments, sizeof(uint));
         }
 
         /// <summary>Releases the GPU buffers.</summary>
         public void Dispose()
         {
             houses?.Release();
+            scaffolds?.Release();
             state?.Release();
             arguments?.Release();
+            scaffoldArguments?.Release();
             houses = null;
+            scaffolds = null;
             state = null;
             arguments = null;
+            scaffoldArguments = null;
         }
     }
 }

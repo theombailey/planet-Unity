@@ -36,7 +36,7 @@ namespace Terrarium.Tests
             Object.DestroyImmediate(config);
         }
 
-        private static EcosystemStats World(int people = 1000, int houses = 0, float farms = 0f, float towns = 0f)
+        private static EcosystemStats World(int people = 100, int houses = 0, float farms = 0f, float towns = 0f)
         {
             return new EcosystemStats { Valid = true, PeopleAlive = people, Houses = houses, FarmFraction = farms, TownFraction = towns };
         }
@@ -77,7 +77,7 @@ namespace Terrarium.Tests
             Assert.IsTrue(tree.IsAvailable(TechId.MudWalls));
 
             Assert.IsTrue(tree.StartResearch(TechId.MudWalls, config));
-            Run(tree, World(people: 4000, houses: 100), 400f);
+            Run(tree, World(people: 800, houses: 100), 400f);
 
             Assert.IsTrue(tree.IsLearnt(TechId.MudWalls));
             Assert.IsTrue(tree.IsAvailable(TechId.Bricks), "Learning mud walls opens bricks.");
@@ -91,7 +91,7 @@ namespace Terrarium.Tests
             var tree = new TechTree();
             var learnt = new List<TechId>();
             tree.Learnt += id => learnt.Add(id);
-            EcosystemStats stats = World(people: 1000);   // gain = rate * 1 per second
+            EcosystemStats stats = World(people: 200);   // gain = rate * 1 per second
 
             tree.StartResearch(TechId.Irrigation, config);
             Run(tree, stats, 10f);
@@ -109,7 +109,7 @@ namespace Terrarium.Tests
         public void KnowledgeEarnedWhileNothingIsChosen_IsKept_AndSpentWhenSomethingIs()
         {
             var tree = new TechTree();
-            EcosystemStats stats = World(people: 4000, houses: 400);
+            EcosystemStats stats = World(people: 800, houses: 400);
 
             Run(tree, stats, 60f);
             Assert.Greater(tree.Banked, 50f, "Knowledge piles up while nothing is chosen.");
@@ -141,7 +141,7 @@ namespace Terrarium.Tests
         public void EachTechnology_MovesTheRuleItShould()
         {
             var tree = new TechTree();
-            EcosystemStats stats = World(people: 9000, houses: 600, farms: 0.1f, towns: 0.1f);
+            EcosystemStats stats = World(people: 2000, houses: 600, farms: 0.1f, towns: 0.1f);
 
             void Learn(TechId id)
             {
@@ -168,9 +168,9 @@ namespace Terrarium.Tests
         [Test]
         public void MorePeopleAndMoreHouses_MeanFasterKnowledge()
         {
-            float few = TechTree.KnowledgePerSecond(World(people: 500, houses: 10), config);
-            float many = TechTree.KnowledgePerSecond(World(people: 5000, houses: 10), config);
-            float built = TechTree.KnowledgePerSecond(World(people: 500, houses: 800), config);
+            float few = TechTree.KnowledgePerSecond(World(people: 100, houses: 10), config);
+            float many = TechTree.KnowledgePerSecond(World(people: 1000, houses: 10), config);
+            float built = TechTree.KnowledgePerSecond(World(people: 100, houses: 800), config);
 
             Assert.Greater(many, few);
             Assert.Greater(built, few);
@@ -181,7 +181,7 @@ namespace Terrarium.Tests
         {
             var tree = new TechTree();
             tree.StartResearch(TechId.MudWalls, config);
-            Run(tree, World(people: 4000, houses: 100), 400f);
+            Run(tree, World(people: 800, houses: 100), 400f);
             Assert.IsTrue(tree.IsLearnt(TechId.MudWalls));
 
             tree.Reset();

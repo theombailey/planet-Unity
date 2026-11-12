@@ -65,6 +65,13 @@ namespace Terrarium.Interaction
         private SpringFloat pitch;
         private SpringFloat distance;
 
+        // Focus: the desk camera looks at the planet by default; a focus button moves the point it looks at to a set of
+        // tools (the shelf, the console, the board) so that the whole set is in view. Clicking the same button again, or
+        // calling ClearFocus, returns to the planet.
+        private bool focusActive;
+        private Vector3 focusTargetPoint;
+        private Vector3 focusPoint;
+
         // Mode blend: 0 = desk view, 1 = surface mode.
         private SpringFloat blend;
         private float blendTarget;
@@ -89,13 +96,64 @@ namespace Terrarium.Interaction
         /// <summary>When true, left-drag does not pan the surface (a tool or the debug brush is using the button).</summary>
         public bool LeftDragBlocked { get; set; }
 
+        /// <summary>True while the camera is framing a set of tools instead of the planet.</summary>
+        public bool IsFocused => focusActive;
+
+        /// <summary>True while the camera is framing (or flying to frame) this point.</summary>
+        public bool IsFocusedOn(Vector3 point)
+        {
+            return focusActive && (focusTargetPoint - point).sqrMagnitude < 1e-4f;
+        }
+
+        /// <summary>
+        /// Flies the desk camera to look at a point (a set of tools) from the given angle and distance, so the whole set is
+        /// in view. Leaves surface mode if it was active. Orbiting and zooming then work about that point.
+        /// </summary>
+        public void FocusOn(Vector3 point, float distanceUnits, float yawDegrees, float pitchDegrees)
+        {
+            focusActive = true;
+            focusTargetPoint = point;
+            blendTarget = 0f;
+            yawTarget = yawDegrees;
+            pitchTarget = pitchDegrees;
+            distanceTarget = distanceUnits;
+        }
+
+        /// <summary>Frames the point, or, if it is already framed, returns to the planet.</summary>
+        public void ToggleFocus(Vector3 point, float distanceUnits, float yawDegrees, float pitchDegrees)
+        {
+            if (IsFocusedOn(point))
+            {
+                ClearFocus();
+            }
+            else
+            {
+                FocusOn(point, distanceUnits, yawDegrees, pitchDegrees);
+            }
+        }
+
+        /// <summary>Returns the desk camera to looking at the planet.</summary>
+        public void ClearFocus()
+        {
+            SimConfig config = simRoot.Config;
+            focusActive = false;
+            yawTarget = 0f;
+            pitchTarget = config.deskPitchDefaultDegrees;
+            distanceTarget = config.deskDistanceDefault;
+        }
+
         /// <summary>
         /// The desk-view camera pose for a given yaw, pitch (degrees) and distance (world units).
         /// Shared with the scene builder so the saved scene and the running game agree.
         /// </summary>
         public static void DeskPose(SimConfig config, float yawDegrees, float pitchDegrees, float distance, out Vector3 position, out Quaternion rotation)
         {
-            Vector3 focus = config.PlanetRestCentre + Vector3.down * config.deskFocusDrop;
+            DeskPose(config, yawDegrees, pitchDegrees, distance, config.PlanetRestCentre + Vector3.down * config.deskFocusDrop, out position, out rotation);
+        }
+
+        /// <summary>The desk-view camera pose looking at a given focus point.</summary>
+        public static void DeskPose(SimConfig config, float yawDegrees, float pitchDegrees, float distance, Vector3 focus, out Vector3 position, out Quaternion rotation)
+        {
             rotation = Quaternion.Euler(pitchDegrees, yawDegrees, 0f);
             position = focus - rotation * Vector3.forward * distance;
         }
@@ -175,6 +233,8 @@ namespace Terrarium.Interaction
             controlledCamera.fieldOfView = config.cameraFieldOfView;
             controlledCamera.nearClipPlane = config.cameraNearClip;
 
+            focusPoint = config.PlanetRestCentre + Vector3.down * config.deskFocusDrop;
+            focusTargetPoint = focusPoint;
             yawTarget = 0f;
             pitchTarget = config.deskPitchDefaultDegrees;
             distanceTarget = config.deskDistanceDefault;
@@ -203,7 +263,9 @@ namespace Terrarium.Interaction
             surfacePitch.Step(surfacePitchTarget, config.cameraSpringOmega, deltaSeconds);
             blend.Step(blendTarget, config.surfaceBlendOmega, deltaSeconds);
 
-            DeskPose(config, yaw.Value, pitch.Value, distance.Value, out Vector3 position, out Quaternion rotation);
+            Vector3 focusWanted = focusActive ? focusTargetPoint : config.PlanetRestCentre + Vector3.down * config.deskFocusDrop;
+            focusPoint = Vector3.Lerp(focusPoint, focusWanted, 1f - Mathf.Exp(-config.cameraSpringOmega * deltaSeconds));
+            DeskPose(config, yaw.Value, pitch.Value, distance.Value, focusPoint, out Vector3 position, out Quaternion rotation);
 
             float mix = Mathf.Clamp01(blend.Value);
             if (mix > 1e-4f)
@@ -249,7 +311,9 @@ namespace Terrarium.Interaction
                 pitchTarget -= drag.y * config.orbitDegreesPerPixel;
             }
 
-            if (notches > 0 && distanceTarget <= config.deskDistanceMin * 1.02f)
+            // While a set of tools is framed, zooming does not dive to the planet's surface and may come closer.
+            float nearest = focusActive ? 0.8f : config.deskDistanceMin;
+            if (notches > 0 && !focusActive && distanceTarget <= config.deskDistanceMin * 1.02f)
             {
                 EnterSurface(config);
                 return;
@@ -262,7 +326,7 @@ namespace Terrarium.Interaction
 
             yawTarget = Mathf.Clamp(yawTarget, -config.deskYawLimitDegrees, config.deskYawLimitDegrees);
             pitchTarget = Mathf.Clamp(pitchTarget, config.deskPitchMinDegrees, config.deskPitchMaxDegrees);
-            distanceTarget = Mathf.Clamp(distanceTarget, config.deskDistanceMin, config.deskDistanceMax);
+            distanceTarget = Mathf.Clamp(distanceTarget, nearest, config.deskDistanceMax);
         }
 
         private void ReadSurfaceInput(SimConfig config, int notches, Vector2 drag, float deltaSeconds)
@@ -317,6 +381,10 @@ namespace Terrarium.Interaction
             height = new SpringFloat(heightTarget);
             surfacePitch = new SpringFloat(surfacePitchTarget);
             blendTarget = 1f;
+            if (focusActive)
+            {
+                ClearFocus();      // coming back up, the desk view looks at the planet again
+            }
         }
 
         /// <summary>Starts the smooth flight back up to the desk view.</summary>

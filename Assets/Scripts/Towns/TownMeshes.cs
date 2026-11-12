@@ -1,8 +1,9 @@
 // =============================================================================
 // TownMeshes
 // -----------------------------------------------------------------------------
-// Purpose : The two tiny meshes of the settlements, built from code: a house (a box
-//           with a pitched roof) and a person (a little peg with a round head).
+// Purpose : The tiny meshes of the settlements, built from code: a house (a box with a
+//           pitched roof), a person (a little peg with a round head) and the scaffolding that
+//           stands round a building while it is built, rebuilt or taken down.
 // Idea    : Both are flat-shaded and drawn with an ink outline by their shaders, so
 //           each triangle gets its own three vertices and carries, in uv0:
 //               xyz  barycentric coordinates of the corner (the shader's distance to the
@@ -17,7 +18,8 @@
 // Winding : each face is wound so its normal points away from the model's centre.
 // Units   : the house is 1 wide and 1 deep (x and z from -0.5 to 0.5), 0.6 high at the eaves and
 //           1.1 high at the ridge, which runs along x. The shader scales the roof's height for the
-//           climate. The person is 1 unit tall, 0.5 wide at the feet.
+//           climate. The person is 1 unit tall, 0.5 wide at the feet. The scaffold is a lattice of thin
+//           poles, rails and braces standing 1.24 wide and 1 high, centred like the house.
 // =============================================================================
 
 using System.Collections.Generic;
@@ -40,7 +42,7 @@ namespace Terrarium.Towns
             private readonly List<Vector3> normals = new List<Vector3>();
             private readonly List<Vector4> barycentrics = new List<Vector4>();
             private readonly List<int> triangles = new List<int>();
-            private readonly Vector3 centre;
+            private Vector3 centre;
 
             public FlatMeshBuilder(Vector3 modelCentre)
             {
@@ -91,6 +93,31 @@ namespace Terrarium.Towns
                 Triangle(a, c, d, part, 2);
             }
 
+            // A thin square bar from a to b, `thickness` across. Its faces are wound outward from the bar's own middle.
+            public void Bar(Vector3 a, Vector3 b, float thickness)
+            {
+                Vector3 axis = (b - a).normalized;
+                Vector3 across = Vector3.Cross(axis, Mathf.Abs(axis.y) > 0.9f ? Vector3.right : Vector3.up).normalized * (thickness * 0.5f);
+                Vector3 other = Vector3.Cross(axis, across).normalized * (thickness * 0.5f);
+                centre = (a + b) * 0.5f;
+
+                Vector3 a00 = a - across - other;
+                Vector3 a10 = a + across - other;
+                Vector3 a11 = a + across + other;
+                Vector3 a01 = a - across + other;
+                Vector3 b00 = b - across - other;
+                Vector3 b10 = b + across - other;
+                Vector3 b11 = b + across + other;
+                Vector3 b01 = b - across + other;
+
+                Quad(a00, a10, b10, b00, 0f);
+                Quad(a10, a11, b11, b10, 0f);
+                Quad(a11, a01, b01, b11, 0f);
+                Quad(a01, a00, b00, b01, 0f);
+                Quad(a00, a01, a11, a10, 0f);   // the two ends
+                Quad(b00, b10, b11, b01, 0f);
+            }
+
             public Mesh Build(string name)
             {
                 var mesh = new Mesh { name = name };
@@ -134,6 +161,51 @@ namespace Terrarium.Towns
             builder.Quad(c2, d2, ridgeLeft, ridgeRight, 1f); // back roof slope
 
             return builder.Build("House");
+        }
+
+        /// <summary>
+        /// Scaffolding: a lattice of thin poles at the corners and the middle of each side, three rails round at
+        /// different heights, and a diagonal brace on each side. 1.24 wide, 1 high, centred in x and z, on y = 0.
+        /// </summary>
+        public static Mesh BuildScaffold()
+        {
+            const float half = 0.62f;
+            const float height = 1f;
+            const float pole = 0.035f;
+            const float rail = 0.025f;
+            var builder = new FlatMeshBuilder(Vector3.zero);
+
+            var spots = new[]
+            {
+                new Vector2(-half, -half), new Vector2(0f, -half), new Vector2(half, -half), new Vector2(half, 0f),
+                new Vector2(half, half), new Vector2(0f, half), new Vector2(-half, half), new Vector2(-half, 0f),
+            };
+
+            foreach (Vector2 spot in spots)
+            {
+                builder.Bar(new Vector3(spot.x, 0f, spot.y), new Vector3(spot.x, height, spot.y), pole);
+            }
+
+            float[] levels = { 0.3f, 0.65f, 1f };
+            foreach (float level in levels)
+            {
+                for (int i = 0; i < spots.Length; i += 2)
+                {
+                    Vector2 from = spots[i];
+                    Vector2 to = spots[(i + 2) % spots.Length];
+                    builder.Bar(new Vector3(from.x, level, from.y), new Vector3(to.x, level, to.y), rail);
+                }
+            }
+
+            // One diagonal brace per side, between the lower two rails.
+            for (int i = 0; i < spots.Length; i += 2)
+            {
+                Vector2 from = spots[i];
+                Vector2 to = spots[(i + 2) % spots.Length];
+                builder.Bar(new Vector3(from.x, 0.02f, from.y), new Vector3(to.x, 0.65f, to.y), rail);
+            }
+
+            return builder.Build("Scaffold");
         }
 
         /// <summary>

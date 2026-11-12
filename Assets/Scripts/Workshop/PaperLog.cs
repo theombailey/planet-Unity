@@ -12,10 +12,10 @@
 // Rules   :
 //     SEASON     the year phase is split in four (0-.25 spring, .25-.5 summer, .5-.75 autumn, .75-1 winter);
 //                a new season prints a three-line block: the year and season, the populations and the temperature.
-//     MILESTONE  trees, birds, people and houses each print once when they first pass a milestone, and again (as a fall)
+//     MILESTONE  trees, birds, families and houses each print once when they first pass a milestone, and again (as a fall)
 //                when they drop back below the one under it. Milestones are kept apart by a margin so a population
 //                wobbling around a number does not print over and over.
-//     FADING     people below 20 prints "PEOPLE DYING OUT"; back above 100 prints "PEOPLE RECOVER".
+//     FADING     families below 10 prints "FAMILIES DYING OUT"; back above 40 prints "FAMILIES RECOVER".
 // =============================================================================
 
 using System.Collections.Generic;
@@ -28,7 +28,7 @@ namespace Terrarium.Workshop
         private static readonly string[] SeasonNames = { "SPRING", "SUMMER", "AUTUMN", "WINTER" };
         private static readonly int[] TreeMilestones = { 50, 100, 250, 500, 750, 1000 };
         private static readonly int[] BirdMilestones = { 500, 1000, 2000, 5000 };
-        private static readonly int[] PeopleMilestones = { 100, 500, 1000, 2500, 5000, 10000 };
+        private static readonly int[] PeopleMilestones = { 50, 100, 250, 500, 1000, 2000 };
         private static readonly int[] HouseMilestones = { 10, 50, 150, 400, 1000 };
 
         private int lastSeason = -1;
@@ -90,7 +90,7 @@ namespace Terrarium.Workshop
                 birdLevel = LevelOf(birds, BirdMilestones);
                 peopleLevel = LevelOf(people, PeopleMilestones);
                 houseLevel = LevelOf(houses, HouseMilestones);
-                peopleFading = people < 20;
+                peopleFading = people < 10;
                 lines.Add($"-- YEAR {stats.Year} {SeasonName(season)} --");
                 return;
             }
@@ -100,23 +100,23 @@ namespace Terrarium.Workshop
                 lastSeason = season;
                 lines.Add($"-- YEAR {stats.Year} {SeasonName(season)} --");
                 lines.Add($"TREES {trees} BIRDS {birds}");
-                lines.Add($"PEOPLE {Short(people)} {stats.MeanTemperature:0.0}C");
+                lines.Add($"FAMILIES {Short(people)} {stats.MeanTemperature:0.0}C");
             }
 
             Milestones("TREES", trees, TreeMilestones, ref treeLevel, lines);
             Milestones("BIRDS", birds, BirdMilestones, ref birdLevel, lines);
-            Milestones("PEOPLE", people, PeopleMilestones, ref peopleLevel, lines);
+            Milestones("FAMILIES", people, PeopleMilestones, ref peopleLevel, lines);
             Milestones("HOUSES", houses, HouseMilestones, ref houseLevel, lines);
 
-            if (!peopleFading && people < 20)
+            if (!peopleFading && people < 10)
             {
                 peopleFading = true;
-                lines.Add("PEOPLE DYING OUT");
+                lines.Add("FAMILIES DYING OUT");
             }
-            else if (peopleFading && people > 100)
+            else if (peopleFading && people > 40)
             {
                 peopleFading = false;
-                lines.Add("PEOPLE RECOVER");
+                lines.Add("FAMILIES RECOVER");
             }
         }
 

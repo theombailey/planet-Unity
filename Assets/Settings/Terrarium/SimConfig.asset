@@ -57,12 +57,12 @@ MonoBehaviour:
   climateSpinUpSeconds: 600
   spinUpResolution: 64
   climateSettleSeconds: 20
-  physarumStartAgents: 500
+  physarumStartAgents: 120
   physarumSensorAngleDegrees: 35
   physarumSensorDistance: 0.02
   physarumTurnSpeed: 20
   physarumSpeed: 0.05
-  physarumDepositAmount: 0.5
+  physarumDepositAmount: 2.5
   physarumTrailDiffusion: 0.3
   physarumTrailDecay: 0.25
   physarumTrailMax: 10
@@ -74,7 +74,8 @@ MonoBehaviour:
   physarumReproduceEnergy: 2
   physarumBirthCost: 0.5
   physarumOceanPenalty: 2
-  peopleArrivalRate: 0.5
+  peopleArrivalRate: 0.1
+  crowdWeight: 5
   townDecay: 0.03
   crowdingRate: 0.15
   townSpread: 0.2
@@ -89,8 +90,9 @@ MonoBehaviour:
   coreFull: 2.4
   farmGrowth: 0.03
   farmAbandon: 0.05
-  houseThreshold: 0.7
-  houseCandidates: 200000
+  houseThreshold: 1
+  houseMinDistance: 0.0065
+  houseDemolishSeconds: 10
   houseSize: 0.0032
   houseMinPixels: 1.6
   personSize: 0.0022
@@ -111,7 +113,7 @@ MonoBehaviour:
   houseRoadBonus: 1.2
   irrigationMoisture: 0.5
   irrigationReach: 0.15
-  pavingThreshold: 0.8
+  pavingThreshold: 3
   pavingSeconds: 120
   pavingFadeSeconds: 1200
   roadAttraction: 0
@@ -229,7 +231,7 @@ MonoBehaviour:
   compostOrganicRate: 0.6
   heatRate: 60
   frostRate: 60
-  settlerCount: 60
+  settlerCount: 12
   meteorRadius: 0.1
   meteorDepth: 0.4
   meteorRimHeight: 0.12

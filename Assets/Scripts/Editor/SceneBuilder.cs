@@ -112,6 +112,7 @@ namespace Terrarium.EditorTools
             BuildFields(simRoot, planet);
             BuildWorkshop(config, simRoot);
             CameraRig cameraRig = BuildCamera(config, simRoot, planet);
+            BuildViewButtons(simRoot, cameraRig);
             BuildInteraction(simRoot, planet, cameraRig);
             BuildAtmosphere(simRoot, planet, cameraRig, lampLight);
 
@@ -272,6 +273,7 @@ namespace Terrarium.EditorTools
             SetReference(towns, "houseShader", LoadAsset<ComputeShader>("Assets/Shaders/Compute/Houses.compute"));
             SetReference(towns, "houseMaterial", GetOrCreateMaterial("Houses", "Terrarium/Houses"));
             SetReference(towns, "personMaterial", GetOrCreateMaterial("People", "Terrarium/People"));
+            SetReference(towns, "scaffoldMaterial", GetOrCreateMaterial("Scaffolds", "Terrarium/Scaffolds"));
 
             var stats = host.AddComponent<StatsSystem>();
             SetReference(stats, "simRoot", simRoot);

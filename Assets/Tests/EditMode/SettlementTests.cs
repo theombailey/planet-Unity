@@ -8,6 +8,8 @@
 //           - houses are built over time, abandoned when no longer wanted, and rebuilt in a better
 //             style once one is known (tent -> mud -> brick),
 //           - a tighter water rule means fewer houses, and wells loosen it,
+//           - houses never stand closer than the minimum distance and keep off roads,
+//           - scaffolding stands round a building while it is built, rebuilt or taken down, and only then,
 //           - a busy path hardens into a permanent road that outlasts the path, and stone hardens faster,
 //           - irrigation lets farms grow in dry land, but only near water.
 // =============================================================================
@@ -52,6 +54,14 @@ namespace Terrarium.Tests
             return (int)request.GetData<uint>()[1];
         }
 
+        // How many buildings are being built, rebuilt or taken down (the scaffold list).
+        private static int ScaffoldCount(HouseSimulation simulation)
+        {
+            var request = UnityEngine.Rendering.AsyncGPUReadback.Request(simulation.ScaffoldArguments);
+            request.WaitForCompletion();
+            return (int)request.GetData<uint>()[1];
+        }
+
         // The standing houses: three float4 each (see Houses.compute).
         private static Vector4[] ReadHouses(HouseSimulation simulation)
         {
@@ -79,7 +89,7 @@ namespace Terrarium.Tests
 
         private static HouseSimulation NewHouses(WorldHarness world)
         {
-            return new HouseSimulation(Load("Houses"), world.Config, 42);
+            return new HouseSimulation(Load("Houses"), world.Config, 42, 100);
         }
 
         // ---------------------------------------------------------------- water
@@ -272,6 +282,167 @@ namespace Terrarium.Tests
             }
         }
 
+        // ------------------------------------------------- lattice, roads, scaffolding
+
+        // A world where only land, farms and roads limit building: water and weather rules are switched off.
+        private static WorldHarness OpenWorld()
+        {
+            return new WorldHarness(Resolution, config =>
+            {
+                config.houseWetMoisture = 0f;       // moisture everywhere counts as water to hand
+                config.houseTempMinTent = -100f;
+                config.houseTempMinMud = -100f;
+                config.houseTempMinBrick = -100f;
+                config.houseTempMax = 200f;
+            });
+        }
+
+        [Test]
+        public void Houses_NeverStandCloserThanTheMinimumDistance_OrWiderThanTheGap()
+        {
+            using (WorldHarness world = OpenWorld())
+            using (HouseSimulation simulation = NewHouses(world))
+            {
+                world.Generate(seed: 3, landFraction: 0.5f, spinUp: true);
+                PhysarumSimulation physarum = world.CreatePhysarum(1024);
+                world.SeedPeople(physarum, seed: 1, count: 0);
+                new FieldBrush(Load("Brush")).Apply(world.Land.Current, Vector3.right, 0.45f, new Vector4(5f, 0f, 0f, 0f), 0f, 6f);   // a big town in one region
+
+                Build(simulation, world, SettlementRules.Start, 100f);
+                Vector4[] list = ReadHouses(simulation);
+                int count = list.Length / 3;
+                Assert.Greater(count, 300, "The test needs a town with plenty of houses.");
+
+                float minimum = world.Config.houseMinDistance;
+                float closest = float.MaxValue;
+                for (int i = 0; i < count; i++)
+                {
+                    Vector3 a = ((Vector3)list[i * 3]).normalized;
+                    Assert.LessOrEqual(list[i * 3].w, 0.7f * minimum + 1e-6f, "A house is never wider than 0.7 of the gap.");
+                    for (int j = i + 1; j < count; j++)
+                    {
+                        float dot = Vector3.Dot(a, ((Vector3)list[j * 3]).normalized);
+                        closest = Mathf.Min(closest, Mathf.Acos(Mathf.Clamp(dot, -1f, 1f)));
+                    }
+                }
+
+                Debug.Log($"Closest pair of {count} houses: {closest:0.0000} rad (minimum asked {minimum:0.0000})");
+                Assert.GreaterOrEqual(closest, minimum * 0.97f, "No two houses may be closer than the minimum distance.");
+            }
+        }
+
+        [Test]
+        public void Houses_KeepOffRoads()
+        {
+            using (WorldHarness world = OpenWorld())
+            using (HouseSimulation simulation = NewHouses(world))
+            {
+                world.Generate(seed: 3, landFraction: 0.5f, spinUp: true);
+                PhysarumSimulation physarum = world.CreatePhysarum(1024);
+                world.SeedPeople(physarum, seed: 1, count: 0);
+
+                // The middle of the biggest stretch of land we can find, to lay a road disc on.
+                float[] terrain = world.Read(world.Terrain.Current);
+                Vector3 centre = Vector3.right;
+                float best = float.MinValue;
+                world.ForEachTexel((face, x, y, direction) =>
+                {
+                    float height = terrain[world.Index(face, x, y)];
+                    if (height > best)
+                    {
+                        best = height;
+                        centre = direction;
+                    }
+                });
+
+                var brush = new FieldBrush(Load("Brush"));
+                brush.Apply(world.Land.Current, Vector3.up, Mathf.PI, new Vector4(5f, 0f, 0f, 0f), 0f, 6f);              // crowded everywhere
+                brush.Apply(world.Land.Current, centre, 0.15f, new Vector4(0f, 0f, 0f, 1f), 0f, 1f);                     // a road disc (fully paved)
+
+                Build(simulation, world, SettlementRules.Start, 100f);
+                Vector4[] list = ReadHouses(simulation);
+
+                int onRoad = 0;
+                int nearRoad = 0;
+                for (int i = 0; i < list.Length / 3; i++)
+                {
+                    float angle = Mathf.Acos(Mathf.Clamp(Vector3.Dot(((Vector3)list[i * 3]).normalized, centre), -1f, 1f));
+                    if (angle < 0.05f)
+                    {
+                        onRoad++;
+                    }
+                    else if (angle > 0.20f && angle < 0.40f)
+                    {
+                        nearRoad++;
+                    }
+                }
+
+                Debug.Log($"Houses on the road disc: {onRoad}; in the ring round it: {nearRoad}");
+                Assert.AreEqual(0, onRoad, "Nothing is built on a permanent road.");
+                Assert.Greater(nearRoad, 0, "The land beside the road is built on.");
+            }
+        }
+
+        [Test]
+        public void Scaffolding_StandsWhileBuilding_Rebuilding_AndTakingDown_AndOnlyThen()
+        {
+            using (WorldHarness world = OpenWorld())
+            using (HouseSimulation simulation = NewHouses(world))
+            {
+                world.Generate(seed: 3, landFraction: 0.5f, spinUp: true);
+                PhysarumSimulation physarum = world.CreatePhysarum(1024);
+                world.SeedPeople(physarum, seed: 1, count: 0);
+                var brush = new FieldBrush(Load("Brush"));
+                brush.Apply(world.Land.Current, Vector3.right, 0.45f, new Vector4(5f, 0f, 0f, 0f), 0f, 6f);
+
+                SettlementRules rules = SettlementRules.Start;
+                simulation.Update(world.PeopleFields, rules, Resolution, 0f);
+                Assert.AreEqual(0, ScaffoldCount(simulation), "No building work, no scaffolding.");
+
+                // New houses: scaffolding while they go up.
+                Build(simulation, world, rules, 5f, step: 1f);
+                Assert.Greater(ScaffoldCount(simulation), 0, "Houses going up have scaffolding.");
+                Assert.AreEqual(Count(simulation), ScaffoldCount(simulation), "Every house is still under construction at this moment.");
+
+                // Finished: it all comes down.
+                Build(simulation, world, rules, 100f);
+                Assert.Greater(Count(simulation), 10);
+                Assert.AreEqual(0, ScaffoldCount(simulation), "Finished houses have no scaffolding.");
+
+                // Rebuilt in a better style: scaffolding goes up again.
+                rules.BuildingTier = 1;
+                int sawRebuilding = 0;
+                for (int t = 0; t < 120; t++)
+                {
+                    simulation.Update(world.PeopleFields, rules, Resolution, 1f);
+                    sawRebuilding = Mathf.Max(sawRebuilding, ScaffoldCount(simulation));
+                }
+
+                Assert.Greater(sawRebuilding, 0, "A house being rebuilt in a better style has scaffolding.");
+
+                // Taken down: scaffolding while they come down, and none once they are gone.
+                Build(simulation, world, rules, 100f);
+                Paint(world, world.Land.Current, new Vector4(-100f, 0f, 0f, 0f), 6f);
+                int sawDemolition = 0;
+                for (int t = 0; t < world.Config.houseAbandonSeconds + world.Config.houseDemolishSeconds + 40; t++)
+                {
+                    simulation.Update(world.PeopleFields, rules, Resolution, 1f);
+                    sawDemolition = Mathf.Max(sawDemolition, ScaffoldCount(simulation));
+                }
+
+                Assert.Greater(sawDemolition, 0, "A house being taken down has scaffolding.");
+                Assert.AreEqual(0, Count(simulation), "Abandoned houses are taken down in the end.");
+                Assert.AreEqual(0, ScaffoldCount(simulation), "And the scaffolding goes with them.");
+            }
+        }
+
+        [Test]
+        public void TheLattice_HasMoreSpotsTheCloserHousesMayStand()
+        {
+            Assert.Greater(HouseSimulation.CandidatesFor(0.005f), HouseSimulation.CandidatesFor(0.01f));
+            Assert.AreEqual(Mathf.CeilToInt(Mathf.Pow(HouseSimulation.LatticeGapFactor / 0.0065f, 2f)), HouseSimulation.CandidatesFor(0.0065f));
+        }
+
         // ---------------------------------------------------------------- roads
 
         [Test]
@@ -282,13 +453,13 @@ namespace Terrarium.Tests
                 using (var world = new WorldHarness(Resolution, config =>
                 {
                     config.physarumTrailDecay = 0f;    // hold the path steady
-                    config.pavingSeconds = 100f;
+                    config.pavingSeconds = 40f;
                 }))
                 {
                     world.Generate(seed: 3, landFraction: 0.97f, spinUp: false);
                     PhysarumSimulation physarum = world.CreatePhysarum(1024);
                     world.SeedPeople(physarum, seed: 1, count: 0);
-                    new FieldBrush(Load("Brush")).Apply(world.Trail.Current, Vector3.right, 0.2f, new Vector4(4f, 0f, 0f, 0f), 0f, 4f);
+                    new FieldBrush(Load("Brush")).Apply(world.Trail.Current, Vector3.right, 0.03f, new Vector4(40f, 0f, 0f, 0f), 0f, 8f);   // a thin, strong track
 
                     SettlementRules rules = SettlementRules.Start;
                     rules.RoadTier = roadTier;
@@ -304,11 +475,11 @@ namespace Terrarium.Tests
                 }
             }
 
-            Assert.Less(RoadAfter(0, 5f), 0.1f, "A path does not harden at once.");
-            float dirt = RoadAfter(0, 40f);
-            float stone = RoadAfter(1, 40f);
-            Debug.Log($"Road after 40 s: dirt {dirt:0.00}, stone {stone:0.00}");
-            Assert.Greater(dirt, 0.2f, "A busy path hardens into a road.");
+            Assert.Less(RoadAfter(0, 3f), 0.2f, "A path does not harden at once.");
+            float dirt = RoadAfter(0, 15f);
+            float stone = RoadAfter(1, 15f);
+            Debug.Log($"Road after 15 s: dirt {dirt:0.00}, stone {stone:0.00}");
+            Assert.Greater(dirt, 0.1f, "A busy path hardens into a road.");
             Assert.Greater(stone, dirt, "Stone roads harden faster.");
 
             // The road outlasts the path: with the path fading away, the road is still there a long time after.

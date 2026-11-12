@@ -2,46 +2,62 @@
 // Houses.compute
 // -----------------------------------------------------------------------------
 // Purpose : Decides where the people build houses, entirely on the GPU. Each possible spot
-//           keeps its own remembered state (not built, being built, built, of what kind);
-//           every few moments the spots are updated by the RULES, and the standing houses are
-//           written into a list that the house shader draws.
+//           keeps its own remembered state (not built, being built, built, being rebuilt, being
+//           taken down; and in what style); every few moments the spots are updated by the RULES,
+//           and the standing houses, and the ones changing, are written into lists that the
+//           shaders draw.
 //
 // Kernels :
 //   ClearHouseState - forgets every house (a new world starts).
 //   UpdateHouses    - one thread per candidate spot: apply the rules, move its state, and append
-//                     it to the draw list if a house stands there.
+//                     it to the house list if a house stands there, and to the scaffold list if it
+//                     is being built, rebuilt or taken down.
 //
-// Idea    : A fixed, even scatter of CANDIDATE spots covers the planet (a Fibonacci spiral, which
-//   spaces points almost evenly over a sphere, each nudged a little at random so the houses do
-//   not stand in rows). Nobody places a house; a spot builds one when ALL of these hold:
+// Idea (the lattice): a fixed, even scatter of CANDIDATE spots covers the planet: a Fibonacci spiral, which
+//   spaces points almost evenly over a sphere. Its closest pair of points is about 3.09 / sqrt(N) radians
+//   apart for N points (its mean spacing is 3.54 / sqrt(N)). Each spot is nudged at random by at most a tenth
+//   of the mean spacing, so houses do not stand in rows but no two can ever be closer than
+//        minimum gap = 3.09 / sqrt(N) - 2 * 0.1 * 3.54 / sqrt(N) = 2.38 / sqrt(N)
+//   N is chosen on the C# side from the minimum distance wanted (N = (2.38 / minDistance)^2), and a house is never
+//   wider than 0.7 of that distance, so houses never overlap.
+//   The azimuth of spot i is i x golden angle, i.e. frac(i x 0.6180339887) of a turn. In floats that product
+//   (hundreds of thousands) loses all its precision and the lattice falls apart, so it is done in exact integer
+//   arithmetic: the 32-bit product i x 2654435769 (2^32 x 0.6180339887) wraps round, which IS the fraction, to 32 bits.
+//
+// Idea (the rules): nobody places a house; a spot builds one when ALL of these hold:
 //        LAND     it is dry land above the beach
 //        WATER    water is within reach: proximity p >= waterNeed, or the ground is wet enough that
 //                 streams run by (moisture >= wetMoisture)         (wells widen the reach)
 //        WEATHER  the temperature is in the band the current building style is built for
-//                 (tents need warmth; mud walls and bricks cope with more cold)
-//        FREE     it is not in a farmed field
+//        FREE     it is not in the middle of a fully worked field (farmhouses stand among fields, not in them) and
+//                 not on a permanent road
 //        WANTED   there are people who need a home: demand beats the spot's own threshold
-//   Demand is the town density S (the people's remembered crowding) made more or less attractive by
-//   where the spot is, so houses gather along water and along worn roads rather than in a round blob:
+//   Demand is the town density S made more or less attractive by where the spot is, so houses gather along water
+//   and along worn roads rather than in a round blob:
 //        need      = S * ( 0.5 + waterBonus * p + roadBonus * saturate(0.7 trail + 2 road) )
 //        threshold = houseThreshold + u * thresholdSpread          (u random per spot, fixed)
-//        wanted    = need > threshold
+//        wanted    = need > threshold                kept = need > 0.35 * threshold
 //
-// State   : per spot, float2 (progress, tier). progress 0 = nothing, 1 = finished; tier is the style it was
-//   built in (0 tent, 1 mud-wall, 2 brick). Each update, with dt sim seconds:
-//        wanted and allowed        progress += dt / buildSeconds
-//        allowed but need fell     held as it is, until need < 0.35 * threshold, then falls
-//        no longer allowed         progress -= dt / abandonSeconds
-//   A standing house tolerates weather up to `margin` degrees beyond its limits before it counts as no
-//   longer allowed, so a cold snap does not empty a town. When a better style is known, a finished
-//   house is rebuilt in it, after about upgradeSeconds on average (progress drops and it climbs again).
+// State   : per spot, float4 (progress, tier, previousTier, idle seconds).
+//        progress   0 = nothing, 1 = finished. A house is built while progress rises, and taken down while it falls.
+//        tier       the style it is built in (0 tent, 1 mud-wall, 2 brick).
+//        previous   -1 for a new house; for a house being rebuilt in a better style, the style it had, which it keeps
+//                   showing (inside its scaffold) until the work is half done.
+//        idle       sim seconds the house has stood unwanted or not allowed.
+//   Each update, with dt sim seconds:
+//        no house, wanted and allowed      the house is started (progress starts to rise)
+//        house, kept (allowed and needed)  progress += dt / buildSeconds, up to 1; idle = 0
+//        house, not kept                   idle += dt; once idle > abandonSeconds, progress -= dt / demolishSeconds
+//        finished, better style known      after about upgradeSeconds on average, it is rebuilt in the better style
+//   A standing house tolerates weather up to `margin` degrees beyond its limits before it counts as not allowed.
+//   Anything with 0 < progress < 1 has scaffolding round it: a new build, a rebuild, and a house being taken down.
 //
-// Output  : _Houses (append buffer). Each house is 3 float4:
+// Output  : _Houses and _Scaffolds (append buffers). Each entry is 3 float4:
 //     [0] xyz position on the (displaced) surface in the planet's local space, w width
 //     [1] x yaw (radians), y random 0..1, z temperature (deg C), w moisture 0..1
-//     [2] x tallness (1 = a cottage, up to 1.5 for a taller house), y town density, z progress 0..1, w tier
+//     [2] x tallness (1 = a cottage, up to 1.5 for a taller house), y previous tier (-1 none), z progress 0..1, w tier
 //
-// Parameters (all set by TownRenderer from SimConfig and the people's current rules): see the variables below.
+// Parameters (all set by HouseSimulation from SimConfig and the people's current rules): see the variables below.
 // Textures (slice = cube face): _Land, _Terrain, _Climate, _Water, _Trail, read with the seam-correct sampler.
 // =============================================================================
 
@@ -59,7 +75,8 @@ struct House
 };
 
 AppendStructuredBuffer<House> _Houses;
-RWStructuredBuffer<float2> _State;
+AppendStructuredBuffer<House> _Scaffolds;
+RWStructuredBuffer<float4> _State;
 Texture2DArray<float4> _Land;
 Texture2DArray<float4> _Terrain;
 Texture2DArray<float4> _Climate;
@@ -78,6 +95,7 @@ float _ThresholdSpread;
 float _WaterBonus;
 float _RoadBonus;
 float _HouseSize;
+float _MaxSize;            // a house is never wider than this (0.7 of the minimum distance)
 float _HeightScale;
 float _WaterNeed;          // water proximity a house needs
 float _WetMoisture;        // moisture that counts as having water to hand
@@ -85,12 +103,16 @@ float4 _TempMin;           // coldest temperature per tier: tent, mud, brick
 float _TempMax;
 float _TempMargin;
 float _BuildRate;          // 1 / build seconds
-float _AbandonRate;        // 1 / abandon seconds
+float _AbandonSeconds;     // seconds a house stands unwanted before it is taken down
+float _DemolishRate;       // 1 / demolish seconds
 float _UpgradeRate;        // 1 / upgrade seconds
 int _BuildingTier;         // the best style the people know
 
-static const float GOLDEN_ANGLE = 2.39996323;
+static const uint GOLDEN_TURN = 2654435769u;   // 2^32 x (sqrt(5) - 1) / 2
 static const float BEACH_HEIGHT = 0.04;
+static const float NUDGE_FRACTION = 0.1;      // of the mean spacing; see the lattice note above
+static const float ROAD_BLOCKS = 0.35;        // permanent road above this keeps houses off
+static const float FARM_BLOCKS = 0.95;        // a field this fully worked keeps houses off
 
 float Random01(inout uint state)
 {
@@ -108,7 +130,7 @@ void ClearHouseState(uint3 id : SV_DispatchThreadID)
 {
     if (id.x < _CandidateCount)
     {
-        _State[id.x] = float2(0.0, 0.0);
+        _State[id.x] = float4(0.0, 0.0, -1.0, 0.0);
     }
 }
 
@@ -125,7 +147,7 @@ void UpdateHouses(uint3 id : SV_DispatchThreadID)
     uint rng = HashUint(index * 2654435761u + 977u);
 
     float z = 1.0 - 2.0 * (index + 0.5) / _CandidateCount;
-    float azimuth = index * GOLDEN_ANGLE;
+    float azimuth = (index * GOLDEN_TURN) * (6.28318530718 / 4294967296.0);
     float ring = sqrt(saturate(1.0 - z * z));
     float3 direction = float3(ring * cos(azimuth), z, ring * sin(azimuth));
 
@@ -134,7 +156,7 @@ void UpdateHouses(uint3 id : SV_DispatchThreadID)
     float3 north = cross(direction, east);
     float spacing = sqrt(12.5663706 / _CandidateCount);
     float nudgeAngle = Random01(rng) * 6.28318530718;
-    float nudge = Random01(rng) * spacing * 0.33;
+    float nudge = Random01(rng) * spacing * NUDGE_FRACTION;
     direction = normalize(direction + (east * cos(nudgeAngle) + north * sin(nudgeAngle)) * nudge);
 
     float threshold = _HouseThreshold + Random01(rng) * _ThresholdSpread;
@@ -142,9 +164,11 @@ void UpdateHouses(uint3 id : SV_DispatchThreadID)
     float yaw = Random01(rng) * 6.28318530718;
     float tallRandom = Random01(rng);
 
-    float2 state = _State[index];
+    float4 state = _State[index];
     float progress = state.x;
     float tier = state.y;
+    float previous = state.z;
+    float idle = state.w;
 
     float4 land = SampleField4(_Land, direction, _Resolution);
     float height = SampleField4(_Terrain, direction, _Resolution).r;
@@ -159,7 +183,7 @@ void UpdateHouses(uint3 id : SV_DispatchThreadID)
     bool landOk = height >= BEACH_HEIGHT;
     bool waterOk = proximity >= _WaterNeed || climate.g >= _WetMoisture;
     bool weatherOk = climate.r >= TierMinTemperature(style) - margin && climate.r <= _TempMax + margin;
-    bool freeOk = land.g < 0.5;
+    bool freeOk = land.g < FARM_BLOCKS && land.a < ROAD_BLOCKS;
     bool allowed = landOk && waterOk && weatherOk && freeOk;
 
     float attraction = 0.5 + _WaterBonus * proximity + _RoadBonus * saturate(0.7 * trail + 2.0 * land.a);
@@ -167,43 +191,62 @@ void UpdateHouses(uint3 id : SV_DispatchThreadID)
     bool wanted = allowed && need > threshold;
     bool kept = allowed && need > 0.35 * threshold;
 
-    if (wanted)
-    {
-        progress += _DeltaSeconds * _BuildRate;
-    }
-    else if (!kept)
-    {
-        progress -= _DeltaSeconds * _AbandonRate;
-    }
-
-    progress = clamp(progress, 0.0, 1.0);
-
-    if (progress <= 0.0)
-    {
-        _State[index] = float2(0.0, (float)_BuildingTier);
-        return;
-    }
-
     if (!standing)
     {
-        tier = (float)_BuildingTier;           // a new house is built in the best style known
+        if (wanted && _DeltaSeconds > 0.0)
+        {
+            progress = min(_DeltaSeconds * _BuildRate, 1.0);
+            tier = (float)_BuildingTier;           // a new house is built in the best style known
+            previous = -1.0;
+            idle = 0.0;
+        }
+    }
+    else if (kept)
+    {
+        progress = min(progress + _DeltaSeconds * _BuildRate, 1.0);
+        idle = 0.0;
+        if (progress >= 1.0)
+        {
+            previous = -1.0;
+        }
+    }
+    else
+    {
+        idle += _DeltaSeconds;
+        if (idle > _AbandonSeconds)
+        {
+            progress -= _DeltaSeconds * _DemolishRate;       // taken down, under scaffolding
+        }
     }
 
     // A finished house is rebuilt in a better style once one is known.
     uint frameRng = HashUint(index * 747796405u + _Frame * 2891336453u);
     if (progress >= 1.0 && tier < (float)_BuildingTier && Random01(frameRng) < saturate(_UpgradeRate * _DeltaSeconds))
     {
+        previous = tier;
         tier += 1.0;
-        progress = 0.45;
+        progress = 0.3;
     }
 
-    _State[index] = float2(progress, tier);
+    if (progress <= 0.0)
+    {
+        _State[index] = float4(0.0, (float)_BuildingTier, -1.0, 0.0);
+        return;
+    }
+
+    _State[index] = float4(min(progress, 1.0), tier, previous, idle);
 
     float dense = saturate(land.r / max(_HouseThreshold + _ThresholdSpread, 1e-3));
     House house;
     float radius = 1.0 + _HeightScale * height - 0.15 * _HouseSize;    // sunk a little so no gap shows on a slope
-    house.positionSize = float4(direction * radius, _HouseSize * (0.8 + 0.5 * variety) * (1.0 + 0.35 * dense));
+    float width = min(_HouseSize * (0.8 + 0.5 * variety) * (1.0 + 0.35 * dense), _MaxSize);
+    house.positionSize = float4(direction * radius, width);
     house.style = float4(yaw, variety, climate.r, climate.g);
-    house.extra = float4(1.0 + 0.5 * dense * tallRandom, land.r, progress, tier);
+    house.extra = float4(1.0 + 0.5 * dense * tallRandom, previous, min(progress, 1.0), tier);
     _Houses.Append(house);
+
+    if (progress < 1.0)
+    {
+        _Scaffolds.Append(house);
+    }
 }

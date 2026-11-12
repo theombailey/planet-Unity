@@ -1,8 +1,9 @@
 // =============================================================================
 // ConsoleControl
 // -----------------------------------------------------------------------------
-// Purpose : A push button: on the console (pause, new world, the three climate presets) and
-//           on the tech board (one per technology: click to research it).
+// Purpose : A push button: on the console (pause, new world, the three climate presets), on the
+//           Divine Intervention board (Create humans, and one per technology: click to research it), and
+//           the small "view" buttons that move the camera to frame a whole set of tools.
 // Idea    : The ToolController finds the button under the mouse the same way it finds
 //           tools and dials, highlights it with a thick outline, and calls Press() on a
 //           click. A press sinks the button for a moment. The pause button also has an
@@ -14,6 +15,8 @@
 // Parameters: kind (what it does), the cap that sinks, the indicator light.
 // =============================================================================
 
+using Terrarium.Interaction;
+using Terrarium.Physarum;
 using Terrarium.Tech;
 using UnityEngine;
 
@@ -37,8 +40,14 @@ namespace Terrarium.Workshop
         /// <summary>Cold, dry, poor world (same seed).</summary>
         PresetHarsh,
 
-        /// <summary>Research one technology (the tech board).</summary>
+        /// <summary>Research one technology (the Divine Intervention board).</summary>
         Research,
+
+        /// <summary>Bring the first humans into the world (the Divine Intervention board).</summary>
+        CreateHumans,
+
+        /// <summary>Move the camera to frame a set of tools (the shelf, the console, the board).</summary>
+        FocusView,
     }
 
     /// <summary>A push button with an indicator light.</summary>
@@ -76,6 +85,21 @@ namespace Terrarium.Workshop
         [Tooltip("Research buttons: the lamp that lights when the eureka has happened.")]
         [SerializeField] private Renderer eurekaLamp;
 
+        [Tooltip("Create-humans button: the people.")]
+        [SerializeField] private PhysarumSystem people;
+
+        [Tooltip("View buttons: the camera that is moved.")]
+        [SerializeField] private CameraRig cameraRig;
+
+        [Tooltip("View buttons: the name of the set of tools, for the hint.")]
+        [SerializeField] private string viewName;
+
+        [Tooltip("View buttons: the point to look at, the distance, and the yaw and pitch in degrees.")]
+        [SerializeField] private Vector3 viewPoint;
+        [SerializeField] private float viewDistance = 3f;
+        [SerializeField] private float viewYaw;
+        [SerializeField] private float viewPitch = 20f;
+
         [Tooltip("The way the cap sinks when pressed, in the button's own frame.")]
         [SerializeField] private Vector3 sinkDirection = Vector3.down;
 
@@ -98,6 +122,20 @@ namespace Terrarium.Workshop
         {
             get
             {
+                if (kind == ConsoleControlKind.CreateHumans)
+                {
+                    return people != null && people.HumansCreated
+                        ? "Create humans  -  humans live in this world"
+                        : "Create humans  -  click to bring the first people into the world";
+                }
+
+                if (kind == ConsoleControlKind.FocusView)
+                {
+                    return cameraRig != null && cameraRig.IsFocusedOn(viewPoint)
+                        ? $"View {viewName}  -  click to return to the planet"
+                        : $"View {viewName}  -  click to bring the whole set into view";
+                }
+
                 if (kind == ConsoleControlKind.Research)
                 {
                     // Rebuilt a few times a second, not every frame it is read.
@@ -151,6 +189,27 @@ namespace Terrarium.Workshop
             sinkDirection = sink;
         }
 
+        /// <summary>Sets the references of the create-humans button (used by the scene builder).</summary>
+        public void ConfigureCreateHumans(SimRoot root, PhysarumSystem system, Transform capTransform, Renderer indicatorRenderer, Vector3 sink)
+        {
+            Configure(ConsoleControlKind.CreateHumans, root, capTransform, indicatorRenderer);
+            people = system;
+            sinkDirection = sink;
+        }
+
+        /// <summary>Sets the references of a view button (used by the scene builder).</summary>
+        public void ConfigureView(SimRoot root, CameraRig rig, string name, Vector3 point, float distance, float yaw, float pitch, Transform capTransform, Renderer indicatorRenderer, Vector3 sink)
+        {
+            Configure(ConsoleControlKind.FocusView, root, capTransform, indicatorRenderer);
+            cameraRig = rig;
+            viewName = name;
+            viewPoint = point;
+            viewDistance = distance;
+            viewYaw = yaw;
+            viewPitch = pitch;
+            sinkDirection = sink;
+        }
+
         /// <summary>Turns the thick hover outline on or off.</summary>
         public void SetHighlighted(bool on)
         {
@@ -181,6 +240,20 @@ namespace Terrarium.Workshop
             {
                 case ConsoleControlKind.Research:
                     PressResearch();
+                    break;
+                case ConsoleControlKind.CreateHumans:
+                    if (people != null)
+                    {
+                        people.CreateHumans();
+                    }
+
+                    break;
+                case ConsoleControlKind.FocusView:
+                    if (cameraRig != null)
+                    {
+                        cameraRig.ToggleFocus(viewPoint, viewDistance, viewYaw, viewPitch);
+                    }
+
                     break;
                 case ConsoleControlKind.Pause:
                     simRoot.Clock.TogglePause();
@@ -218,6 +291,12 @@ namespace Terrarium.Workshop
                 return;
             }
 
+            if (kind == ConsoleControlKind.CreateHumans || kind == ConsoleControlKind.FocusView)
+            {
+                UpdateLightOnly();
+                return;
+            }
+
             if (indicator != null)
             {
                 bool lit = kind == ConsoleControlKind.Pause
@@ -229,6 +308,29 @@ namespace Terrarium.Workshop
             }
         }
 
+        // The create-humans button pulses until humans exist, then stays lit; a view button is lit while its view is framed.
+        private void UpdateLightOnly()
+        {
+            if (indicator == null)
+            {
+                return;
+            }
+
+            float glow;
+            if (kind == ConsoleControlKind.CreateHumans)
+            {
+                bool created = people != null && people.HumansCreated;
+                glow = created ? 1f : 0.35f + 0.65f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 4f));
+            }
+            else
+            {
+                glow = cameraRig != null && cameraRig.IsFocusedOn(viewPoint) ? 1f : 0.1f;
+            }
+
+            indicator.GetPropertyBlock(block);
+            block.SetFloat(GlowId, glow);
+            indicator.SetPropertyBlock(block);
+        }
         // ------------------------------------------------------------ research buttons
 
         // The state of this technology: 0 locked, 1 can be researched, 2 being researched, 3 learnt.

@@ -66,7 +66,7 @@ namespace Terrarium.Physarum
         private const int WaterPassesPerStep = 4;
         private const int WaterPassesAtStart = 200;
 
-        /// <summary>Field size at which one "person per texel" is the reference density for towns.</summary>
+        /// <summary>Field size at which one "household per texel" (times the crowd weight) is the reference density for towns.</summary>
         private const float ReferenceResolution = 256f;
 
         private readonly ComputeShader physarum;
@@ -287,7 +287,7 @@ namespace Terrarium.Physarum
             settlement.SetInt(ResolutionId, Resolution);
             settlement.SetFloat(DeltaTimeId, deltaSeconds);
             settlement.SetFloat(DepositAmountId, config.physarumDepositAmount);
-            settlement.SetFloat(TrafficScaleId, referenceArea * referenceArea);
+            settlement.SetFloat(TrafficScaleId, referenceArea * referenceArea * config.crowdWeight);
             settlement.SetFloat(TownDecayId, config.townDecay);
             settlement.SetFloat(TownSpreadId, config.townSpread);
             settlement.SetFloat(FarmStartId, config.farmStart);

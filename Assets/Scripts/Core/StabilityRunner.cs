@@ -109,6 +109,12 @@ namespace Terrarium
         private void StartSeed()
         {
             simRoot.Reseed(seeds[seedIndex]);
+
+            // A new world starts empty; the check stands in for the player who creates the humans.
+            if (physarum != null)
+            {
+                physarum.CreateHumans();
+            }
             simRoot.Clock.SetTimeScale(16);
             waitingForFirstStats = true;
             framesToWait = 3;

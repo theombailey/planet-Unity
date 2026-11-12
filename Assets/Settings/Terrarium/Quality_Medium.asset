@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   label: Medium
   fieldResolution: 256
-  physarumAgents: 24000
+  physarumAgents: 5000
   boidCount: 15000
   maxTrees: 1000
   maxSegmentsPerTree: 1200

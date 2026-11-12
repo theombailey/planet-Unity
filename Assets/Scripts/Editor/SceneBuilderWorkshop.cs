@@ -16,7 +16,7 @@
 //           console centre x = -2.0, z = -1.25, 2.35 wide, face sloping up toward the back
 //           tech board centre x = -2.55, z = 1.35, 1.7 wide, 1.55 tall, turned a little toward the planet
 //           Row layout on the console face (z across the slope: + is toward the back / top of screen):
-//             z = +0.33  nixie tubes (year, temperature, trees, birds, people), plates at z = +0.215
+//             z = +0.33  nixie tubes (year, temperature, trees, birds, families), plates at z = +0.215
 //             z = -0.02  paper roll (left) and the three dials (right), plates at z = -0.17
 //             z = -0.38  push buttons, plates at z = -0.47
 // =============================================================================
@@ -207,7 +207,7 @@ namespace Terrarium.EditorTools
             // ---- Nixie readouts across the top of the face.
             var groups = new (string Label, int Tubes, int Decimals)[]
             {
-                ("YEAR", 3, 0), ("TEMP C", 4, 1), ("TREES", 4, 0), ("BIRDS", 5, 0), ("PEOPLE", 4, 0),
+                ("YEAR", 3, 0), ("TEMP C", 4, 1), ("TREES", 4, 0), ("BIRDS", 5, 0), ("FAMILIES", 4, 0),
             };
 
             var displays = new NixieDisplay[groups.Length];
@@ -303,22 +303,25 @@ namespace Terrarium.EditorTools
             SetReference(readouts, "paper", roll);
         }
 
-        // ------------------------------------------------------------ tech board
+        // ------------------------------------------------- Divine Intervention board
 
-        // Where each technology's button sits on the board (x across, y up), in display order of TechId.
+        // Where each technology's button sits on the board (x across, y up).
         private static readonly (Terrarium.Tech.TechId Id, string Label, Vector2 Position, Color Colour)[] TechNodes =
         {
-            (Terrarium.Tech.TechId.Irrigation, "IRRIGATION", new Vector2(-0.52f, 1.30f), new Color(0.30f, 0.55f, 0.75f)),
-            (Terrarium.Tech.TechId.MudWalls, "MUD WALLS", new Vector2(0.00f, 1.30f), new Color(0.58f, 0.42f, 0.28f)),
-            (Terrarium.Tech.TechId.Bricks, "BRICKS", new Vector2(-0.30f, 0.62f), new Color(0.65f, 0.30f, 0.22f)),
-            (Terrarium.Tech.TechId.Wells, "WELLS", new Vector2(0.52f, 1.30f), new Color(0.30f, 0.62f, 0.60f)),
-            (Terrarium.Tech.TechId.StoneRoads, "STONE ROADS", new Vector2(0.30f, 0.62f), new Color(0.62f, 0.62f, 0.58f)),
+            (Terrarium.Tech.TechId.Irrigation, "IRRIGATION", new Vector2(-0.55f, 1.04f), new Color(0.30f, 0.55f, 0.75f)),
+            (Terrarium.Tech.TechId.MudWalls, "MUD WALLS", new Vector2(0.00f, 1.04f), new Color(0.58f, 0.42f, 0.28f)),
+            (Terrarium.Tech.TechId.Wells, "WELLS", new Vector2(0.55f, 1.04f), new Color(0.30f, 0.62f, 0.60f)),
+            (Terrarium.Tech.TechId.Bricks, "BRICKS", new Vector2(-0.28f, 0.42f), new Color(0.65f, 0.30f, 0.22f)),
+            (Terrarium.Tech.TechId.StoneRoads, "STONE ROADS", new Vector2(0.28f, 0.42f), new Color(0.62f, 0.62f, 0.58f)),
         };
+
+        private static readonly Vector2 CreateHumansPosition = new Vector2(0f, 1.66f);
 
         private static void BuildTechBoard(Transform workshop, SimRoot simRoot)
         {
             var techSystem = simRoot.GetComponent<Terrarium.Tech.TechSystem>();
-            var board = new GameObject("TechBoard").transform;
+            var people = simRoot.GetComponent<Terrarium.Physarum.PhysarumSystem>();
+            var board = new GameObject("DivineInterventionBoard").transform;
             board.SetParent(workshop, worldPositionStays: false);
             board.position = TechBoardCentre;
             board.rotation = Quaternion.Euler(0f, -20f, 0f);   // the face (toward -z) turns a little toward the planet
@@ -334,32 +337,56 @@ namespace Terrarium.EditorTools
 
             // The stand: a base, two posts, a wooden frame and the dark panel.
             AddPart("Base", PrimitiveType.Cube, board, new Vector3(0f, 0.03f, 0.1f), none, new Vector3(1.9f, 0.06f, 0.5f), wood);
-            AddPart("PostLeft", PrimitiveType.Cube, board, new Vector3(-0.72f, 0.14f, 0.04f), none, new Vector3(0.07f, 0.2f, 0.07f), wood);
-            AddPart("PostRight", PrimitiveType.Cube, board, new Vector3(0.72f, 0.14f, 0.04f), none, new Vector3(0.07f, 0.2f, 0.07f), wood);
-            AddPart("Frame", PrimitiveType.Cube, board, new Vector3(0f, 1.02f, 0.045f), none, new Vector3(1.82f, 1.64f, 0.05f), wood);
-            AddPart("Panel", PrimitiveType.Cube, board, new Vector3(0f, 1.02f, 0.0f), none, new Vector3(1.7f, 1.52f, 0.05f), panelMaterial);
+            AddPart("PostLeft", PrimitiveType.Cube, board, new Vector3(-0.72f, 0.09f, 0.04f), none, new Vector3(0.07f, 0.1f, 0.07f), wood);
+            AddPart("PostRight", PrimitiveType.Cube, board, new Vector3(0.72f, 0.09f, 0.04f), none, new Vector3(0.07f, 0.1f, 0.07f), wood);
+            AddPart("Frame", PrimitiveType.Cube, board, new Vector3(0f, 1.08f, 0.045f), none, new Vector3(1.82f, 2.0f, 0.05f), wood);
+            AddPart("Panel", PrimitiveType.Cube, board, new Vector3(0f, 1.08f, 0.0f), none, new Vector3(1.7f, 1.88f, 0.05f), panelMaterial);
 
             // The title.
-            AddBoardPlate(board, "EUREKA", new Vector3(0f, 1.70f, -0.03f), plateMaterial, 1.8f);
+            AddBoardPlate(board, "DIVINE INTERVENTION", new Vector3(0f, 1.96f, -0.03f), plateMaterial, 1.3f);
 
-            // Lines from each technology to the ones it needs, drawn first so the buttons sit on top of them.
+            // Lines from each button to the ones it needs, drawn first so the buttons sit on top of them. They start at the
+            // lower edge of the button and run behind its nameplate.
+            void Link(string name, Vector2 from, Vector2 to)
+            {
+                Vector3 start = new Vector3(from.x, from.y - 0.12f, -0.03f);
+                Vector3 end = new Vector3(to.x, to.y + 0.17f, -0.03f);
+                Vector3 span = end - start;
+                AddPart(name, PrimitiveType.Cylinder, board, (start + end) * 0.5f, Quaternion.FromToRotation(Vector3.up, span.normalized),
+                    new Vector3(0.018f, span.magnitude * 0.5f, 0.018f), lineMaterial);
+            }
+
             foreach (var node in TechNodes)
             {
                 Terrarium.Tech.TechId[] needs = new Terrarium.Tech.TechTree().Definitions[(int)node.Id].Requires;
                 foreach (Terrarium.Tech.TechId need in needs)
                 {
-                    Vector2 from = System.Array.Find(TechNodes, n => n.Id == need).Position + new Vector2(0f, -0.36f);
-                    Vector2 to = node.Position + new Vector2(0f, 0.17f);
-                    Vector3 start = new Vector3(from.x, from.y, -0.03f);
-                    Vector3 end = new Vector3(to.x, to.y, -0.03f);
-                    Vector3 span = end - start;
-                    AddPart("Line_" + need + "_" + node.Id, PrimitiveType.Cylinder, board, (start + end) * 0.5f, Quaternion.FromToRotation(Vector3.up, span.normalized),
-                        new Vector3(0.018f, span.magnitude * 0.5f, 0.018f), lineMaterial);
+                    Link("Line_" + need + "_" + node.Id, System.Array.Find(TechNodes, n => n.Id == need).Position, node.Position);
+                }
+
+                if (needs.Length == 0)
+                {
+                    Link("Line_Humans_" + node.Id, CreateHumansPosition, node.Position);   // every technology begins with people
                 }
             }
 
-            // One button per technology.
+            // Create humans: the first act, at the top.
             Quaternion faceOn = Quaternion.Euler(90f, 0f, 0f);   // a cylinder's axis along z, toward the viewer
+            {
+                var root = new GameObject("CreateHumans");
+                root.transform.SetParent(board, worldPositionStays: false);
+                root.transform.localPosition = new Vector3(CreateHumansPosition.x, CreateHumansPosition.y, -0.04f);
+
+                AddPart("Bezel", PrimitiveType.Cylinder, root.transform, Vector3.zero, faceOn, new Vector3(0.34f, 0.008f, 0.34f), bezelMaterial);
+                GameObject cap = AddPart("Cap", PrimitiveType.Cylinder, root.transform, new Vector3(0f, 0f, -0.02f), faceOn, new Vector3(0.27f, 0.02f, 0.27f), GetMaterial("CreateHumans", new Color(0.92f, 0.76f, 0.36f)));
+                cap.AddComponent<BoxCollider>();
+                GameObject led = AddPart("Indicator", PrimitiveType.Sphere, root.transform, new Vector3(0.18f, 0.18f, -0.03f), none, Vector3.one * 0.05f, GetMaterial("CreateHumansLed", new Color(1.0f, 0.85f, 0.4f), glow: 0f, outlineScale: 0.4f));
+                AddBoardPlate(root.transform, "CREATE HUMANS", new Vector3(0f, -0.25f, 0.0f), plateMaterial, 1f);
+
+                root.AddComponent<ConsoleControl>().ConfigureCreateHumans(simRoot, people, cap.transform, led.GetComponent<MeshRenderer>(), Vector3.forward);
+            }
+
+            // One button per technology.
             foreach (var node in TechNodes)
             {
                 var root = new GameObject("Tech_" + node.Id);
@@ -389,10 +416,51 @@ namespace Terrarium.EditorTools
             GameObject consoleObject = GameObject.Find("Console");
             if (consoleObject != null)
             {
-                SetReference(consoleObject.GetComponent<ConsoleReadouts>(), "tech", techSystem);
+                var readouts = consoleObject.GetComponent<ConsoleReadouts>();
+                SetReference(readouts, "tech", techSystem);
+                SetReference(readouts, "humans", people);
             }
         }
 
+        // The three view buttons on the desk's front edge: each moves the camera to frame a whole set of tools.
+        // Called after the camera exists.
+        private static void BuildViewButtons(SimRoot simRoot, CameraRig cameraRig)
+        {
+            Transform workshop = GameObject.Find("Workshop").transform;
+            var strip = new GameObject("ViewButtons").transform;
+            strip.SetParent(workshop, worldPositionStays: false);
+
+            Material plateMaterial = GetTextMaterial("ConsolePlate", Color.white, paper: false);
+            Material bezelMaterial = GetMaterial("ViewBezel", new Color(0.05f, 0.05f, 0.05f), outlineScale: 0.5f);
+            Quaternion flat = Quaternion.Euler(90f, 0f, 0f);   // lying on the desk, facing up
+
+            // A camera view of each set: a point to look at, a distance, a yaw and a pitch (degrees).
+            var views = new (string Name, string Label, float X, Vector3 Point, float Distance, float Yaw, float Pitch, Color Colour)[]
+            {
+                ("shelf", "SHELF", 0.55f, ShelfCentre + new Vector3(0f, 0.85f, 0f), 3.3f, 0f, 14f, new Color(0.78f, 0.60f, 0.30f)),
+                ("console", "CONSOLE", 0.00f, ConsoleCentre + new Vector3(0f, 0.3f, 0f), 3.1f, 0f, 42f, new Color(0.62f, 0.64f, 0.60f)),
+                ("board", "BOARD", -0.55f, TechBoardCentre + new Vector3(0f, 1.05f, 0f), 3.9f, -20f, 10f, new Color(0.92f, 0.76f, 0.36f)),
+            };
+
+            foreach (var view in views)
+            {
+                var root = new GameObject("View_" + view.Name);
+                root.transform.SetParent(strip, worldPositionStays: false);
+                root.transform.position = new Vector3(view.X, 0f, -1.55f);
+
+                AddPart("Bezel", PrimitiveType.Cylinder, root.transform, new Vector3(0f, 0.004f, 0f), Quaternion.identity, new Vector3(0.2f, 0.004f, 0.2f), bezelMaterial);
+                GameObject cap = AddPart("Cap", PrimitiveType.Cylinder, root.transform, new Vector3(0f, 0.03f, 0f), Quaternion.identity, new Vector3(0.15f, 0.025f, 0.15f), GetMaterial("View_" + view.Name, view.Colour));
+                cap.AddComponent<BoxCollider>();
+                GameObject led = AddPart("Indicator", PrimitiveType.Sphere, root.transform, new Vector3(0f, 0.045f, 0.1f), Quaternion.identity, Vector3.one * 0.03f, GetMaterial("ViewLed_" + view.Name, view.Colour, glow: 0f, outlineScale: 0.4f));
+
+                var size = new Vector2(LabelPlate.WidthFor(view.Label) * PlateTexel, LabelPlate.HeightPixels * PlateTexel);
+                GameObject plate = AddPart("Plate_" + view.Label, PrimitiveType.Quad, root.transform, new Vector3(0f, 0.004f, -0.19f), flat, new Vector3(size.x, size.y, 1f), plateMaterial);
+                plate.AddComponent<LabelPlate>().Configure(view.Label, plate.GetComponent<MeshRenderer>(), new Color(0.07f, 0.07f, 0.06f), new Color(0.86f, 0.76f, 0.54f));
+
+                root.AddComponent<ConsoleControl>().ConfigureView(simRoot, cameraRig, view.Name, view.Point, view.Distance, view.Yaw, view.Pitch,
+                    cap.transform, led.GetComponent<MeshRenderer>(), Vector3.down);
+            }
+        }
         // A nameplate on the board's upright face (a quad that looks toward -z), optionally larger than the console's.
         private static void AddBoardPlate(Transform parent, string text, Vector3 localPosition, Material plateMaterial, float scale)
         {

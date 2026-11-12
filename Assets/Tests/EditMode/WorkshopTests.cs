@@ -173,15 +173,15 @@ namespace Terrarium.Tests
         {
             var log = new PaperLog();
             var lines = new List<string>();
-            log.Poll(Stats(1, 0.10f, 100, 800, 5000), lines);
+            log.Poll(Stats(1, 0.10f, 100, 800, 500), lines);
             lines.Clear();
 
-            log.Poll(Stats(1, 0.11f, 100, 800, 10), lines);
-            CollectionAssert.Contains(lines, "PEOPLE DYING OUT");
+            log.Poll(Stats(1, 0.11f, 100, 800, 5), lines);
+            CollectionAssert.Contains(lines, "FAMILIES DYING OUT");
 
             lines.Clear();
-            log.Poll(Stats(1, 0.12f, 100, 800, 400), lines);
-            CollectionAssert.Contains(lines, "PEOPLE RECOVER");
+            log.Poll(Stats(1, 0.12f, 100, 800, 100), lines);
+            CollectionAssert.Contains(lines, "FAMILIES RECOVER");
         }
 
         [Test]

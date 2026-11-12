@@ -34,8 +34,11 @@
 //
 // Idea (roads): a path that is walked a lot HARDENS. Where the path is stronger than a threshold the
 //   permanent road (channel A) builds up, and it wears away only very slowly once nobody walks it:
-//        A'  = A + paveRate * saturate(trail - threshold) * dt - fadeRate * A * dt          0..1
-//   so a worn track becomes a lasting road that the people then prefer to walk on (Physarum.compute).
+//        A'  = A + paveRate * saturate(trail - threshold) * ridge * dt - fadeRate * A * dt          0..1
+//        ridge = saturate(3 * (trail - mean of the 8 neighbours' trail))
+//   The ridge term is what makes roads LINES: a crowded town is a broad plateau of path (every texel high), and
+//   without it the whole town would be paved over. Only where the path stands up above its surroundings, a track
+//   rather than a crowd, does it harden. A worn track becomes a lasting road.
 //
 // Idea (water): the Water field holds each place's PROXIMITY to water: 1 at the sea or a lake, falling
 //   by a fixed amount per texel of distance to 0 at the configured reach. It is relaxed a few texels a
@@ -119,6 +122,7 @@ void LandStep(uint3 id : SV_DispatchThreadID)
     // Town density: spread over the 3x3 neighbourhood (land only), then add today's presence and fade.
     float sum = here.r;
     float crowdSum = here.b;
+    float trailSum = 0.0;
     float samples = 1.0;
     for (int dy = -1; dy <= 1; dy++)
     {
@@ -130,6 +134,7 @@ void LandStep(uint3 id : SV_DispatchThreadID)
             }
 
             uint3 neighbour = uint3(CS_NeighbourTexel(texel, int2(dx, dy), _Resolution));
+            trailSum += _Trail[neighbour];
             if (_Terrain[neighbour].r >= 0.0)
             {
                 float4 other = _LandRead[neighbour];
@@ -156,7 +161,8 @@ void LandStep(uint3 id : SV_DispatchThreadID)
     float farm = saturate(here.g + (target - here.g) * saturate(rate * _DeltaTime));
 
     // Permanent road: hardens under a busy path, wears away very slowly.
-    float paved = saturate(here.a + _PaveRate * saturate(_Trail[id] - _PaveThreshold) * _DeltaTime - _PaveFade * here.a * _DeltaTime);
+    float ridge = saturate((_Trail[id] - trailSum * 0.125) * 3.0);
+    float paved = saturate(here.a + _PaveRate * saturate(_Trail[id] - _PaveThreshold) * ridge * _DeltaTime - _PaveFade * here.a * _DeltaTime);
 
     _LandWrite[id] = float4(town, farm, crowd, paved);
 }

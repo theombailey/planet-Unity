@@ -75,9 +75,9 @@ namespace Terrarium.EditorTools
                 AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<SimConfig>(), ConfigPath);
             }
 
-            CreatePresetIfMissing(PresetPaths[0], "Low", fieldResolution: 128, physarumAgents: 8_000, boidCount: 4_000, maxTrees: 300, maxSegmentsPerTree: 600, meshRingSides: 5);
-            CreatePresetIfMissing(PresetPaths[1], "Medium", fieldResolution: 256, physarumAgents: 24_000, boidCount: 15_000, maxTrees: 1_000, maxSegmentsPerTree: 1_200, meshRingSides: 6);
-            CreatePresetIfMissing(PresetPaths[2], "High", fieldResolution: 512, physarumAgents: 60_000, boidCount: 40_000, maxTrees: 1_600, maxSegmentsPerTree: 2_500, meshRingSides: 8);
+            CreatePresetIfMissing(PresetPaths[0], "Low", fieldResolution: 128, physarumAgents: 2_000, boidCount: 4_000, maxTrees: 300, maxSegmentsPerTree: 600, meshRingSides: 5);
+            CreatePresetIfMissing(PresetPaths[1], "Medium", fieldResolution: 256, physarumAgents: 5_000, boidCount: 15_000, maxTrees: 1_000, maxSegmentsPerTree: 1_200, meshRingSides: 6);
+            CreatePresetIfMissing(PresetPaths[2], "High", fieldResolution: 512, physarumAgents: 12_000, boidCount: 40_000, maxTrees: 1_600, maxSegmentsPerTree: 2_500, meshRingSides: 8);
 
             EnsureInkPaperFeature();
             AssetDatabase.SaveAssets();

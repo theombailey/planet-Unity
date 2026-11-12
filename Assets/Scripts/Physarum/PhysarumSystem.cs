@@ -2,9 +2,10 @@
 // PhysarumSystem
 // -----------------------------------------------------------------------------
 // Purpose : Puts the people (the physarum walkers who make roads, towns and farms)
-//           into the scene: creates the simulation when needed, seeds the people
-//           for each new world, steps it when SimLoop asks, and reports the living
-//           population to the debug panel.
+//           into the scene: creates the simulation when needed, steps it when SimLoop
+//           asks, and reports the living population to the debug panel. A new world has
+//           no people: the player creates them (CreateHumans, the first button on the
+//           Divine Intervention board) or sends settlers.
 // Idea    : Lazy setup. The simulation is created (and re-sized after a quality
 //           preset change) at the first step that needs it, so it never has to
 //           guess whether the fields exist yet. A new world (FieldSet.WorldReset)
@@ -48,6 +49,8 @@ namespace Terrarium.Physarum
 
         private PhysarumSimulation simulation;
         private bool needsSeeding;
+        private bool createRequested;
+        private bool humansCreated;
         private float pioneerBacklog;
         private float readbackTimer;
         private bool readbackPending;
@@ -112,7 +115,25 @@ namespace Terrarium.Physarum
 
         private void HandleWorldReset()
         {
+            // A new world is empty: the player brings humans into it (the first button on the Divine Intervention board).
             needsSeeding = true;
+            createRequested = false;
+            humansCreated = false;
+        }
+
+        /// <summary>True once humans have been created in this world (by the board's button, or by sending settlers).</summary>
+        public bool HumansCreated => humansCreated || createRequested;
+
+        /// <summary>
+        /// Brings the first households into the world, on livable land. Does nothing if humans already exist. A new world
+        /// starts without people, so this is the player's first act.
+        /// </summary>
+        public void CreateHumans()
+        {
+            if (!HumansCreated)
+            {
+                createRequested = true;
+            }
         }
 
         private void Update()
@@ -168,15 +189,22 @@ namespace Terrarium.Physarum
 
             if (needsSeeding)
             {
-                simulation.SeedAgents(fields, rules, simRoot.ActiveSeed, config.physarumStartAgents);
+                simulation.SeedAgents(fields, rules, simRoot.ActiveSeed, 0);   // an empty world: the fields are ready, nobody lives there yet
                 pioneerBacklog = 0f;
                 needsSeeding = false;
+            }
+
+            if (createRequested)
+            {
+                simulation.SeedAgents(fields, rules, simRoot.ActiveSeed, config.physarumStartAgents);
+                createRequested = false;
+                humansCreated = true;
             }
 
             // Pioneers: a faint background supply of new people who each settle the first good, empty place they
             // find, so a continent nobody reached (or a world whose people died out) can still be settled.
             // Landed in batches to keep the number of dispatches low.
-            pioneerBacklog += config.peopleArrivalRate * deltaSeconds;
+            pioneerBacklog += humansCreated ? config.peopleArrivalRate * deltaSeconds : 0f;
             if (pioneerBacklog >= PioneerBatch)
             {
                 int count = (int)pioneerBacklog;
@@ -194,6 +222,8 @@ namespace Terrarium.Physarum
         {
             if (simulation != null && simulation.IsAllocated && fieldSet.Resolution > 0)
             {
+                humansCreated = true;   // settlers are people too: sending them brings humanity into being
+                createRequested = false;
                 simulation.SpawnAgents(Fields, Rules, localDirection, angularRadius, count);
             }
         }
@@ -212,9 +242,9 @@ namespace Terrarium.Physarum
         {
             GUILayout.Label($"People alive: {AliveCount:N0} of {PoolSize:N0}");
             GUILayout.Label($"  born {BornLastStep:N0}, died {DiedLastStep:N0} in the last step");
-            if (GUILayout.Button("Re-scatter people"))
+            if (GUILayout.Button("Create humans"))
             {
-                needsSeeding = true;
+                CreateHumans();
             }
         }
     }

@@ -23,8 +23,12 @@
 //               roofHeight = lerp(1, 0.35, hot * (1 - wet)) * lerp(1, 1.5, max(cold, wet))
 //           A tent always has the steep roof of an A-frame.
 //
-//           BUILD PROGRESS: a house being built rises and widens from nothing:
+//           BUILD PROGRESS: a house being built rises and widens from nothing (and, being taken down,
+//           sinks and narrows to nothing again):
 //               grow = smoothstep(0, 1, progress);  height *= lerp(0.15, 1, grow);  width *= lerp(0.5, 1, grow)
+//           A house being REBUILT in a better style (previous tier >= 0) does not shrink: it keeps its
+//           size and its old look until the work is half done, then shows the new style. Scaffolding
+//           (Scaffolds.shader) stands round it all the while, so the change happens under cover.
 //
 //           Size: a house is a few millimetres wide, so from the desk it would vanish. It is never
 //           drawn smaller than `_HouseMinPixels` on screen:
@@ -140,9 +144,16 @@ Shader "Terrarium/Houses"
                 float3 worldForward = normalize(mul((float3x3)_PlanetLocalToWorld, forward));
                 float3 worldSide = normalize(mul((float3x3)_PlanetLocalToWorld, side));
 
+                float previous = house.extra.y;
+                bool rebuilding = previous > -0.5;
                 int tier = (int)round(house.extra.w);
                 float progress = saturate(house.extra.z);
-                float grow = smoothstep(0.0, 1.0, progress);
+                if (rebuilding && progress < 0.5)
+                {
+                    tier = (int)round(previous);
+                }
+
+                float grow = rebuilding ? 1.0 : smoothstep(0.0, 1.0, progress);
 
                 // The planet's local units become world units through its scale.
                 float planetScale = length(float3(_PlanetLocalToWorld._m00, _PlanetLocalToWorld._m10, _PlanetLocalToWorld._m20));
@@ -188,7 +199,7 @@ Shader "Terrarium/Houses"
 
                 output.normalWS = normalize(worldSide * n.x + worldUp * n.y + worldForward * n.z);
                 output.look = float4(cold, hot, wet, house.style.y);
-                output.farMix = float2(saturate(minimum / max(wanted, 1e-5) - 1.0), house.extra.y);
+                output.farMix = float2(saturate(minimum / max(wanted, 1e-5) - 1.0), 0.0);
                 output.build = float2((float)tier, progress);
                 return output;
             }
